@@ -1,0 +1,16 @@
+.env
+__pycache__/
+*.pyc
+.streamlit/secrets.toml
+cache/
+data/audit_log.json
+.vscode/
+*.egg-info/
+dist/
+build/
+
+# Archivos de referencia (no necesarios para la app)
+BASE DE DATOS*.xlsx
+CADENA COLUMNA*.xlsx
+IDENTIFICACIÓN DE PUNTO*.docx
+base de datos Fisicoquimico*.xlsx
