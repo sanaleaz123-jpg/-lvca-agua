@@ -13,6 +13,15 @@ from dotenv import load_dotenv
 _env_path = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(_env_path)
 
+# Intentar cargar st.secrets de Streamlit Cloud y pasarlos a os.environ
+try:
+    import streamlit as _st
+    for _k, _v in _st.secrets.items():
+        if isinstance(_v, str) and _k not in os.environ:
+            os.environ[_k] = _v
+except Exception:
+    pass
+
 
 def _require(key: str) -> str:
     """Lee una variable de entorno; lanza ValueError si falta."""
