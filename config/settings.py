@@ -14,17 +14,27 @@ _env_path = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(_env_path)
 
 # Intentar cargar st.secrets de Streamlit Cloud y pasarlos a os.environ
+# st.secrets tiene prioridad sobre .env
 try:
     import streamlit as _st
     for _k, _v in _st.secrets.items():
-        if isinstance(_v, str) and _k not in os.environ:
+        if isinstance(_v, str):
             os.environ[_k] = _v
 except Exception:
     pass
 
 
 def _require(key: str) -> str:
-    """Lee una variable de entorno; lanza ValueError si falta."""
+    """Lee una variable: primero st.secrets, luego os.environ."""
+    # Intentar directo de st.secrets primero
+    try:
+        import streamlit as _st
+        val = _st.secrets.get(key, "")
+        if val and isinstance(val, str):
+            return val.strip()
+    except Exception:
+        pass
+    # Fallback a os.environ
     value = os.environ.get(key, "").strip()
     if not value:
         raise ValueError(
@@ -35,6 +45,13 @@ def _require(key: str) -> str:
 
 
 def _optional(key: str, default: str = "") -> str:
+    try:
+        import streamlit as _st
+        val = _st.secrets.get(key, "")
+        if val and isinstance(val, str):
+            return val.strip()
+    except Exception:
+        pass
     return os.environ.get(key, default).strip()
 
 
