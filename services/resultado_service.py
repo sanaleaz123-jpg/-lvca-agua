@@ -289,6 +289,7 @@ def guardar_resultado(
     db.table("resultados_laboratorio").upsert(
         fila, on_conflict="muestra_id,parametro_id"
     ).execute()
+    _invalidar_cache()
 
 
 def guardar_resultados_lote(
@@ -397,6 +398,7 @@ def get_excedencias_activas(dias: int = 30) -> list[dict]:
         )
         .gte("fecha_analisis", fecha_corte[:10])
         .not_.is_("valor_numerico", "null")
+        .limit(2000)
         .execute()
     )
     resultados = res.data or []
@@ -454,6 +456,7 @@ def get_excedencias_activas(dias: int = 30) -> list[dict]:
             excedencias.append({
                 "fecha":             r.get("fecha_analisis", "")[:10],
                 "muestra_codigo":    m.get("codigo", ""),
+                "punto_id":          pt.get("id", ""),
                 "punto_nombre":      pt.get("nombre", ""),
                 "eca_codigo":        (pt.get("ecas") or {}).get("codigo", ""),
                 "parametro_codigo":  prm.get("codigo", ""),
@@ -547,12 +550,13 @@ def get_puntos_con_estado(dias: int = 30) -> list[dict]:
     )
     puntos = pts.data or []
 
-    # Puntos que tienen excedencias activas
+    # Puntos que tienen excedencias activas (por ID, no por nombre)
     excedencias = get_excedencias_activas(dias)
     puntos_con_exc: dict[str, int] = {}
     for e in excedencias:
-        nombre = e["punto_nombre"]
-        puntos_con_exc[nombre] = puntos_con_exc.get(nombre, 0) + 1
+        pid = e.get("punto_id", "")
+        if pid:
+            puntos_con_exc[pid] = puntos_con_exc.get(pid, 0) + 1
 
     # Puntos que tienen muestras recientes (sin excedencia = cumple)
     fecha_corte = (datetime.utcnow() - timedelta(days=dias)).date().isoformat()
@@ -566,7 +570,7 @@ def get_puntos_con_estado(dias: int = 30) -> list[dict]:
 
     # Asignar estado a cada punto
     for p in puntos:
-        n_exc = puntos_con_exc.get(p["nombre"], 0)
+        n_exc = puntos_con_exc.get(p["id"], 0)
         if n_exc > 0:
             p["estado"] = "excedencia"
             p["n_excedencias"] = n_exc
