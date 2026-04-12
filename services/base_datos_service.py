@@ -66,6 +66,7 @@ def get_datos_consolidados(
                 "ecas(id, codigo, nombre))"
             )
             .order("fecha_muestreo", desc=True)
+            .limit(5000)
         )
         # Test if the query works
         if campana_id:
@@ -83,6 +84,7 @@ def get_datos_consolidados(
             db.table("muestras")
             .select(select_campos)
             .order("fecha_muestreo", desc=True)
+            .limit(5000)
         )
         if campana_id:
             q_muestras = q_muestras.eq("campana_id", campana_id)

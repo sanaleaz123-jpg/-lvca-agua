@@ -21,35 +21,48 @@ from database.client import get_admin_client
 
 _LOG_PATH = Path(__file__).resolve().parent.parent / "data" / "audit_log.json"
 _DB_AVAILABLE: bool | None = None  # cache tras primer intento
+_DB_CHECK_TIME: float = 0.0  # timestamp del último chequeo
 
 
 def _check_db() -> bool:
-    """Verifica si la tabla audit_log existe en la BD."""
-    global _DB_AVAILABLE
-    if _DB_AVAILABLE is not None:
-        return _DB_AVAILABLE
+    """Verifica si la tabla audit_log existe en la BD. Reintenta cada 5 minutos si falla."""
+    global _DB_AVAILABLE, _DB_CHECK_TIME
+    import time
+    now = time.time()
+    # Si ya sabemos que está disponible, no reintentar
+    if _DB_AVAILABLE is True:
+        return True
+    # Si falló antes, reintentar cada 5 minutos
+    if _DB_AVAILABLE is False and (now - _DB_CHECK_TIME) < 300:
+        return False
     try:
         db = get_admin_client()
         db.table("audit_log").select("id").limit(1).execute()
         _DB_AVAILABLE = True
     except Exception:
         _DB_AVAILABLE = False
+    _DB_CHECK_TIME = now
     return _DB_AVAILABLE
 
 
 def _write_local(entry: dict) -> None:
-    """Escribe en el archivo JSON local como fallback."""
-    entries = []
-    if _LOG_PATH.exists():
-        try:
-            entries = json.loads(_LOG_PATH.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, Exception):
-            entries = []
-    entries.append(entry)
-    # Mantener últimos 5000 registros
-    if len(entries) > 5000:
-        entries = entries[-5000:]
-    _LOG_PATH.write_text(json.dumps(entries, ensure_ascii=False, indent=2), encoding="utf-8")
+    """Escribe en el archivo JSON local como fallback (con protección básica)."""
+    import threading
+    if not hasattr(_write_local, "_lock"):
+        _write_local._lock = threading.Lock()
+    with _write_local._lock:
+        entries = []
+        if _LOG_PATH.exists():
+            try:
+                entries = json.loads(_LOG_PATH.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, Exception):
+                entries = []
+        entries.append(entry)
+        # Mantener últimos 5000 registros
+        if len(entries) > 5000:
+            entries = entries[-5000:]
+        _LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _LOG_PATH.write_text(json.dumps(entries, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def registrar_cambio(
