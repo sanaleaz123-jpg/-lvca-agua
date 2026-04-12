@@ -40,6 +40,7 @@ from services.muestra_service import (
     get_limites_insitu,
     get_mediciones_insitu,
     get_muestras_por_campana,
+    get_muestra_por_campana_punto,
     get_puntos_de_campana_activa,
     get_usuarios_campo,
     recibir_en_laboratorio,
@@ -145,8 +146,8 @@ def _abreviar_nombre(nombre_completo: str) -> str:
 
 
 def _render_registro() -> None:
-    st.markdown("#### Nueva muestra de campo")
-    st.caption("Código generado automáticamente: LVCA-YYYY-NNN")
+    st.markdown("#### Registro de muestra de campo")
+    st.caption("Si el punto ya tiene una muestra en la campaña, se cargan los datos para editar.")
 
     campana_id = _selector_campana_campo("reg")
     if not campana_id:
@@ -181,37 +182,91 @@ def _render_registro() -> None:
         for u in usuarios
     }
 
-    with st.form("form_nueva_muestra", clear_on_submit=True):
-        # ── Ubicación y tipo ─────────────────────────────────────────────
-        c1, c2 = st.columns(2)
-        with c1:
-            punto_label = st.selectbox("Punto de muestreo *", list(opciones_puntos.keys()))
-        with c2:
-            tipo = st.selectbox(
-                "Tipo de muestra",
-                TIPOS_MUESTRA,
-                format_func=lambda t: ETIQUETA_TIPO.get(t, t),
-            )
+    # ── Seleccionar punto (fuera del form para detectar muestra existente) ──
+    punto_label = st.selectbox("Punto de muestreo *", list(opciones_puntos.keys()), key="reg_punto")
+    punto_id = opciones_puntos[punto_label]
+
+    # ── Detectar si ya existe una muestra para este punto en la campaña ──
+    existente = get_muestra_por_campana_punto(campana_id, punto_id)
+    es_edicion = existente is not None
+
+    if es_edicion:
+        st.info(f"Muestra existente: **{existente['codigo']}** — Editando datos.")
+        # Preparar valores por defecto desde la muestra existente
+        def_tipo = existente.get("tipo_muestra", "simple")
+        try:
+            def_fecha = date.fromisoformat(str(existente.get("fecha_muestreo", ""))[:10])
+        except (ValueError, TypeError):
+            def_fecha = date.today()
+        try:
+            h_parts = (existente.get("hora_recoleccion") or "09:00").split(":")
+            def_hora = time(int(h_parts[0]), int(h_parts[1]))
+        except (ValueError, IndexError):
+            def_hora = time(9, 0)
+        def_clima = existente.get("clima") or ""
+        def_caudal = existente.get("caudal_estimado") or ""
+        def_nivel = existente.get("nivel_agua") or ""
+        def_temp = existente.get("temperatura_transporte")
+        if def_temp is None:
+            def_temp = 4.0
+        else:
+            def_temp = float(def_temp)
+        def_obs = existente.get("observaciones_campo") or ""
+        def_tecnico_id = existente.get("tecnico_campo_id")
+    else:
+        def_tipo = "simple"
+        def_fecha = date.today()
+        if camp_fecha_ini and camp_fecha_fin:
+            def_fecha = max(camp_fecha_ini, min(date.today(), camp_fecha_fin))
+        def_hora = time(9, 0)
+        def_clima = ""
+        def_caudal = ""
+        def_nivel = ""
+        def_temp = 4.0
+        def_obs = ""
+        def_tecnico_id = None
+
+    # Índice del tipo de muestra
+    tipo_idx = TIPOS_MUESTRA.index(def_tipo) if def_tipo in TIPOS_MUESTRA else 0
+
+    # Índice del clima
+    lista_clima = [""] + OPCIONES_CLIMA
+    clima_idx = lista_clima.index(def_clima) if def_clima in lista_clima else 0
+
+    # Índice del técnico
+    tecnico_idx = 0
+    if def_tecnico_id and opciones_tecnicos:
+        for i, (_, tid) in enumerate(opciones_tecnicos.items()):
+            if tid == def_tecnico_id:
+                tecnico_idx = i
+                break
+
+    with st.form("form_muestra", clear_on_submit=False):
+        # ── Tipo ─────────────────────────────────────────────────────────
+        tipo = st.selectbox(
+            "Tipo de muestra",
+            TIPOS_MUESTRA,
+            index=tipo_idx,
+            format_func=lambda t: ETIQUETA_TIPO.get(t, t),
+        )
 
         # ── Fecha, hora y técnico ────────────────────────────────────────
         c3, c4, c5 = st.columns(3)
         with c3:
-            fecha_val = date.today()
-            if camp_fecha_ini and camp_fecha_fin:
-                fecha_val = max(camp_fecha_ini, min(date.today(), camp_fecha_fin))
             fecha = st.date_input(
                 "Fecha de recolección *",
-                value=fecha_val,
+                value=def_fecha,
                 min_value=camp_fecha_ini or date(2020, 1, 1),
                 max_value=camp_fecha_fin or date(2099, 12, 31),
             )
         with c4:
-            hora = st.time_input("Hora de recolección", value=time(9, 0))
+            hora = st.time_input("Hora de recolección", value=def_hora)
         with c5:
             if opciones_tecnicos:
                 tecnico_label = st.selectbox(
                     "Técnico de campo",
                     list(opciones_tecnicos.keys()),
+                    index=tecnico_idx,
                 )
             else:
                 tecnico_label = None
@@ -221,23 +276,24 @@ def _render_registro() -> None:
         st.markdown("**Condiciones de campo**")
         cc1, cc2, cc3 = st.columns(3)
         with cc1:
-            clima = st.selectbox("Clima", [""] + OPCIONES_CLIMA)
+            clima = st.selectbox("Clima", lista_clima, index=clima_idx)
         with cc2:
-            caudal = st.text_input("Caudal estimado", placeholder="Ej: 2.5 m3/s")
+            caudal = st.text_input("Caudal estimado", value=def_caudal, placeholder="Ej: 2.5 m3/s")
         with cc3:
-            nivel = st.text_input("Nivel del embalse", placeholder="Ej: normal / alto / bajo")
+            nivel = st.text_input("Nivel del embalse", value=def_nivel, placeholder="Ej: normal / alto / bajo")
 
         # ── Transporte ───────────────────────────────────────────────────
         temp_transporte = st.number_input(
             "Temperatura de transporte (°C)",
             min_value=-10.0,
             max_value=50.0,
-            value=4.0,
+            value=def_temp,
             step=0.5,
         )
 
         observaciones = st.text_area(
             "Observaciones de campo",
+            value=def_obs,
             placeholder="Notas sobre condiciones, accesibilidad, olores, color del agua...",
         )
 
@@ -250,8 +306,9 @@ def _render_registro() -> None:
             key="reg_fotos_upload",
         )
 
+        btn_label = "Actualizar muestra" if es_edicion else "Registrar muestra"
         submitted = st.form_submit_button(
-            "Registrar muestra",
+            btn_label,
             type="primary",
             use_container_width=True,
         )
@@ -262,13 +319,6 @@ def _render_registro() -> None:
             st.error("Máximo 5 fotos por muestra.")
             return
 
-        # Advertencias de condiciones vacías (no bloquean)
-        if not clima:
-            st.warning("El campo 'Clima' está vacío. Se recomienda completarlo.")
-        if not nivel.strip():
-            st.warning("El campo 'Nivel del embalse' está vacío. Se recomienda completarlo.")
-
-        punto_id = opciones_puntos[punto_label]
         tecnico_id = opciones_tecnicos[tecnico_label] if tecnico_label else None
 
         datos = {
@@ -285,21 +335,41 @@ def _render_registro() -> None:
             "observaciones_campo":     observaciones.strip() or None,
         }
 
-        with st.spinner("Registrando muestra..."):
-            try:
-                creada = crear_muestra(datos)
-            except Exception as exc:
-                st.error(f"Error al crear la muestra: {exc}")
-                return
+        if es_edicion:
+            # ── Actualizar muestra existente ─────────────────────────────
+            with st.spinner("Actualizando muestra..."):
+                try:
+                    actualizar_muestra(existente["id"], datos)
+                except Exception as exc:
+                    st.error(f"Error al actualizar: {exc}")
+                    return
+            st.success(f"Muestra **{existente['codigo']}** actualizada correctamente.")
+            muestra_id_fotos = existente["id"]
+            muestra_codigo = existente["codigo"]
+        else:
+            # ── Crear nueva muestra ──────────────────────────────────────
+            # Advertencias de condiciones vacías (no bloquean)
+            if not clima:
+                st.warning("El campo 'Clima' está vacío. Se recomienda completarlo.")
+            if not nivel.strip():
+                st.warning("El campo 'Nivel del embalse' está vacío. Se recomienda completarlo.")
 
-        st.success(f"Muestra **{creada['codigo']}** registrada exitosamente.")
+            with st.spinner("Registrando muestra..."):
+                try:
+                    creada = crear_muestra(datos)
+                except Exception as exc:
+                    st.error(f"Error al crear la muestra: {exc}")
+                    return
+            st.success(f"Muestra **{creada['codigo']}** registrada exitosamente.")
+            muestra_id_fotos = creada["id"]
+            muestra_codigo = creada["codigo"]
 
         # ── Subir fotos asociadas ────────────────────────────────────────
         if fotos_subidas:
             for archivo in fotos_subidas:
                 try:
                     upload_foto_campo(
-                        creada["id"],
+                        muestra_id_fotos,
                         archivo.getvalue(),
                         archivo.name,
                         archivo.type,
@@ -309,21 +379,25 @@ def _render_registro() -> None:
             st.info(f"{len(fotos_subidas)} foto(s) subida(s).")
 
         # ── Generar y ofrecer descarga del QR ────────────────────────────
-        try:
-            pdf_bytes = generar_qr_pdf(creada["id"])
-            st.download_button(
-                label=f"📥 Descargar etiqueta QR — {creada['codigo']}",
-                data=pdf_bytes,
-                file_name=f"etiqueta_{creada['codigo']}.pdf",
-                mime="application/pdf",
-            )
-        except ImportError:
-            st.warning(
-                "Instala qrcode y reportlab para generar etiquetas:\n\n"
-                "`pip install qrcode[pil] reportlab`"
-            )
-        except Exception as exc:
-            st.warning(f"No se pudo generar la etiqueta QR: {exc}")
+        if not es_edicion:
+            try:
+                pdf_bytes = generar_qr_pdf(muestra_id_fotos)
+                st.download_button(
+                    label=f"📥 Descargar etiqueta QR — {muestra_codigo}",
+                    data=pdf_bytes,
+                    file_name=f"etiqueta_{muestra_codigo}.pdf",
+                    mime="application/pdf",
+                )
+            except ImportError:
+                st.warning(
+                    "Instala qrcode y reportlab para generar etiquetas:\n\n"
+                    "`pip install qrcode[pil] reportlab`"
+                )
+            except Exception as exc:
+                st.warning(f"No se pudo generar la etiqueta QR: {exc}")
+
+        # Refrescar para mostrar datos actualizados
+        st.rerun()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
