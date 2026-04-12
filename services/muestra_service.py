@@ -448,7 +448,6 @@ def get_muestras_por_campana(
 ) -> list[dict]:
     """Muestras de una campaña con filtros opcionales."""
     db = get_admin_client()
-    # Intentar incluir codigo_laboratorio (requiere migración 004)
     _select_base = (
         "id, codigo, tipo_muestra, fecha_muestreo, hora_recoleccion, "
         "estado, clima, nivel_agua, temperatura_transporte, "
@@ -456,28 +455,27 @@ def get_muestras_por_campana(
         "puntos_muestreo(id, codigo, nombre), "
         "tecnico:usuarios!tecnico_campo_id(nombre, apellido)"
     )
+    _select_con_lab = (
+        "id, codigo, codigo_laboratorio, tipo_muestra, fecha_muestreo, hora_recoleccion, "
+        "estado, clima, nivel_agua, temperatura_transporte, "
+        "preservante, observaciones_campo, "
+        "puntos_muestreo(id, codigo, nombre), "
+        "tecnico:usuarios!tecnico_campo_id(nombre, apellido)"
+    )
+
+    # Detectar si codigo_laboratorio existe (test con query separada)
     try:
-        query = (
-            db.table("muestras")
-            .select(
-                "id, codigo, codigo_laboratorio, tipo_muestra, fecha_muestreo, hora_recoleccion, "
-                "estado, clima, nivel_agua, temperatura_transporte, "
-                "preservante, observaciones_campo, "
-                "puntos_muestreo(id, codigo, nombre), "
-                "tecnico:usuarios!tecnico_campo_id(nombre, apellido)"
-            )
-            .eq("campana_id", campana_id)
-            .order("fecha_muestreo", desc=True)
-        )
-        # Test the query (will fail if column doesn't exist)
-        _ = query.limit(0).execute()
+        db.table("muestras").select("codigo_laboratorio").limit(1).execute()
+        select_fields = _select_con_lab
     except Exception:
-        query = (
-            db.table("muestras")
-            .select(_select_base)
-            .eq("campana_id", campana_id)
-            .order("fecha_muestreo", desc=True)
-        )
+        select_fields = _select_base
+
+    query = (
+        db.table("muestras")
+        .select(select_fields)
+        .eq("campana_id", campana_id)
+        .order("fecha_muestreo", desc=True)
+    )
 
     if filtro_estado and filtro_estado in ESTADOS_MUESTRA:
         query = query.eq("estado", filtro_estado)
