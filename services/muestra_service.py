@@ -485,6 +485,26 @@ def get_muestras_por_campana(
     return query.execute().data or []
 
 
+def get_muestra_por_campana_punto(campana_id: str, punto_id: str) -> dict | None:
+    """Retorna la muestra más reciente de un punto en una campaña, o None."""
+    db = get_admin_client()
+    res = (
+        db.table("muestras")
+        .select(
+            "id, codigo, tipo_muestra, fecha_muestreo, hora_recoleccion, "
+            "estado, clima, caudal_estimado, nivel_agua, preservante, "
+            "temperatura_transporte, observaciones_campo, "
+            "tecnico_campo_id, punto_muestreo_id"
+        )
+        .eq("campana_id", campana_id)
+        .eq("punto_muestreo_id", punto_id)
+        .order("fecha_muestreo", desc=True)
+        .limit(1)
+        .execute()
+    )
+    return res.data[0] if res.data else None
+
+
 def get_muestra_detalle(muestra_id: str) -> dict:
     """Detalle completo de una muestra individual."""
     db = get_admin_client()
