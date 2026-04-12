@@ -307,11 +307,18 @@ def _fill_parametros(table, insitu: dict | None = None) -> None:
     cat_params = get_cat_params()
     columnas = dict(get_columnas_parametros())  # {codigo: label}
 
+    # Buscar categorías por coincidencia parcial (los nombres pueden variar)
+    def _find_cat(keyword: str) -> list[str]:
+        for cat_name, codigos in cat_params.items():
+            if keyword.lower() in cat_name.lower():
+                return codigos
+        return []
+
     # Preparar listas de nombres por categoría
-    campo_codigos = cat_params.get("Campo (In situ)", [])
+    campo_codigos = _find_cat("campo")
     campo = [columnas.get(c, c) for c in campo_codigos]
-    fisico = [columnas.get(c, c) for c in cat_params.get("Fisicoquímico", [])]
-    hidro = [columnas.get(c, c) for c in cat_params.get("Hidrobiológico", [])]
+    fisico = [columnas.get(c, c) for c in _find_cat("químic")]
+    hidro = [columnas.get(c, c) for c in _find_cat("biológic")]
 
     # Mapear códigos de campo a claves insitu para mostrar valores
     insitu_vals = insitu or {}
