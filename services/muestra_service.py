@@ -192,6 +192,7 @@ def crear_muestra(datos: dict) -> dict:
     # y se reintenta sin él
     try:
         res = db.table("muestras").insert(fila).execute()
+        _invalidar_cache()
         return res.data[0]
     except Exception:
         fila.pop("codigo_laboratorio", None)

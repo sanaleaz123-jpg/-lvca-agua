@@ -63,12 +63,19 @@ def upload_croquis(punto_id: str, file_bytes: bytes, content_type: str = "image/
     """Sube o reemplaza la imagen de croquis de un punto."""
     _ensure_bucket(BUCKET_CROQUIS)
     storage = _get_storage()
-    path = f"{punto_id}.jpg"
-    # Intentar eliminar la existente primero
-    try:
-        storage.from_(BUCKET_CROQUIS).remove([path])
-    except Exception:
-        pass
+    # Determinar extensión correcta según content_type
+    _ext_map = {
+        "image/jpeg": ".jpg", "image/png": ".png",
+        "image/gif": ".gif", "image/webp": ".webp",
+    }
+    ext = _ext_map.get(content_type, ".jpg")
+    path = f"{punto_id}{ext}"
+    # Intentar eliminar versiones anteriores (cualquier extensión)
+    for old_ext in _ext_map.values():
+        try:
+            storage.from_(BUCKET_CROQUIS).remove([f"{punto_id}{old_ext}"])
+        except Exception:
+            pass
     storage.from_(BUCKET_CROQUIS).upload(
         path,
         file_bytes,
@@ -80,23 +87,25 @@ def upload_croquis(punto_id: str, file_bytes: bytes, content_type: str = "image/
 def get_croquis_url(punto_id: str) -> Optional[str]:
     """Retorna la URL pública del croquis o None si no existe."""
     storage = _get_storage()
-    path = f"{punto_id}.jpg"
     try:
         files = storage.from_(BUCKET_CROQUIS).list(path="", options={"search": punto_id})
         for f in (files or []):
-            if f.get("name", "").startswith(punto_id):
-                return _public_url(BUCKET_CROQUIS, path)
+            name = f.get("name", "")
+            if name.startswith(punto_id):
+                return _public_url(BUCKET_CROQUIS, name)
     except Exception:
         pass
     return None
 
 
 def delete_croquis(punto_id: str) -> None:
-    """Elimina el croquis de un punto."""
-    try:
-        _get_storage().from_(BUCKET_CROQUIS).remove([f"{punto_id}.jpg"])
-    except Exception:
-        pass
+    """Elimina el croquis de un punto (cualquier extensión)."""
+    storage = _get_storage()
+    for ext in (".jpg", ".png", ".gif", ".webp"):
+        try:
+            storage.from_(BUCKET_CROQUIS).remove([f"{punto_id}{ext}"])
+        except Exception:
+            pass
 
 
 # ─────────────────────────────────────────────────────────────────────────────

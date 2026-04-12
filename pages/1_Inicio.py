@@ -319,7 +319,10 @@ def _render_mapa(puntos: list[dict]) -> None:
 
 @require_rol("visitante")
 def main() -> None:
-    sesion = st.session_state["sesion"]
+    sesion = st.session_state.get("sesion")
+    if not sesion:
+        st.error("Sesión expirada. Inicia sesión nuevamente.")
+        st.stop()
 
     st.title("Panel de Control LVCA")
     st.caption(

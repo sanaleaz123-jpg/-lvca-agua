@@ -179,11 +179,12 @@ def get_datos_cadena(campana_id: str) -> dict:
             .in_("muestra_id", muestra_ids)
             .execute()
         )
+        insitu_key_map = _get_insitu_map()
         for r in (i_res.data or []):
             mid = r["muestra_id"]
             if mid not in insitu_map:
                 insitu_map[mid] = {}
-            clave_cadena = _get_insitu_map().get(r["parametro"], r["parametro"])
+            clave_cadena = insitu_key_map.get(r["parametro"], r["parametro"])
             insitu_map[mid][clave_cadena] = r["valor"]
 
     # Enriquecer cada muestra con insitu

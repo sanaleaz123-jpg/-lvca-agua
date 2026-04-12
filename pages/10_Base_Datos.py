@@ -34,10 +34,10 @@ from services.punto_service import get_puntos
 
 def _es_admin() -> bool:
     """Verifica si el usuario actual tiene rol de administrador."""
-    user = st.session_state.get("usuario")
-    if not user:
+    sesion = st.session_state.get("sesion")
+    if not sesion:
         return False
-    return user.get("rol") in ("admin", "superadmin")
+    return getattr(sesion, "rol", None) == "administrador"
 
 
 def _excede_eca(valor, eca_id: str | None, param_codigo: str, limites: dict) -> bool:

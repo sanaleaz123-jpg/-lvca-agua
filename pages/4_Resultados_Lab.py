@@ -249,7 +249,10 @@ def _render_categoria(
 
 @require_rol("visualizador")
 def main() -> None:
-    sesion = st.session_state["sesion"]
+    sesion = st.session_state.get("sesion")
+    if not sesion:
+        st.error("Sesión expirada. Inicia sesión nuevamente.")
+        st.stop()
 
     st.title("Resultados de Laboratorio")
     st.caption("Ingreso y validación con semáforo ECA  ·  D.S. N° 004-2017-MINAM")
