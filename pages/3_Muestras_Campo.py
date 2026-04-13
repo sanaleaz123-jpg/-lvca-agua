@@ -1187,6 +1187,22 @@ def _render_ficha_campo() -> None:
     ]
     st.info(f"Se generarán **{len(muestras)}** fichas: {', '.join(puntos_nombres)}")
 
+    # ── Selección de parámetros para la ficha ────────────────────────────
+    with st.expander("Parámetros de laboratorio a incluir en la ficha", expanded=False):
+        st.caption("Solo los parámetros marcados aparecerán con ✓ en la ficha.")
+
+        params_ficha_lab = []
+        cols_per_row = 5
+        param_list = list(get_parametros_lab_cadena())
+        for i in range(0, len(param_list), cols_per_row):
+            cols = st.columns(cols_per_row)
+            for j, col in enumerate(cols):
+                idx = i + j
+                if idx < len(param_list):
+                    p = param_list[idx]
+                    if col.checkbox(p["nombre"], value=True, key=f"ficha_plab_{p['clave']}"):
+                        params_ficha_lab.append(p["codigo"])
+
     st.divider()
 
     if st.button(
@@ -1197,7 +1213,7 @@ def _render_ficha_campo() -> None:
     ):
         with st.spinner(f"Generando {len(muestras)} fichas..."):
             try:
-                docx_bytes = generar_docx_fichas(campana_id)
+                docx_bytes = generar_docx_fichas(campana_id, params_seleccionados=params_ficha_lab)
                 st.session_state["fichas_docx"] = docx_bytes
                 st.session_state["fichas_campana_id"] = campana_id
             except Exception as exc:

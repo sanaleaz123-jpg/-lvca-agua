@@ -284,19 +284,13 @@ def _add_cell_image(cell, img_bytes, width_cm=7):
 #   R27: Imagen izq (s10) | Imagen der (s11)
 #
 
-def _fill_parametros(table, insitu: dict | None = None) -> None:
+def _fill_parametros(table, insitu: dict | None = None, params_seleccionados: list[str] | None = None) -> None:
     """
     Llena las filas R16-R25 con los parámetros activos desde la BD.
-    Si se proporcionan datos insitu, muestra los valores medidos junto
-    a los parámetros de campo.
 
-    Estructura del template (10 filas disponibles):
-        R16–R21: 6 filas × 3 columnas de parámetros (campo, fisicoquímico, otro)
-        R22: fila separadora / header hidrobiológicos
-        R23–R25: 3 filas × 3 columnas
-
-    Cada fila tiene 6 celdas únicas: [nombre, check, nombre, check, nombre, check]
-    Se distribuyen los parámetros dinámicamente por categoría.
+    params_seleccionados: lista de códigos (ej: ["P019","P025"]) que deben
+        marcarse con "X". Los parámetros de campo (insitu) siempre se marcan.
+        Si es None, se marcan todos.
     """
     from services.parametro_registry import get_parametros_insitu as _get_insitu
 
@@ -323,11 +317,20 @@ def _fill_parametros(table, insitu: dict | None = None) -> None:
                 return codigos
         return []
 
-    # Preparar listas de nombres por categoría
+    # Preparar listas de (codigo, nombre) por categoría
     campo_codigos = _find_cat("campo")
-    campo = [columnas.get(c, c) for c in campo_codigos]
-    fisico = [columnas.get(c, c) for c in _find_cat("quimic")]
-    hidro = [columnas.get(c, c) for c in _find_cat("biologic")]
+    campo = [(c, columnas.get(c, c)) for c in campo_codigos]
+    fisico_codigos = _find_cat("quimic")
+    fisico = [(c, columnas.get(c, c)) for c in fisico_codigos]
+    hidro_codigos = _find_cat("biologic")
+    hidro = [(c, columnas.get(c, c)) for c in hidro_codigos]
+
+    # Set de códigos seleccionados (None = todos marcados)
+    sel = set(params_seleccionados) if params_seleccionados is not None else None
+
+    def _is_selected(codigo: str) -> bool:
+        """Retorna True si el parámetro debe marcarse con X."""
+        return sel is None or codigo in sel
 
     # Mapear códigos de campo a claves insitu para mostrar valores
     insitu_vals = insitu or {}
@@ -342,14 +345,14 @@ def _fill_parametros(table, insitu: dict | None = None) -> None:
 
     for i in range(n_rows_main):
         cells = uc(16 + i)
-        # Columna 1: Campo (con valor insitu si disponible)
+        # Columna 1: Campo (siempre marcado si existe)
         if i < len(campo):
-            codigo_campo = campo_codigos[i] if i < len(campo_codigos) else ""
-            clave_insitu = insitu_params.get(codigo_campo, "")
+            cod_c, nom_c = campo[i]
+            clave_insitu = insitu_params.get(cod_c, "")
             val_insitu = insitu_vals.get(clave_insitu)
-            label = campo[i]
+            label = nom_c
             if val_insitu is not None:
-                label = f"{campo[i]}: {val_insitu}"
+                label = f"{nom_c}: {val_insitu}"
             _set_cell(cells[0], label)
             _set_cell_centered(cells[1], "X")
         else:
@@ -357,15 +360,17 @@ def _fill_parametros(table, insitu: dict | None = None) -> None:
             _set_cell_centered(cells[1], "")
         # Columna 2: Fisicoquímico primera parte
         if i < len(fisico_col2):
-            _set_cell(cells[2], fisico_col2[i])
-            _set_cell_centered(cells[3], "X")
+            cod_f, nom_f = fisico_col2[i]
+            _set_cell(cells[2], nom_f)
+            _set_cell_centered(cells[3], "X" if _is_selected(cod_f) else "")
         else:
             _set_cell(cells[2], "")
             _set_cell_centered(cells[3], "")
         # Columna 3: Fisicoquímico segunda parte
         if i < len(fisico_col3):
-            _set_cell(cells[4], fisico_col3[i])
-            _set_cell_centered(cells[5], "X")
+            cod_f, nom_f = fisico_col3[i]
+            _set_cell(cells[4], nom_f)
+            _set_cell_centered(cells[5], "X" if _is_selected(cod_f) else "")
         else:
             _set_cell(cells[4], "")
             _set_cell_centered(cells[5], "")
@@ -377,8 +382,9 @@ def _fill_parametros(table, insitu: dict | None = None) -> None:
     cells_22 = uc(22)
     _set_cell(cells_22[0], "Parámetros hidrobiológicos:", bold=True)
     if fisico_restantes:
-        _set_cell(cells_22[1], fisico_restantes[0])
-        _set_cell_centered(cells_22[2], "X")
+        cod_f, nom_f = fisico_restantes[0]
+        _set_cell(cells_22[1], nom_f)
+        _set_cell_centered(cells_22[2], "X" if _is_selected(cod_f) else "")
     else:
         _set_cell(cells_22[1], "")
         _set_cell_centered(cells_22[2], "")
@@ -394,15 +400,17 @@ def _fill_parametros(table, insitu: dict | None = None) -> None:
         cells = uc(23 + i)
         # Columna 1: Hidrobiológico
         if i < len(hidro):
-            _set_cell(cells[0], hidro[i])
-            _set_cell_centered(cells[1], "X")
+            cod_h, nom_h = hidro[i]
+            _set_cell(cells[0], nom_h)
+            _set_cell_centered(cells[1], "X" if _is_selected(cod_h) else "")
         else:
             _set_cell(cells[0], "")
             _set_cell_centered(cells[1], "")
         # Columna 2: Fisicoquímicos restantes
         if i < len(fisico_extra):
-            _set_cell(cells[2], fisico_extra[i])
-            _set_cell_centered(cells[3], "X")
+            cod_f, nom_f = fisico_extra[i]
+            _set_cell(cells[2], nom_f)
+            _set_cell_centered(cells[3], "X" if _is_selected(cod_f) else "")
         else:
             _set_cell(cells[2], "")
             _set_cell_centered(cells[3], "")
@@ -411,7 +419,7 @@ def _fill_parametros(table, insitu: dict | None = None) -> None:
         _set_cell(cells[5], "")
 
 
-def _fill_ficha_table(table, datos: dict) -> None:
+def _fill_ficha_table(table, datos: dict, params_seleccionados: list[str] | None = None) -> None:
     """Llena una tabla del template con los datos de una ficha."""
     punto = datos["punto"]
     muestra = datos["muestra"]
@@ -465,7 +473,7 @@ def _fill_ficha_table(table, datos: dict) -> None:
     _set_cell(uc(13)[5], "X" if tipo in ("rio", "manantial", "otro") else "")
 
     # R16–R25: Parámetros de monitoreo — llenado programático con datos insitu
-    _fill_parametros(table, insitu=datos.get("insitu"))
+    _fill_parametros(table, insitu=datos.get("insitu"), params_seleccionados=params_seleccionados)
 
     # R27: Imágenes (croquis a la izquierda, foto de campo a la derecha)
     cells_27 = uc(27)
@@ -493,8 +501,13 @@ def _fill_ficha_table(table, datos: dict) -> None:
 # Generación DOCX — todas las fichas de una campaña en un solo documento
 # ─────────────────────────────────────────────────────────────────────────────
 
-def generar_docx_fichas(campana_id: str) -> bytes:
-    """Genera DOCX con todas las fichas de una campaña usando el template."""
+def generar_docx_fichas(campana_id: str, params_seleccionados: list[str] | None = None) -> bytes:
+    """
+    Genera DOCX con todas las fichas de una campaña usando el template.
+
+    params_seleccionados: lista de códigos de parámetros (ej: ["P019","P025",...])
+        que deben marcarse con "X". Si es None, se marcan todos.
+    """
     from docx import Document
     from docx.enum.text import WD_BREAK
 
@@ -519,7 +532,7 @@ def generar_docx_fichas(campana_id: str) -> bytes:
     clean_tbl = copy.deepcopy(template_table._tbl)
 
     # Llenar primera ficha
-    _fill_ficha_table(template_table, fichas[0])
+    _fill_ficha_table(template_table, fichas[0], params_seleccionados)
 
     # Fichas adicionales
     for ficha in fichas[1:]:
@@ -533,7 +546,7 @@ def generar_docx_fichas(campana_id: str) -> bytes:
         p_break._element.addnext(new_tbl)
 
         # Llenar la tabla clonada
-        _fill_ficha_table(doc.tables[-1], ficha)
+        _fill_ficha_table(doc.tables[-1], ficha, params_seleccionados)
 
     buffer = BytesIO()
     doc.save(buffer)
