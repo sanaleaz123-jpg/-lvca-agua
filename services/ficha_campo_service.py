@@ -307,18 +307,27 @@ def _fill_parametros(table, insitu: dict | None = None) -> None:
     cat_params = get_cat_params()
     columnas = dict(get_columnas_parametros())  # {codigo: label}
 
-    # Buscar categorías por coincidencia parcial (los nombres pueden variar)
+    # Buscar categorías por coincidencia parcial (sin depender de acentos)
+    import unicodedata
+
+    def _strip_accents(s: str) -> str:
+        return "".join(
+            c for c in unicodedata.normalize("NFD", s)
+            if unicodedata.category(c) != "Mn"
+        ).lower()
+
     def _find_cat(keyword: str) -> list[str]:
+        kw = _strip_accents(keyword)
         for cat_name, codigos in cat_params.items():
-            if keyword.lower() in cat_name.lower():
+            if kw in _strip_accents(cat_name):
                 return codigos
         return []
 
     # Preparar listas de nombres por categoría
     campo_codigos = _find_cat("campo")
     campo = [columnas.get(c, c) for c in campo_codigos]
-    fisico = [columnas.get(c, c) for c in _find_cat("químic")]
-    hidro = [columnas.get(c, c) for c in _find_cat("biológic")]
+    fisico = [columnas.get(c, c) for c in _find_cat("quimic")]
+    hidro = [columnas.get(c, c) for c in _find_cat("biologic")]
 
     # Mapear códigos de campo a claves insitu para mostrar valores
     insitu_vals = insitu or {}
