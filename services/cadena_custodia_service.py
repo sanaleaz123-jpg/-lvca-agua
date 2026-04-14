@@ -152,16 +152,26 @@ def get_datos_cadena(campana_id: str) -> dict:
     )
 
     # Muestras con punto (coordenadas UTM, cuenca, etc.)
+    _select_muestras = (
+        "id, codigo, fecha_muestreo, hora_recoleccion, tipo_muestra, "
+        "estado, preservante, observaciones_campo, "
+        "clima, caudal_estimado, nivel_agua, temperatura_transporte, "
+        "puntos_muestreo(codigo, nombre, tipo, cuenca, sistema_hidrico, "
+        "  utm_este, utm_norte, utm_zona, altitud_msnm, "
+        "  latitud, longitud)"
+    )
+    _depth_fields = (
+        ", modo_muestreo, profundidad_tipo, profundidad_valor, "
+        "grupo_profundidad, profundidad_total, profundidad_secchi"
+    )
+    try:
+        db.table("muestras").select("modo_muestreo").limit(1).execute()
+        _select_muestras += _depth_fields
+    except Exception:
+        pass
     m_res = (
         db.table("muestras")
-        .select(
-            "id, codigo, fecha_muestreo, hora_recoleccion, tipo_muestra, "
-            "estado, preservante, observaciones_campo, "
-            "clima, nivel_agua, temperatura_transporte, "
-            "puntos_muestreo(codigo, nombre, tipo, cuenca, sistema_hidrico, "
-            "  utm_este, utm_norte, utm_zona, altitud_msnm, "
-            "  latitud, longitud)"
-        )
+        .select(_select_muestras)
         .eq("campana_id", campana_id)
         .order("fecha_muestreo")
         .execute()
@@ -399,9 +409,16 @@ def generar_excel_cadena(campana_id: str, config: dict | None = None) -> bytes:
         _set(r1, 3, m.get("codigo", ""))
 
         # Punto de muestreo (F = col 6, merge F:P r1:r2)
+        # Agregar sufijo de profundidad si es muestra de columna
         nombre_punto = pt.get("nombre", "")
         codigo_punto = pt.get("codigo", "")
-        _set(r1, 6, f"{nombre_punto} /{codigo_punto}" if nombre_punto else "")
+        prof_tipo = m.get("profundidad_tipo")
+        prof_sufijo_map = {"S": " (S)", "M": " (M)", "F": " (F)"}
+        prof_sufijo = prof_sufijo_map.get(prof_tipo, "")
+        if nombre_punto:
+            _set(r1, 6, f"{nombre_punto} /{codigo_punto}{prof_sufijo}")
+        else:
+            _set(r1, 6, "")
 
         # Fecha (Q = col 17, merge Q:Q r1:r2)
         fecha_raw = m.get("fecha_muestreo", "")
@@ -450,14 +467,23 @@ def generar_excel_cadena(campana_id: str, config: dict | None = None) -> bytes:
                 _set(r1, col_field_start + i, str(val).replace(".", ","))
 
         # Observaciones (AV = col 48, posición fija del template)
-        # Auto-incluir clima, nivel y temp. transporte junto a las observaciones
+        # Auto-incluir clima, nivel, descarga, profundidad y temp. transporte
         obs_parts = []
         if m.get("clima"):
             obs_parts.append(f"Clima: {m['clima']}")
+        if m.get("caudal_estimado"):
+            obs_parts.append(f"Descarga: {m['caudal_estimado']}")
         if m.get("nivel_agua"):
             obs_parts.append(f"Nivel: {m['nivel_agua']}")
         if m.get("temperatura_transporte") is not None:
             obs_parts.append(f"T.transp: {m['temperatura_transporte']}°C")
+        # Datos de profundidad
+        if m.get("profundidad_total") is not None:
+            obs_parts.append(f"Prof.total: {m['profundidad_total']}m")
+        if m.get("profundidad_secchi") is not None:
+            obs_parts.append(f"Secchi: {m['profundidad_secchi']}m")
+        if m.get("profundidad_valor") is not None:
+            obs_parts.append(f"Prof.muestra: {m['profundidad_valor']}m")
         if m.get("observaciones_campo"):
             obs_parts.append(m["observaciones_campo"])
         obs = "; ".join(obs_parts)
