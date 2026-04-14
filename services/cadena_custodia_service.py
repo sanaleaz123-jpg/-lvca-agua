@@ -201,6 +201,24 @@ def get_datos_cadena(campana_id: str) -> dict:
     for m in muestras:
         m["insitu"] = insitu_map.get(m["id"], {})
 
+    # Inferir profundidad_tipo si no viene de la BD (migración 005 pendiente)
+    # Agrupar por punto: si hay 3 muestras del mismo punto, asignar S/M/F
+    _prof_labels = {0: "S", 1: "M", 2: "F"}
+    _prof_nombres = {"S": "Superficie", "M": "Medio", "F": "Fondo"}
+    muestras_por_punto: dict[str, list[dict]] = {}
+    for m in muestras:
+        pt_id = (m.get("puntos_muestreo") or {}).get("codigo", "")
+        muestras_por_punto.setdefault(pt_id, []).append(m)
+    for pt_id, ms in muestras_por_punto.items():
+        if len(ms) >= 3:
+            for i, m in enumerate(ms):
+                if not m.get("profundidad_tipo") and i < 3:
+                    m["profundidad_tipo"] = _prof_labels[i]
+                # Agregar label legible para observaciones
+                tp = m.get("profundidad_tipo")
+                if tp and tp in _prof_nombres:
+                    m["_prof_label"] = _prof_nombres[tp]
+
     # Lugar de monitoreo (del primer punto)
     lugar = ""
     cuenca = ""
@@ -484,6 +502,8 @@ def generar_excel_cadena(campana_id: str, config: dict | None = None) -> bytes:
             obs_parts.append(f"Secchi: {m['profundidad_secchi']}m")
         if m.get("profundidad_valor") is not None:
             obs_parts.append(f"Prof.muestra: {m['profundidad_valor']}m")
+        elif m.get("_prof_label"):
+            obs_parts.append(f"Prof: {m['_prof_label']}")
         if m.get("observaciones_campo"):
             obs_parts.append(m["observaciones_campo"])
         obs = "; ".join(obs_parts)
