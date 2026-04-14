@@ -188,6 +188,9 @@ def _crear_muestra_simple(datos: dict) -> dict:
 
     fila = _build_fila(datos, codigo)
     fila["modo_muestreo"] = datos.get("modo_muestreo", "superficial")
+    # Profundidad de muestreo para superficial
+    if datos.get("profundidad_valor") is not None:
+        fila["profundidad_valor"] = datos["profundidad_valor"]
 
     return _insert_muestra(db, fila)
 
