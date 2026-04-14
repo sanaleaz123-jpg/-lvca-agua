@@ -159,14 +159,21 @@ def get_datos_fichas_campana(campana_id: str) -> list[dict]:
                 insitu_map[mid] = {}
             insitu_map[mid][r["parametro"]] = r["valor"]
 
+    # Agrupar por punto (una ficha por punto, no por muestra)
+    # Para muestras de columna (S/M/F), tomar la primera como representativa
     fichas = []
+    puntos_vistos: set[str] = set()
     for muestra in (m_res.data or []):
         punto = muestra.get("puntos_muestreo") or {}
+        punto_id = punto.get("id", "")
+        if punto_id in puntos_vistos:
+            continue
+        puntos_vistos.add(punto_id)
+
         campana = muestra.get("campanas") or {}
         eca = punto.get("ecas") or {}
         datos_extra = _get_datos_punto(punto)
 
-        punto_id = punto.get("id", "")
         muestra_id = muestra.get("id", "")
         croquis_url = get_croquis_url(punto_id) if punto_id else None
         fotos = get_fotos_campo(muestra_id) if muestra_id else []
@@ -291,8 +298,8 @@ def _fill_parametros(table, insitu: dict | None = None, params_seleccionados: li
     params_seleccionados: lista de códigos (ej: ["P019","P025"]) que deben
         marcarse con "X". Los parámetros de campo (insitu) siempre se marcan.
         Si es None, se marcan todos.
+    insitu: ignorado (mantenido por compatibilidad de firma).
     """
-    from services.parametro_registry import get_parametros_insitu as _get_insitu
 
     def uc(idx):
         return _get_unique_cells(table.rows[idx])
@@ -332,10 +339,6 @@ def _fill_parametros(table, insitu: dict | None = None, params_seleccionados: li
         """Retorna True si el parámetro debe marcarse con X."""
         return sel is None or codigo in sel
 
-    # Mapear códigos de campo a claves insitu para mostrar valores
-    insitu_vals = insitu or {}
-    insitu_params = {p["codigo"]: p["clave"] for p in _get_insitu()}
-
     # ── R16–R21: 6 filas con 3 columnas ─────────────────────────────────
     n_rows_main = 6
 
@@ -345,15 +348,10 @@ def _fill_parametros(table, insitu: dict | None = None, params_seleccionados: li
 
     for i in range(n_rows_main):
         cells = uc(16 + i)
-        # Columna 1: Campo (siempre marcado si existe)
+        # Columna 1: Campo (siempre marcado si existe, solo nombre sin valores)
         if i < len(campo):
             cod_c, nom_c = campo[i]
-            clave_insitu = insitu_params.get(cod_c, "")
-            val_insitu = insitu_vals.get(clave_insitu)
-            label = nom_c
-            if val_insitu is not None:
-                label = f"{nom_c}: {val_insitu}"
-            _set_cell(cells[0], label)
+            _set_cell(cells[0], nom_c)
             _set_cell_centered(cells[1], "X")
         else:
             _set_cell(cells[0], "")

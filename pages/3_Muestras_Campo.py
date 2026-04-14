@@ -731,28 +731,101 @@ def _render_insitu_columna(
     equipo_nombre: str,
     n_serie: str,
 ) -> None:
-    """Renderiza tabs S/M/F para mediciones in situ de muestras de columna."""
-    tab_labels = []
+    """Tabla unificada con columnas de valor por profundidad (S/M/F)."""
+    # Cargar existentes para cada profundidad
+    datos_por_prof: list[tuple[dict, dict, str]] = []  # (muestra, existentes, tipo)
     for m in muestras_prof:
         tp = m.get("profundidad_tipo", "?")
-        prof_val = m.get("profundidad_valor", "")
-        label = f"{PROFUNDIDAD_LABELS.get(tp, tp)} ({prof_val} m)" if prof_val else PROFUNDIDAD_LABELS.get(tp, tp)
-        tab_labels.append(label)
+        mid = m["id"]
+        existentes_m = get_mediciones_insitu(mid)
+        datos_por_prof.append((m, existentes_m, tp))
 
-    tabs = st.tabs(tab_labels)
-    for i, (tab, m) in enumerate(zip(tabs, muestras_prof)):
-        with tab:
-            tp = m.get("profundidad_tipo", "?")
-            mid = m["id"]
-            existentes_m = get_mediciones_insitu(mid)
-            _render_insitu_single(
-                mid,
-                existentes_m,
-                limites,
-                equipo_nombre,
-                n_serie,
-                key_suffix=f"_{tp}",
+    # Construir headers con profundidad en metros
+    col_headers = ["**Parámetro**"]
+    for m, _, tp in datos_por_prof:
+        prof_val = m.get("profundidad_valor", "")
+        label = PROFUNDIDAD_LABELS.get(tp, tp)
+        if prof_val:
+            col_headers.append(f"**{label} ({prof_val} m)**")
+        else:
+            col_headers.append(f"**{label}**")
+    col_headers += ["**Unidad**", "**Lím. ECA**"]
+
+    n_prof = len(datos_por_prof)
+    col_widths = [2] + [2] * n_prof + [1, 1]
+    header_cols = st.columns(col_widths)
+    for i, h in enumerate(col_headers):
+        header_cols[i].markdown(h)
+
+    # Almacenar valores por profundidad
+    valores_por_prof: list[dict[str, float | None]] = [{} for _ in range(n_prof)]
+
+    for p in get_parametros_insitu():
+        clave = p["clave"]
+        lim = limites.get(clave, {})
+        lim_max = lim.get("valor_maximo")
+        lim_min = lim.get("valor_minimo")
+
+        cols = st.columns(col_widths)
+        cols[0].markdown(f"**{p['nombre']}**")
+
+        # Un input por profundidad
+        for j, (m, existentes_m, tp) in enumerate(datos_por_prof):
+            existente = existentes_m.get(clave, {})
+            val = cols[1 + j].number_input(
+                f"{p['nombre']} ({tp})",
+                value=existente.get("valor"),
+                format="%.4g",
+                label_visibility="collapsed",
+                key=f"insitu_{m['id'][:8]}_{tp}_{clave}",
             )
+            parsed = val if val != 0.0 or existente.get("valor") == 0.0 else None
+            if val == 0.0 and existente.get("valor") is None:
+                parsed = None
+            valores_por_prof[j][clave] = parsed
+
+        # Unidad
+        cols[1 + n_prof].caption(p["unidad"])
+
+        # Límite ECA
+        if lim_max is not None and lim_min is not None:
+            cols[2 + n_prof].caption(f"{lim_min} – {lim_max}")
+        elif lim_max is not None:
+            cols[2 + n_prof].caption(f"≤ {lim_max}")
+        elif lim_min is not None:
+            cols[2 + n_prof].caption(f"≥ {lim_min}")
+        else:
+            cols[2 + n_prof].caption("—")
+
+    st.divider()
+
+    if st.button("💾 Guardar mediciones in situ (3 profundidades)", type="primary", key="btn_insitu_col"):
+        total_ok = 0
+        total_err: list[str] = []
+        for j, (m, _, tp) in enumerate(datos_por_prof):
+            mediciones = [
+                {
+                    "parametro": p["clave"],
+                    "valor":     valores_por_prof[j][p["clave"]],
+                    "unidad":    p["unidad"],
+                }
+                for p in get_parametros_insitu()
+                if valores_por_prof[j].get(p["clave"]) is not None
+            ]
+            if mediciones:
+                ok, errores = registrar_insitu(m["id"], mediciones, equipo_nombre, n_serie)
+                total_ok += ok
+                total_err.extend(errores)
+
+        if total_err:
+            st.error(f"Guardados {total_ok} valores. Errores:")
+            for e in total_err:
+                st.caption(f"• {e}")
+        elif total_ok > 0:
+            st.success(f"{total_ok} medición(es) guardada(s) en {n_prof} profundidades.")
+            st.rerun()
+        else:
+            st.warning("Ingresa al menos un valor.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1374,12 +1447,18 @@ def _render_ficha_campo() -> None:
         st.info("No hay muestras en esta campaña.")
         return
 
-    # Resumen de puntos
-    puntos_nombres = [
-        (m.get("puntos_muestreo") or {}).get("nombre", m.get("codigo", ""))
-        for m in muestras
-    ]
-    st.info(f"Se generarán **{len(muestras)}** fichas: {', '.join(puntos_nombres)}")
+    # Resumen de puntos (deduplicar — 1 ficha por punto, no por muestra)
+    puntos_vistos: set[str] = set()
+    puntos_info: list[str] = []
+    for m in muestras:
+        pt = m.get("puntos_muestreo") or {}
+        pt_id = pt.get("id", m.get("codigo", ""))
+        if pt_id not in puntos_vistos:
+            puntos_vistos.add(pt_id)
+            pt_nombre = pt.get("nombre", m.get("codigo", ""))
+            pt_codigo = pt.get("codigo", "")
+            puntos_info.append(f"{pt_nombre} ({pt_codigo})" if pt_codigo else pt_nombre)
+    st.info(f"Se generarán **{len(puntos_info)}** fichas: {', '.join(puntos_info)}")
 
     # ── Selección de parámetros para la ficha ────────────────────────────
     with st.expander("Parámetros de laboratorio a incluir en la ficha", expanded=False):
