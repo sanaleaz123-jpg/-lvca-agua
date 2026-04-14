@@ -789,13 +789,31 @@ def actualizar_muestra(muestra_id: str, datos: dict) -> dict:
     if not campos:
         raise ValueError("No se proporcionaron campos para actualizar.")
 
-    res = (
-        db.table("muestras")
-        .update(campos)
-        .eq("id", muestra_id)
-        .execute()
-    )
-    return res.data[0] if res.data else {}
+    # Campos que requieren migración 005 — quitar si no existen
+    _campos_migr005 = {
+        "modo_muestreo", "profundidad_tipo", "profundidad_valor",
+        "grupo_profundidad", "profundidad_total", "profundidad_secchi",
+    }
+    try:
+        res = (
+            db.table("muestras")
+            .update(campos)
+            .eq("id", muestra_id)
+            .execute()
+        )
+        return res.data[0] if res.data else {}
+    except Exception:
+        # Quitar campos de migración 005 y reintentar
+        campos_limpio = {k: v for k, v in campos.items() if k not in _campos_migr005}
+        if not campos_limpio:
+            return {}
+        res = (
+            db.table("muestras")
+            .update(campos_limpio)
+            .eq("id", muestra_id)
+            .execute()
+        )
+        return res.data[0] if res.data else {}
 
 
 def eliminar_muestra(muestra_id: str) -> None:
