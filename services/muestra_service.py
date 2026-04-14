@@ -257,6 +257,30 @@ def _insert_muestra(db, fila: dict) -> dict:
         _invalidar_cache()
         return res.data[0]
     except Exception:
+        # Preservar datos de profundidad en observaciones antes de descartarlos
+        _depth_obs_parts = []
+        prof_tipo = fila.get("profundidad_tipo")
+        prof_valor = fila.get("profundidad_valor")
+        prof_total = fila.get("profundidad_total")
+        prof_secchi = fila.get("profundidad_secchi")
+        _prof_nombres = {"S": "Superficie", "M": "Medio", "F": "Fondo"}
+        if prof_tipo and prof_valor is not None:
+            _depth_obs_parts.append(
+                f"Prof: {_prof_nombres.get(prof_tipo, prof_tipo)} ({prof_valor}m)"
+            )
+        elif prof_valor is not None:
+            _depth_obs_parts.append(f"Prof: {prof_valor}m")
+        if prof_total is not None:
+            _depth_obs_parts.append(f"Prof.total: {prof_total}m")
+        if prof_secchi is not None:
+            _depth_obs_parts.append(f"Secchi: {prof_secchi}m")
+        if _depth_obs_parts:
+            existing_obs = fila.get("observaciones_campo") or ""
+            depth_str = "; ".join(_depth_obs_parts)
+            fila["observaciones_campo"] = (
+                f"{depth_str}; {existing_obs}" if existing_obs else depth_str
+            )
+
         # Quitar campos opcionales que pueden no existir
         for campo in campos_opcionales:
             fila.pop(campo, None)
