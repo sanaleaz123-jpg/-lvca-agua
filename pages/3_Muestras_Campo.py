@@ -268,9 +268,19 @@ def _render_registro() -> None:
                 tecnico_idx = i
                 break
 
-    # Índice del modo de muestreo
+    # ── Modo de muestreo (FUERA del form para que sea dinámico) ────────
     modos_muestreo = ["superficial", "columna"]
     modo_idx = modos_muestreo.index(def_modo) if def_modo in modos_muestreo else 0
+
+    st.markdown("**Modo de muestreo**")
+    modo_muestreo = st.radio(
+        "Tipo de muestreo",
+        modos_muestreo,
+        index=modo_idx,
+        format_func=lambda m: "Superficial" if m == "superficial" else "Columna de agua (Superficie / Medio / Fondo)",
+        horizontal=True,
+        key="reg_modo_muestreo",
+    )
 
     with st.form("form_muestra", clear_on_submit=False):
         # ── Tipo ─────────────────────────────────────────────────────────
@@ -303,25 +313,24 @@ def _render_registro() -> None:
                 tecnico_label = None
                 st.info("Sin técnicos registrados.")
 
-        # ── Modo de muestreo (profundidad) ──────────────────────────────
-        st.markdown("**Modo de muestreo**")
-        modo_muestreo = st.radio(
-            "Tipo de muestreo",
-            modos_muestreo,
-            index=modo_idx,
-            format_func=lambda m: "Superficial (0.20-0.30 m)" if m == "superficial" else "Columna de agua (Superficie / Medio / Fondo)",
-            horizontal=True,
-            key="reg_modo_muestreo",
-        )
-
-        # ── Campos de profundidad (solo si columna) ─────────────────────
+        # ── Campos de profundidad ───────────────────────────────────────
         prof_total_val = None
         prof_secchi_val = None
         prof_s_val = None
         prof_m_val = None
         prof_f_val = None
 
-        if modo_muestreo == "columna":
+        if modo_muestreo == "superficial":
+            # Solo 1 campo de profundidad para superficial
+            prof_s_val = st.number_input(
+                "Profundidad de muestreo (m)",
+                min_value=0.0, max_value=50.0, step=0.1,
+                value=float(def_profundidades.get("S", 0.3)),
+                key="reg_prof_sup",
+            )
+        else:
+            # Columna de agua: ecosonda, Secchi y 3 profundidades
+            st.markdown("**Profundidades**")
             st.caption("Ingrese las profundidades en metros para cada nivel de muestreo.")
             pt1, pt2 = st.columns(2)
             with pt1:
@@ -445,6 +454,9 @@ def _render_registro() -> None:
                 "M": prof_m_val,
                 "F": prof_f_val,
             }
+        else:
+            # Superficial: guardar profundidad de muestreo
+            datos["profundidad_valor"] = prof_s_val if prof_s_val else 0.3
 
         if es_edicion:
             # ── Actualizar muestra existente ─────────────────────────────
@@ -551,43 +563,61 @@ def _render_insitu() -> None:
         st.info("No hay muestras registradas en esta campaña.")
         return
 
-    # Construir opciones mostrando sufijo (S)/(M)/(F) para muestras de columna
-    opciones_m = {}
+    # Agrupar muestras por punto para detectar columna (3 muestras = columna)
+    muestras_por_punto: dict[str, list[dict]] = {}
     for m in muestras:
-        pt_name = (m.get("puntos_muestreo") or {}).get("nombre", "")
-        estado_label = ETIQUETA_ESTADO_MUESTRA.get(m.get("estado", ""), m.get("estado", ""))
-        prof_sufijo = ""
-        prof_tipo = m.get("profundidad_tipo")
-        if prof_tipo and prof_tipo in PROFUNDIDAD_SUFIJOS:
-            prof_sufijo = f" {PROFUNDIDAD_SUFIJOS[prof_tipo]}"
-        label = f"{m['codigo']}{prof_sufijo} — {pt_name} [{estado_label}]"
-        opciones_m[label] = m["id"]
+        pt = m.get("puntos_muestreo") or {}
+        pt_id = pt.get("id", "")
+        muestras_por_punto.setdefault(pt_id, []).append(m)
 
-    label_m = st.selectbox("Muestra", list(opciones_m.keys()), key="insitu_muestra")
-    muestra_id = opciones_m[label_m]
+    # Construir opciones: seleccionar por punto
+    opciones_punto_insitu: dict[str, str] = {}
+    for pt_id, ms in muestras_por_punto.items():
+        pt = (ms[0].get("puntos_muestreo") or {})
+        pt_name = pt.get("nombre", "")
+        pt_code = pt.get("codigo", "")
+        n_muestras = len(ms)
+        codigos = ", ".join(m["codigo"] for m in ms)
+        if n_muestras >= 3:
+            label = f"{pt_code} — {pt_name} ({n_muestras} muestras: {codigos})"
+        else:
+            label = f"{ms[0]['codigo']} — {pt_name}"
+        opciones_punto_insitu[label] = pt_id
 
-    # Información del punto y campaña para contexto
-    muestra_sel = next((m for m in muestras if m["id"] == muestra_id), {})
+    label_punto = st.selectbox("Punto de muestreo", list(opciones_punto_insitu.keys()), key="insitu_punto")
+    punto_id_sel = opciones_punto_insitu[label_punto]
+    muestras_punto = muestras_por_punto[punto_id_sel]
+
+    # Determinar si es columna (3+ muestras del mismo punto) o superficial
+    es_columna = len(muestras_punto) >= 3
+    # También detectar por campo modo_muestreo o grupo_profundidad
+    if not es_columna:
+        es_columna = any(
+            m.get("modo_muestreo") == "columna" or m.get("grupo_profundidad")
+            for m in muestras_punto
+        )
+
+    # Muestra principal (primera del grupo)
+    muestra_sel = muestras_punto[0]
+    muestra_id = muestra_sel["id"]
     punto_info = muestra_sel.get("puntos_muestreo") or {}
 
-    # Detectar si es muestra de columna — agrupar las 3 profundidades
-    es_columna = muestra_sel.get("modo_muestreo") == "columna"
-    grupo_prof = muestra_sel.get("grupo_profundidad")
-    muestras_prof: list[dict] = []
-    if es_columna and grupo_prof:
-        # Buscar las 3 muestras del grupo en el listado ya cargado
-        for m in muestras:
-            if m.get("grupo_profundidad") == grupo_prof:
-                muestras_prof.append(m)
-        muestras_prof.sort(key=lambda x: {"S": 0, "M": 1, "F": 2}.get(x.get("profundidad_tipo", ""), 9))
-        if muestras_prof:
-            st.info(
-                f"Muestra de columna — "
-                f"Prof. total: {muestras_prof[0].get('profundidad_total', '—')} m | "
-                f"Secchi: {muestras_prof[0].get('profundidad_secchi', '—')} m"
-            )
+    if es_columna:
+        # Ordenar por profundidad_tipo si existe, sino por código
+        def _sort_prof(m):
+            tp = m.get("profundidad_tipo", "")
+            return {"S": 0, "M": 1, "F": 2}.get(tp, 9)
+        muestras_punto.sort(key=_sort_prof)
+        # Mostrar info
+        prof_total = muestras_punto[0].get("profundidad_total", "—")
+        prof_secchi = muestras_punto[0].get("profundidad_secchi", "—")
+        st.info(
+            f"Muestreo en columna de agua — "
+            f"Prof. total: {prof_total} m | Secchi: {prof_secchi} m | "
+            f"{len(muestras_punto)} muestras"
+        )
 
-    # Cargar datos existentes y límites ECA (de la muestra seleccionada)
+    # Cargar datos existentes y límites ECA (de la muestra principal)
     existentes = get_mediciones_insitu(muestra_id)
     limites = get_limites_insitu(muestra_id)
 
@@ -638,9 +668,9 @@ def _render_insitu() -> None:
     st.divider()
 
     # ── Determinar muestras a llenar in situ ────────────────────────────
-    # Si es columna con grupo, mostrar tabs S/M/F. Si no, una sola.
-    if es_columna and len(muestras_prof) > 1:
-        _render_insitu_columna(muestras_prof, limites, equipo_nombre, n_serie)
+    # Si es columna (3+ muestras del mismo punto), tabla unificada. Si no, single.
+    if es_columna and len(muestras_punto) >= 3:
+        _render_insitu_columna(muestras_punto, limites, equipo_nombre, n_serie)
     else:
         _render_insitu_single(muestra_id, existentes, limites, equipo_nombre, n_serie)
 
@@ -732,10 +762,14 @@ def _render_insitu_columna(
     n_serie: str,
 ) -> None:
     """Tabla unificada con columnas de valor por profundidad (S/M/F)."""
+    # Limitar a 3 muestras (S/M/F)
+    muestras_prof = muestras_prof[:3]
+    # Asignar tipo S/M/F si no viene de la BD
+    fallback_tipos = ["S", "M", "F"]
     # Cargar existentes para cada profundidad
     datos_por_prof: list[tuple[dict, dict, str]] = []  # (muestra, existentes, tipo)
-    for m in muestras_prof:
-        tp = m.get("profundidad_tipo", "?")
+    for i, m in enumerate(muestras_prof):
+        tp = m.get("profundidad_tipo") or (fallback_tipos[i] if i < 3 else "?")
         mid = m["id"]
         existentes_m = get_mediciones_insitu(mid)
         datos_por_prof.append((m, existentes_m, tp))
