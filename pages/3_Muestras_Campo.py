@@ -684,6 +684,12 @@ def _render_insitu_single(
     key_suffix: str = "",
 ) -> None:
     """Renderiza el formulario in situ para una sola muestra."""
+    n_guardados = len(existentes)
+    if n_guardados > 0:
+        st.caption(f"*{n_guardados} parámetro(s) guardado(s)*")
+    else:
+        st.caption("*Sin datos guardados*")
+
     cols_header = st.columns([2, 2, 1, 1, 1])
     cols_header[0].markdown("**Parámetro**")
     cols_header[1].markdown("**Valor**")
@@ -774,22 +780,35 @@ def _render_insitu_columna(
         existentes_m = get_mediciones_insitu(mid)
         datos_por_prof.append((m, existentes_m, tp))
 
-    # Construir headers con profundidad en metros
+    # Construir headers con profundidad en metros + indicador guardado
     col_headers = ["**Parámetro**"]
-    for m, _, tp in datos_por_prof:
+    guardado_labels = [""]
+    for m, existentes_m, tp in datos_por_prof:
         prof_val = m.get("profundidad_valor", "")
         label = PROFUNDIDAD_LABELS.get(tp, tp)
         if prof_val:
             col_headers.append(f"**{label} ({prof_val} m)**")
         else:
             col_headers.append(f"**{label}**")
+        # Check si tiene datos guardados
+        n_guardados = len(existentes_m)
+        if n_guardados > 0:
+            guardado_labels.append(f"*{n_guardados} param. guardados*")
+        else:
+            guardado_labels.append("*Sin datos*")
     col_headers += ["**Unidad**", "**Lím. ECA**"]
+    guardado_labels += ["", ""]
 
     n_prof = len(datos_por_prof)
     col_widths = [2] + [2] * n_prof + [1, 1]
     header_cols = st.columns(col_widths)
     for i, h in enumerate(col_headers):
         header_cols[i].markdown(h)
+    # Fila de estado guardado
+    status_cols = st.columns(col_widths)
+    for i, gl in enumerate(guardado_labels):
+        if gl:
+            status_cols[i].caption(gl)
 
     # Almacenar valores por profundidad
     valores_por_prof: list[dict[str, float | None]] = [{} for _ in range(n_prof)]
