@@ -500,7 +500,9 @@ def generar_excel_cadena(campana_id: str, config: dict | None = None) -> bytes:
             obs_parts.append(f"Prof.total: {m['profundidad_total']}m")
         if m.get("profundidad_secchi") is not None:
             obs_parts.append(f"Secchi: {m['profundidad_secchi']}m")
-        if m.get("profundidad_valor") is not None:
+        if m.get("profundidad_valor") is not None and m.get("_prof_label"):
+            obs_parts.append(f"Prof: {m['_prof_label']} ({m['profundidad_valor']}m)")
+        elif m.get("profundidad_valor") is not None:
             obs_parts.append(f"Prof.muestra: {m['profundidad_valor']}m")
         elif m.get("_prof_label"):
             obs_parts.append(f"Prof: {m['_prof_label']}")
