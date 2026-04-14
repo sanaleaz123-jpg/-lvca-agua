@@ -28,6 +28,8 @@ from services.muestra_service import (
     ETIQUETA_ESTADO_MUESTRA,
     ETIQUETA_TIPO,
     OPCIONES_CLIMA,
+    PROFUNDIDAD_LABELS,
+    PROFUNDIDAD_SUFIJOS,
     TIPOS_MUESTRA,
     TRANSICIONES_MUESTRA,
     TransicionMuestraError,
@@ -39,6 +41,7 @@ from services.muestra_service import (
     get_campanas_en_campo,
     get_limites_insitu,
     get_mediciones_insitu,
+    get_muestras_grupo,
     get_muestras_por_campana,
     get_muestra_por_campana_punto,
     get_puntos_de_campana_activa,
@@ -191,7 +194,16 @@ def _render_registro() -> None:
     es_edicion = existente is not None
 
     if es_edicion:
-        st.info(f"Muestra existente: **{existente['codigo']}** — Editando datos.")
+        modo_exist = existente.get("modo_muestreo", "superficial") or "superficial"
+        if modo_exist == "columna" and existente.get("_grupo_muestras"):
+            grupo = existente["_grupo_muestras"]
+            codigos_prof = ", ".join(
+                f"{grupo[t]['codigo']} {PROFUNDIDAD_SUFIJOS[t]}"
+                for t in ("S", "M", "F") if t in grupo
+            )
+            st.info(f"Muestras existentes (columna): **{codigos_prof}** — Editando datos.")
+        else:
+            st.info(f"Muestra existente: **{existente['codigo']}** — Editando datos.")
         # Preparar valores por defecto desde la muestra existente
         def_tipo = existente.get("tipo_muestra", "simple")
         try:
@@ -213,6 +225,17 @@ def _render_registro() -> None:
             def_temp = float(def_temp)
         def_obs = existente.get("observaciones_campo") or ""
         def_tecnico_id = existente.get("tecnico_campo_id")
+        def_modo = modo_exist
+        def_prof_total = existente.get("profundidad_total")
+        def_prof_secchi = existente.get("profundidad_secchi")
+        # Profundidades individuales
+        def_profundidades = {}
+        if existente.get("_grupo_muestras"):
+            for tp, info in existente["_grupo_muestras"].items():
+                def_profundidades[tp] = info.get("valor")
+        elif existente.get("profundidad_valor") is not None:
+            tp = existente.get("profundidad_tipo", "S")
+            def_profundidades[tp] = existente["profundidad_valor"]
     else:
         def_tipo = "simple"
         def_fecha = date.today()
@@ -225,6 +248,10 @@ def _render_registro() -> None:
         def_temp = 4.0
         def_obs = ""
         def_tecnico_id = None
+        def_modo = "superficial"
+        def_prof_total = None
+        def_prof_secchi = None
+        def_profundidades = {}
 
     # Índice del tipo de muestra
     tipo_idx = TIPOS_MUESTRA.index(def_tipo) if def_tipo in TIPOS_MUESTRA else 0
@@ -240,6 +267,10 @@ def _render_registro() -> None:
             if tid == def_tecnico_id:
                 tecnico_idx = i
                 break
+
+    # Índice del modo de muestreo
+    modos_muestreo = ["superficial", "columna"]
+    modo_idx = modos_muestreo.index(def_modo) if def_modo in modos_muestreo else 0
 
     with st.form("form_muestra", clear_on_submit=False):
         # ── Tipo ─────────────────────────────────────────────────────────
@@ -272,15 +303,63 @@ def _render_registro() -> None:
                 tecnico_label = None
                 st.info("Sin técnicos registrados.")
 
-        # ── Condiciones de campo ─────────────────────────────────────────
-        st.markdown("**Condiciones de campo**")
-        cc1, cc2, cc3 = st.columns(3)
-        with cc1:
-            clima = st.selectbox("Clima", lista_clima, index=clima_idx)
-        with cc2:
-            caudal = st.text_input("Caudal estimado", value=def_caudal, placeholder="Ej: 2.5 m3/s")
-        with cc3:
-            nivel = st.text_input("Nivel del embalse", value=def_nivel, placeholder="Ej: normal / alto / bajo")
+        # ── Modo de muestreo (profundidad) ──────────────────────────────
+        st.markdown("**Modo de muestreo**")
+        modo_muestreo = st.radio(
+            "Tipo de muestreo",
+            modos_muestreo,
+            index=modo_idx,
+            format_func=lambda m: "Superficial (0.20-0.30 m)" if m == "superficial" else "Columna de agua (Superficie / Medio / Fondo)",
+            horizontal=True,
+            key="reg_modo_muestreo",
+        )
+
+        # ── Campos de profundidad (solo si columna) ─────────────────────
+        prof_total_val = None
+        prof_secchi_val = None
+        prof_s_val = None
+        prof_m_val = None
+        prof_f_val = None
+
+        if modo_muestreo == "columna":
+            st.caption("Ingrese las profundidades en metros para cada nivel de muestreo.")
+            pt1, pt2 = st.columns(2)
+            with pt1:
+                prof_total_val = st.number_input(
+                    "Profundidad total (ecosonda) (m)",
+                    min_value=0.0, max_value=500.0, step=0.1,
+                    value=float(def_prof_total) if def_prof_total else 0.0,
+                    key="reg_prof_total",
+                )
+            with pt2:
+                prof_secchi_val = st.number_input(
+                    "Profundidad Secchi (disco) (m)",
+                    min_value=0.0, max_value=100.0, step=0.1,
+                    value=float(def_prof_secchi) if def_prof_secchi else 0.0,
+                    key="reg_prof_secchi",
+                )
+            ps1, ps2, ps3 = st.columns(3)
+            with ps1:
+                prof_s_val = st.number_input(
+                    "Prof. Superficie (m)",
+                    min_value=0.0, max_value=500.0, step=0.1,
+                    value=float(def_profundidades.get("S", 0.3)),
+                    key="reg_prof_s",
+                )
+            with ps2:
+                prof_m_val = st.number_input(
+                    "Prof. Medio (m)",
+                    min_value=0.0, max_value=500.0, step=0.1,
+                    value=float(def_profundidades.get("M", 0.0)),
+                    key="reg_prof_m",
+                )
+            with ps3:
+                prof_f_val = st.number_input(
+                    "Prof. Fondo (m)",
+                    min_value=0.0, max_value=500.0, step=0.1,
+                    value=float(def_profundidades.get("F", 0.0)),
+                    key="reg_prof_f",
+                )
 
         # ── Transporte ───────────────────────────────────────────────────
         temp_transporte = st.number_input(
@@ -291,8 +370,18 @@ def _render_registro() -> None:
             step=0.5,
         )
 
+        # ── Observaciones (incluye clima, descarga, nivel) ──────────────
+        st.markdown("**Observaciones de campo**")
+        oc1, oc2, oc3 = st.columns(3)
+        with oc1:
+            clima = st.selectbox("Clima", lista_clima, index=clima_idx)
+        with oc2:
+            caudal = st.text_input("Descarga", value=def_caudal, placeholder="Ej: 2.5 m3/s")
+        with oc3:
+            nivel = st.text_input("Nivel del embalse", value=def_nivel, placeholder="Ej: normal / alto / bajo")
+
         observaciones = st.text_area(
-            "Observaciones de campo",
+            "Observaciones adicionales",
             value=def_obs,
             placeholder="Notas sobre condiciones, accesibilidad, olores, color del agua...",
         )
@@ -307,6 +396,8 @@ def _render_registro() -> None:
         )
 
         btn_label = "Actualizar muestra" if es_edicion else "Registrar muestra"
+        if modo_muestreo == "columna" and not es_edicion:
+            btn_label = "Registrar 3 muestras (S/M/F)"
         submitted = st.form_submit_button(
             btn_label,
             type="primary",
@@ -318,6 +409,15 @@ def _render_registro() -> None:
         if fotos_subidas and len(fotos_subidas) > 5:
             st.error("Máximo 5 fotos por muestra.")
             return
+
+        # Validar profundidades si columna
+        if modo_muestreo == "columna":
+            if not prof_total_val or prof_total_val <= 0:
+                st.error("Ingrese la profundidad total (ecosonda).")
+                return
+            if not prof_f_val or prof_f_val <= 0:
+                st.error("Ingrese la profundidad de fondo.")
+                return
 
         tecnico_id = opciones_tecnicos[tecnico_label] if tecnico_label else None
 
@@ -333,13 +433,31 @@ def _render_registro() -> None:
             "nivel_agua":              nivel.strip() or None,
             "temperatura_transporte":  temp_transporte,
             "observaciones_campo":     observaciones.strip() or None,
+            "modo_muestreo":           modo_muestreo,
         }
+
+        # Campos de profundidad
+        if modo_muestreo == "columna":
+            datos["profundidad_total"] = prof_total_val if prof_total_val else None
+            datos["profundidad_secchi"] = prof_secchi_val if prof_secchi_val else None
+            datos["profundidades"] = {
+                "S": prof_s_val,
+                "M": prof_m_val,
+                "F": prof_f_val,
+            }
 
         if es_edicion:
             # ── Actualizar muestra existente ─────────────────────────────
             with st.spinner("Actualizando muestra..."):
                 try:
                     actualizar_muestra(existente["id"], datos)
+                    # Si es columna, actualizar las 3 muestras del grupo
+                    if modo_muestreo == "columna" and existente.get("_grupo_muestras"):
+                        for tp, info in existente["_grupo_muestras"].items():
+                            actualizar_muestra(info["id"], {
+                                **datos,
+                                "profundidad_valor": datos.get("profundidades", {}).get(tp),
+                            })
                 except Exception as exc:
                     st.error(f"Error al actualizar: {exc}")
                     return
@@ -348,19 +466,16 @@ def _render_registro() -> None:
             muestra_codigo = existente["codigo"]
         else:
             # ── Crear nueva muestra ──────────────────────────────────────
-            # Advertencias de condiciones vacías (no bloquean)
-            if not clima:
-                st.warning("El campo 'Clima' está vacío. Se recomienda completarlo.")
-            if not nivel.strip():
-                st.warning("El campo 'Nivel del embalse' está vacío. Se recomienda completarlo.")
-
             with st.spinner("Registrando muestra..."):
                 try:
                     creada = crear_muestra(datos)
                 except Exception as exc:
                     st.error(f"Error al crear la muestra: {exc}")
                     return
-            st.success(f"Muestra **{creada['codigo']}** registrada exitosamente.")
+            if modo_muestreo == "columna":
+                st.success(f"3 muestras de columna registradas. Primera: **{creada['codigo']}**")
+            else:
+                st.success(f"Muestra **{creada['codigo']}** registrada exitosamente.")
             muestra_id_fotos = creada["id"]
             muestra_codigo = creada["codigo"]
 
@@ -436,11 +551,18 @@ def _render_insitu() -> None:
         st.info("No hay muestras registradas en esta campaña.")
         return
 
-    opciones_m = {
-        f"{m['codigo']} — {(m.get('puntos_muestreo') or {}).get('nombre', '')} "
-        f"[{ETIQUETA_ESTADO_MUESTRA.get(m.get('estado',''), m.get('estado',''))}]": m["id"]
-        for m in muestras
-    }
+    # Construir opciones mostrando sufijo (S)/(M)/(F) para muestras de columna
+    opciones_m = {}
+    for m in muestras:
+        pt_name = (m.get("puntos_muestreo") or {}).get("nombre", "")
+        estado_label = ETIQUETA_ESTADO_MUESTRA.get(m.get("estado", ""), m.get("estado", ""))
+        prof_sufijo = ""
+        prof_tipo = m.get("profundidad_tipo")
+        if prof_tipo and prof_tipo in PROFUNDIDAD_SUFIJOS:
+            prof_sufijo = f" {PROFUNDIDAD_SUFIJOS[prof_tipo]}"
+        label = f"{m['codigo']}{prof_sufijo} — {pt_name} [{estado_label}]"
+        opciones_m[label] = m["id"]
+
     label_m = st.selectbox("Muestra", list(opciones_m.keys()), key="insitu_muestra")
     muestra_id = opciones_m[label_m]
 
@@ -448,7 +570,24 @@ def _render_insitu() -> None:
     muestra_sel = next((m for m in muestras if m["id"] == muestra_id), {})
     punto_info = muestra_sel.get("puntos_muestreo") or {}
 
-    # Cargar datos existentes y límites ECA
+    # Detectar si es muestra de columna — agrupar las 3 profundidades
+    es_columna = muestra_sel.get("modo_muestreo") == "columna"
+    grupo_prof = muestra_sel.get("grupo_profundidad")
+    muestras_prof: list[dict] = []
+    if es_columna and grupo_prof:
+        # Buscar las 3 muestras del grupo en el listado ya cargado
+        for m in muestras:
+            if m.get("grupo_profundidad") == grupo_prof:
+                muestras_prof.append(m)
+        muestras_prof.sort(key=lambda x: {"S": 0, "M": 1, "F": 2}.get(x.get("profundidad_tipo", ""), 9))
+        if muestras_prof:
+            st.info(
+                f"Muestra de columna — "
+                f"Prof. total: {muestras_prof[0].get('profundidad_total', '—')} m | "
+                f"Secchi: {muestras_prof[0].get('profundidad_secchi', '—')} m"
+            )
+
+    # Cargar datos existentes y límites ECA (de la muestra seleccionada)
     existentes = get_mediciones_insitu(muestra_id)
     limites = get_limites_insitu(muestra_id)
 
@@ -494,12 +633,27 @@ def _render_insitu() -> None:
     equipo_nombre = ", ".join(equipos_sel) if equipos_sel else ""
     n_serie = ""
     if equipos_sel:
-        # Extraer código del primer equipo seleccionado como referencia
         n_serie = equipos_sel[0].split(" — ")[0] if " — " in equipos_sel[0] else ""
 
     st.divider()
 
-    # Tabla de parámetros con semáforo — KEYS scoped por muestra_id
+    # ── Determinar muestras a llenar in situ ────────────────────────────
+    # Si es columna con grupo, mostrar tabs S/M/F. Si no, una sola.
+    if es_columna and len(muestras_prof) > 1:
+        _render_insitu_columna(muestras_prof, limites, equipo_nombre, n_serie)
+    else:
+        _render_insitu_single(muestra_id, existentes, limites, equipo_nombre, n_serie)
+
+
+def _render_insitu_single(
+    muestra_id: str,
+    existentes: dict,
+    limites: dict,
+    equipo_nombre: str,
+    n_serie: str,
+    key_suffix: str = "",
+) -> None:
+    """Renderiza el formulario in situ para una sola muestra."""
     cols_header = st.columns([2, 2, 1, 1, 1])
     cols_header[0].markdown("**Parámetro**")
     cols_header[1].markdown("**Valor**")
@@ -508,8 +662,7 @@ def _render_insitu() -> None:
     cols_header[4].markdown("**Estado**")
 
     valores: dict[str, float | None] = {}
-    # Use muestra_id prefix in keys to prevent stale values across campaigns/muestras
-    key_prefix = muestra_id[:8]
+    key_prefix = f"{muestra_id[:8]}{key_suffix}"
 
     for p in get_parametros_insitu():
         clave = p["clave"]
@@ -548,7 +701,7 @@ def _render_insitu() -> None:
 
     st.divider()
 
-    if st.button("💾 Guardar mediciones in situ", type="primary", key="btn_insitu"):
+    if st.button("💾 Guardar mediciones in situ", type="primary", key=f"btn_insitu{key_suffix}"):
         mediciones = [
             {
                 "parametro": p["clave"],
@@ -572,6 +725,36 @@ def _render_insitu() -> None:
                 st.rerun()
 
 
+def _render_insitu_columna(
+    muestras_prof: list[dict],
+    limites: dict,
+    equipo_nombre: str,
+    n_serie: str,
+) -> None:
+    """Renderiza tabs S/M/F para mediciones in situ de muestras de columna."""
+    tab_labels = []
+    for m in muestras_prof:
+        tp = m.get("profundidad_tipo", "?")
+        prof_val = m.get("profundidad_valor", "")
+        label = f"{PROFUNDIDAD_LABELS.get(tp, tp)} ({prof_val} m)" if prof_val else PROFUNDIDAD_LABELS.get(tp, tp)
+        tab_labels.append(label)
+
+    tabs = st.tabs(tab_labels)
+    for i, (tab, m) in enumerate(zip(tabs, muestras_prof)):
+        with tab:
+            tp = m.get("profundidad_tipo", "?")
+            mid = m["id"]
+            existentes_m = get_mediciones_insitu(mid)
+            _render_insitu_single(
+                mid,
+                existentes_m,
+                limites,
+                equipo_nombre,
+                n_serie,
+                key_suffix=f"_{tp}",
+            )
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Tab 3 — Cadena de custodia
 # ─────────────────────────────────────────────────────────────────────────────
@@ -593,8 +776,10 @@ def _render_custodia() -> None:
     for m in muestras:
         pt = m.get("puntos_muestreo") or {}
         tec = m.get("tecnico") or {}
+        prof_tipo = m.get("profundidad_tipo")
+        prof_suf = f" {PROFUNDIDAD_SUFIJOS[prof_tipo]}" if prof_tipo in PROFUNDIDAD_SUFIJOS else ""
         filas.append({
-            "Código":  m["codigo"],
+            "Código":  f"{m['codigo']}{prof_suf}",
             "Punto":   f"{pt.get('codigo','')} — {pt.get('nombre','')}",
             "Fecha":   str(m.get("fecha_muestreo", ""))[:10],
             "Tipo":    ETIQUETA_TIPO.get(m.get("tipo_muestra", ""), ""),
@@ -607,10 +792,12 @@ def _render_custodia() -> None:
     st.divider()
 
     # ── Selector de muestra para acciones ────────────────────────────────
-    opciones_m = {
-        f"{m['codigo']} — [{ETIQUETA_ESTADO_MUESTRA.get(m.get('estado',''), '')}]": m
-        for m in muestras
-    }
+    opciones_m = {}
+    for m in muestras:
+        prof_tipo = m.get("profundidad_tipo")
+        prof_suf = f" {PROFUNDIDAD_SUFIJOS[prof_tipo]}" if prof_tipo in PROFUNDIDAD_SUFIJOS else ""
+        label = f"{m['codigo']}{prof_suf} — [{ETIQUETA_ESTADO_MUESTRA.get(m.get('estado',''), '')}]"
+        opciones_m[label] = m
     label_sel = st.selectbox(
         "Seleccionar muestra para acción",
         list(opciones_m.keys()),
@@ -717,14 +904,21 @@ def _render_listado() -> None:
     filas = []
     for m in muestras:
         pt = m.get("puntos_muestreo") or {}
+        prof_tipo = m.get("profundidad_tipo")
+        prof_label = PROFUNDIDAD_SUFIJOS.get(prof_tipo, "") if prof_tipo else ""
+        modo = m.get("modo_muestreo", "superficial") or "superficial"
+        prof_col = ""
+        if modo == "columna" and prof_tipo:
+            prof_val = m.get("profundidad_valor", "")
+            prof_col = f"{PROFUNDIDAD_LABELS.get(prof_tipo, prof_tipo)} ({prof_val} m)" if prof_val else PROFUNDIDAD_LABELS.get(prof_tipo, "")
         filas.append({
-            "Código":   m["codigo"],
-            "Punto":    f"{pt.get('codigo','')} — {pt.get('nombre','')}",
-            "Fecha":    str(m.get("fecha_muestreo", ""))[:10],
-            "Hora":     m.get("hora_recoleccion", "—"),
-            "Tipo":     ETIQUETA_TIPO.get(m.get("tipo_muestra", ""), ""),
-            "Estado":   ETIQUETA_ESTADO_MUESTRA.get(m.get("estado", ""), m.get("estado", "")),
-            "Clima":    m.get("clima") or "—",
+            "Código":       f"{m['codigo']} {prof_label}".strip(),
+            "Punto":        f"{pt.get('codigo','')} — {pt.get('nombre','')}",
+            "Profundidad":  prof_col or "Superficial",
+            "Fecha":        str(m.get("fecha_muestreo", ""))[:10],
+            "Hora":         m.get("hora_recoleccion", "—"),
+            "Tipo":         ETIQUETA_TIPO.get(m.get("tipo_muestra", ""), ""),
+            "Estado":       ETIQUETA_ESTADO_MUESTRA.get(m.get("estado", ""), m.get("estado", "")),
         })
 
     st.dataframe(pd.DataFrame(filas), use_container_width=True, hide_index=True)

@@ -20,6 +20,7 @@ Funciones públicas:
 from __future__ import annotations
 
 import json
+import uuid
 from datetime import datetime
 from io import BytesIO
 from typing import Optional
@@ -29,6 +30,10 @@ from services.parametro_registry import (
     get_parametros_insitu,
     get_campo_a_parametro_map,
 )
+
+# Etiquetas de profundidad
+PROFUNDIDAD_LABELS = {"S": "Superficie", "M": "Medio", "F": "Fondo"}
+PROFUNDIDAD_SUFIJOS = {"S": "(S)", "M": "(M)", "F": "(F)"}
 
 
 def _invalidar_cache() -> None:
@@ -161,13 +166,59 @@ def crear_muestra(datos: dict) -> dict:
         campana_id, punto_muestreo_id, tipo_muestra,
         fecha_muestreo (str ISO), hora_recoleccion (str HH:MM),
         tecnico_campo_id, clima, caudal_estimado, nivel_agua,
-        preservante, temperatura_transporte, observaciones_campo
+        preservante, temperatura_transporte, observaciones_campo,
+        modo_muestreo ('superficial' | 'columna'),
+        profundidad_total, profundidad_secchi,
+        profundidades: {S: valor_m, M: valor_m, F: valor_m}  (solo columna)
 
-    Retorna el dict de la muestra creada.
+    Retorna el dict de la muestra creada (primera si columna).
     """
+    modo = datos.get("modo_muestreo", "superficial")
+
+    if modo == "columna":
+        return _crear_muestras_columna(datos)
+
+    return _crear_muestra_simple(datos)
+
+
+def _crear_muestra_simple(datos: dict) -> dict:
+    """Crea una sola muestra (superficial o normal)."""
     db = get_admin_client()
     codigo = _generar_codigo_muestra(db)
 
+    fila = _build_fila(datos, codigo)
+    fila["modo_muestreo"] = datos.get("modo_muestreo", "superficial")
+
+    return _insert_muestra(db, fila)
+
+
+def _crear_muestras_columna(datos: dict) -> dict:
+    """Crea 3 muestras vinculadas (S, M, F) para muestreo en columna de agua."""
+    db = get_admin_client()
+    grupo_id = str(uuid.uuid4())
+    profundidades = datos.get("profundidades", {})
+
+    primera = None
+    for tipo_prof in ("S", "M", "F"):
+        codigo = _generar_codigo_muestra(db)
+        fila = _build_fila(datos, codigo)
+        fila["modo_muestreo"] = "columna"
+        fila["profundidad_tipo"] = tipo_prof
+        fila["profundidad_valor"] = profundidades.get(tipo_prof)
+        fila["grupo_profundidad"] = grupo_id
+        fila["profundidad_total"] = datos.get("profundidad_total")
+        fila["profundidad_secchi"] = datos.get("profundidad_secchi")
+
+        created = _insert_muestra(db, fila)
+        if primera is None:
+            primera = created
+
+    _invalidar_cache()
+    return primera
+
+
+def _build_fila(datos: dict, codigo: str) -> dict:
+    """Construye el dict base para insertar una muestra."""
     fila = {
         "codigo":                  codigo,
         "campana_id":              datos["campana_id"],
@@ -184,18 +235,28 @@ def crear_muestra(datos: dict) -> dict:
         "observaciones_campo":     datos.get("observaciones_campo") or None,
         "estado":                  "recolectada",
     }
-    # codigo_laboratorio: optional, unique per sample (requiere migración 004)
     cod_lab = datos.get("codigo_laboratorio")
     if cod_lab and isinstance(cod_lab, str) and cod_lab.strip():
         fila["codigo_laboratorio"] = cod_lab.strip()
-    # Si la columna no existe aún, el insert con ese campo fallará
-    # y se reintenta sin él
+    return fila
+
+
+def _insert_muestra(db, fila: dict) -> dict:
+    """Inserta una muestra, con fallback si columnas nuevas no existen."""
+    # Campos que requieren migraciones (pueden no existir)
+    campos_opcionales = [
+        "codigo_laboratorio", "modo_muestreo", "profundidad_tipo",
+        "profundidad_valor", "grupo_profundidad",
+        "profundidad_total", "profundidad_secchi",
+    ]
     try:
         res = db.table("muestras").insert(fila).execute()
         _invalidar_cache()
         return res.data[0]
     except Exception:
-        fila.pop("codigo_laboratorio", None)
+        # Quitar campos opcionales que pueden no existir
+        for campo in campos_opcionales:
+            fila.pop(campo, None)
 
     res = db.table("muestras").insert(fila).execute()
     _invalidar_cache()
@@ -462,6 +523,10 @@ def get_muestras_por_campana(
         "puntos_muestreo(id, codigo, nombre), "
         "tecnico:usuarios!tecnico_campo_id(nombre, apellido)"
     )
+    _depth_fields = (
+        ", modo_muestreo, profundidad_tipo, profundidad_valor, "
+        "grupo_profundidad, profundidad_total, profundidad_secchi"
+    )
 
     # Detectar si codigo_laboratorio existe (test con query separada)
     try:
@@ -469,6 +534,13 @@ def get_muestras_por_campana(
         select_fields = _select_con_lab
     except Exception:
         select_fields = _select_base
+
+    # Intentar agregar campos de profundidad
+    try:
+        db.table("muestras").select("modo_muestreo").limit(1).execute()
+        select_fields += _depth_fields
+    except Exception:
+        pass
 
     query = (
         db.table("muestras")
@@ -486,23 +558,74 @@ def get_muestras_por_campana(
 
 
 def get_muestra_por_campana_punto(campana_id: str, punto_id: str) -> dict | None:
-    """Retorna la muestra más reciente de un punto en una campaña, o None."""
+    """Retorna la muestra más reciente de un punto en una campaña, o None.
+    Para muestras de columna, retorna la primera (S) del grupo."""
+    db = get_admin_client()
+    _select = (
+        "id, codigo, tipo_muestra, fecha_muestreo, hora_recoleccion, "
+        "estado, clima, caudal_estimado, nivel_agua, preservante, "
+        "temperatura_transporte, observaciones_campo, "
+        "tecnico_campo_id, punto_muestreo_id"
+    )
+    # Intentar con campos de profundidad
+    try:
+        res = (
+            db.table("muestras")
+            .select(
+                _select + ", modo_muestreo, profundidad_tipo, profundidad_valor, "
+                "grupo_profundidad, profundidad_total, profundidad_secchi"
+            )
+            .eq("campana_id", campana_id)
+            .eq("punto_muestreo_id", punto_id)
+            .order("fecha_muestreo", desc=True)
+            .execute()
+        )
+        datos = res.data or []
+    except Exception:
+        res = (
+            db.table("muestras")
+            .select(_select)
+            .eq("campana_id", campana_id)
+            .eq("punto_muestreo_id", punto_id)
+            .order("fecha_muestreo", desc=True)
+            .limit(1)
+            .execute()
+        )
+        return res.data[0] if res.data else None
+
+    if not datos:
+        return None
+
+    # Si la primera muestra es de columna, retornar con las 3 profundidades
+    primera = datos[0]
+    grupo = primera.get("grupo_profundidad")
+    if grupo and primera.get("modo_muestreo") == "columna":
+        # Agrupar las 3 muestras del mismo grupo
+        grupo_muestras = [d for d in datos if d.get("grupo_profundidad") == grupo]
+        profundidades = {}
+        for gm in grupo_muestras:
+            tp = gm.get("profundidad_tipo")
+            if tp:
+                profundidades[tp] = {
+                    "id": gm["id"],
+                    "codigo": gm["codigo"],
+                    "valor": gm.get("profundidad_valor"),
+                }
+        primera["_grupo_muestras"] = profundidades
+    return primera
+
+
+def get_muestras_grupo(grupo_profundidad: str) -> list[dict]:
+    """Retorna las muestras de un grupo de profundidad (S, M, F)."""
     db = get_admin_client()
     res = (
         db.table("muestras")
-        .select(
-            "id, codigo, tipo_muestra, fecha_muestreo, hora_recoleccion, "
-            "estado, clima, caudal_estimado, nivel_agua, preservante, "
-            "temperatura_transporte, observaciones_campo, "
-            "tecnico_campo_id, punto_muestreo_id"
-        )
-        .eq("campana_id", campana_id)
-        .eq("punto_muestreo_id", punto_id)
-        .order("fecha_muestreo", desc=True)
-        .limit(1)
+        .select("id, codigo, profundidad_tipo, profundidad_valor")
+        .eq("grupo_profundidad", grupo_profundidad)
+        .order("profundidad_tipo")
         .execute()
     )
-    return res.data[0] if res.data else None
+    return res.data or []
 
 
 def get_muestra_detalle(muestra_id: str) -> dict:
@@ -652,7 +775,10 @@ def actualizar_muestra(muestra_id: str, datos: dict) -> dict:
         if key in datos:
             campos[key] = datos[key] or None
 
-    campos_num = ("caudal_estimado", "nivel_agua", "temperatura_transporte")
+    campos_num = (
+        "caudal_estimado", "nivel_agua", "temperatura_transporte",
+        "profundidad_valor", "profundidad_total", "profundidad_secchi",
+    )
     for key in campos_num:
         if key in datos:
             campos[key] = datos[key] if datos[key] is not None else None

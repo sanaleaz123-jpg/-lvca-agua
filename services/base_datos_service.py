@@ -56,6 +56,13 @@ def get_datos_consolidados(
         "puntos_muestreo(codigo, nombre, cuenca, tipo, eca_id, "
         "ecas(id, codigo, nombre))"
     )
+    # Campos de profundidad (migración 005)
+    _depth_extra = ""
+    try:
+        db.table("muestras").select("profundidad_tipo").limit(1).execute()
+        _depth_extra = ", modo_muestreo, profundidad_tipo, profundidad_valor"
+    except Exception:
+        pass
     try:
         q_muestras = (
             db.table("muestras")
@@ -63,7 +70,7 @@ def get_datos_consolidados(
                 "id, codigo, codigo_laboratorio, fecha_muestreo, hora_recoleccion, "
                 "campana_id, punto_muestreo_id, clima, nivel_agua, temperatura_transporte, "
                 "puntos_muestreo(codigo, nombre, cuenca, tipo, eca_id, "
-                "ecas(id, codigo, nombre))"
+                "ecas(id, codigo, nombre))" + _depth_extra
             )
             .order("fecha_muestreo", desc=True)
             .limit(5000)
@@ -135,9 +142,14 @@ def get_datos_consolidados(
         punto = m.get("puntos_muestreo") or {}
         eca = punto.get("ecas") or {}
 
+        # Sufijo de profundidad para muestras de columna
+        prof_tipo = m.get("profundidad_tipo")
+        prof_suf_map = {"S": " (S)", "M": " (M)", "F": " (F)"}
+        prof_suf = prof_suf_map.get(prof_tipo, "")
+
         fila = {
             "muestra_id": m["id"],
-            "codigo_muestra": m.get("codigo", ""),
+            "codigo_muestra": m.get("codigo", "") + prof_suf,
             "codigo_laboratorio": m.get("codigo_laboratorio", ""),
             "punto_codigo": punto.get("codigo", ""),
             "punto_nombre": punto.get("nombre", ""),
