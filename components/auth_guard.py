@@ -78,20 +78,11 @@ def _render_sidebar() -> None:
     aplicar_estilos()
 
     with st.sidebar:
-        # Header
+        # Header con logo
+        st.image("imagenes/logo_lvca.png", width=80)
         st.markdown(
-            """
-            <div style="text-align:center; padding:8px 0 4px 0;">
-                <span style="font-size:1.5rem;">💧</span>
-                <span style="font-size:1.3rem; font-weight:700; color:#ffffff !important;
-                      margin-left:4px; vertical-align:middle;">LVCA</span>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            "<p style='text-align:center; font-size:0.72rem; color:#8bbf8b !important; "
-            "margin:0; padding-bottom:8px;'>AUTODEMA</p>",
+            "<p style='font-size:0.72rem; color:#8bbf8b !important; "
+            "margin:0; padding-bottom:4px;'>AUTODEMA</p>",
             unsafe_allow_html=True,
         )
         st.divider()

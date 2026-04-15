@@ -97,20 +97,21 @@ def _pantalla_login() -> None:
     with col_centro:
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # Logo / cabecera
+        # Logos institucionales
+        logo_l, logo_r = st.columns([1, 1])
+        with logo_l:
+            st.image("imagenes/autodema_logo.png", width=120)
+        with logo_r:
+            st.image("imagenes/logo_lvca.png", width=120)
+
+        # Texto cabecera
         st.markdown(
             f"""
-            <div style="text-align:center; margin-bottom:2rem;">
-                <div style="display:inline-flex; align-items:center; justify-content:center;
-                     width:72px; height:72px; border-radius:18px;
-                     background:linear-gradient(135deg, #1b6b35, #0a9396);
-                     margin-bottom:12px; box-shadow:0 4px 18px rgba(27,107,53,0.3);">
-                    <span style="font-size:2rem; filter:brightness(2);">💧</span>
-                </div>
-                <h1 style="font-size:2rem; margin:0; color:#1b6b35; font-weight:700;">
-                    LVCA
+            <div style="text-align:center; margin-bottom:1.5rem; margin-top:8px;">
+                <h1 style="font-size:1.8rem; margin:0; color:#1b6b35; font-weight:700;">
+                    Plataforma LVCA
                 </h1>
-                <p style="color:#5f7161; margin:4px 0 0 0; font-size:0.9rem;">
+                <p style="color:#5f7161; margin:4px 0 0 0; font-size:0.85rem;">
                     Laboratorio de Vigilancia de la Calidad del Agua
                 </p>
                 <p style="color:#e8870e; font-size:0.8rem; font-weight:600; margin:4px 0 0 0;">
@@ -169,20 +170,11 @@ def _sidebar(sesion: SesionUsuario) -> None:
     aplicar_estilos()
 
     with st.sidebar:
-        # Header
+        # Header con logo
+        st.image("imagenes/logo_lvca.png", width=80)
         st.markdown(
-            """
-            <div style="text-align:center; padding:8px 0 4px 0;">
-                <span style="font-size:1.5rem;">💧</span>
-                <span style="font-size:1.3rem; font-weight:700; color:#ffffff !important;
-                      margin-left:4px; vertical-align:middle;">LVCA</span>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            f"<p style='text-align:center; font-size:0.72rem; color:#8bbf8b !important; "
-            f"margin:0; padding-bottom:8px;'>{APP_ENTIDAD}</p>",
+            f"<p style='font-size:0.72rem; color:#8bbf8b !important; "
+            f"margin:0; padding-bottom:4px;'>{APP_ENTIDAD}</p>",
             unsafe_allow_html=True,
         )
         st.divider()
