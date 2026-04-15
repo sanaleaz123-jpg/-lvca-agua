@@ -16,6 +16,7 @@ import pandas as pd
 import streamlit as st
 
 from components.auth_guard import require_rol
+from components.ui_styles import aplicar_estilos, page_header
 from services.punto_service import (
     get_puntos,
     get_punto,
@@ -529,8 +530,8 @@ def _render_mapa() -> None:
 
 @require_rol("administrador")
 def main() -> None:
-    st.title("Puntos de Muestreo")
-    st.caption("Gestión de puntos de monitoreo — Cuenca Chili-Quilca / AUTODEMA")
+    aplicar_estilos()
+    page_header("Puntos de Muestreo", "Gestion de puntos de monitoreo — Cuenca Chili-Quilca")
 
     tab_lista, tab_nuevo, tab_mapa = st.tabs([
         "Listado de puntos",

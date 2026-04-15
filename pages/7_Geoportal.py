@@ -19,6 +19,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from components.auth_guard import require_rol
+from components.ui_styles import aplicar_estilos, page_header
 from services.mapa_service import (
     get_comparativa_eca_punto,
     get_datos_mensuales_parametro,
@@ -802,8 +803,8 @@ def _render_ultimos_resultados(punto: dict, cat: str = "") -> None:
 
 @require_rol("visitante")
 def main() -> None:
-    st.title("Geoportal — Monitoreo de Calidad de Agua")
-    st.caption("Cuenca Chili-Quilca · D.S. N° 004-2017-MINAM")
+    aplicar_estilos()
+    page_header("Geoportal", "Monitoreo de Calidad de Agua — Cuenca Chili-Quilca")
 
     try:
         import folium

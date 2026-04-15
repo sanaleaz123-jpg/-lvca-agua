@@ -27,6 +27,7 @@ from typing import Callable
 import streamlit as st
 
 from services.auth_service import Rol, ROL_JERARQUIA
+from components.ui_styles import aplicar_estilos, badge_rol
 
 # Mensajes por rol requerido
 _MENSAJES: dict[Rol, str] = {
@@ -35,51 +36,98 @@ _MENSAJES: dict[Rol, str] = {
     "visitante":     "Debes iniciar sesión para continuar.",
 }
 
-# Páginas con etiquetas corregidas (con ñ/tildes) para el sidebar
+# Páginas agrupadas por sección
 _PAGINAS_NAV = [
-    ("🏠 Inicio",               "pages/1_Inicio.py",            "visitante"),
-    ("📅 Campañas",             "pages/2_Campanas.py",           "administrador"),
-    ("🧪 Muestras de campo",    "pages/3_Muestras_Campo.py",     "administrador"),
-    ("🔬 Resultados de lab",    "pages/4_Resultados_Lab.py",     "visualizador"),
-    ("📋 Parámetros / ECAs",    "pages/5_Parametros.py",         "administrador"),
-    ("📍 Puntos de muestreo",   "pages/6_Puntos_Muestreo.py",   "administrador"),
-    ("🗺️ Geoportal",            "pages/7_Geoportal.py",          "visitante"),
-    ("📄 Informes",             "pages/8_Informes.py",           "visualizador"),
-    ("⚙️ Administración",       "pages/9_Administracion.py",     "administrador"),
-    ("📊 Base Datos",           "pages/10_Base_Datos.py",        "visualizador"),
+    ("Inicio",              "pages/1_Inicio.py",            "visitante",      "principal"),
+    ("Campañas",            "pages/2_Campanas.py",           "administrador", "campo"),
+    ("Muestras de campo",   "pages/3_Muestras_Campo.py",     "administrador", "campo"),
+    ("Resultados de lab",   "pages/4_Resultados_Lab.py",     "visualizador",  "datos"),
+    ("Base de Datos",       "pages/10_Base_Datos.py",        "visualizador",  "datos"),
+    ("Informes",            "pages/8_Informes.py",           "visualizador",  "datos"),
+    ("Geoportal",           "pages/7_Geoportal.py",          "visitante",     "visualizacion"),
+    ("Parámetros / ECAs",   "pages/5_Parametros.py",         "administrador", "config"),
+    ("Puntos de muestreo",  "pages/6_Puntos_Muestreo.py",   "administrador", "config"),
+    ("Administración",      "pages/9_Administracion.py",     "administrador", "config"),
 ]
+
+_SECCION_LABELS = {
+    "principal":     "INICIO",
+    "campo":         "TRABAJO DE CAMPO",
+    "datos":         "DATOS Y REPORTES",
+    "visualizacion": "VISUALIZACIÓN",
+    "config":        "CONFIGURACIÓN",
+}
+
+_SECCION_ICONOS = {
+    "principal":     "🏠",
+    "campo":         "🧪",
+    "datos":         "📊",
+    "visualizacion": "🗺️",
+    "config":        "⚙️",
+}
 
 _ROL_NIVEL = {"administrador": 3, "visualizador": 2, "visitante": 1}
 
 
 def _render_sidebar() -> None:
-    """Renderiza el sidebar con navegación personalizada (etiquetas con ñ/tildes)."""
+    """Renderiza el sidebar con navegación agrupada por secciones."""
     sesion = st.session_state.get("sesion")
     if not sesion:
         return
 
-    # Ocultar la navegación nativa de Streamlit (basada en nombres de archivo)
-    st.markdown(
-        "<style>[data-testid='stSidebarNav']{display:none}</style>",
-        unsafe_allow_html=True,
-    )
+    aplicar_estilos()
 
     with st.sidebar:
-        st.markdown("## 💧 LVCA")
-        st.caption("AUTODEMA")
+        # Header
+        st.markdown(
+            """
+            <div style="text-align:center; padding:8px 0 4px 0;">
+                <span style="font-size:1.5rem;">💧</span>
+                <span style="font-size:1.3rem; font-weight:700; color:#ffffff !important;
+                      margin-left:4px; vertical-align:middle;">LVCA</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<p style='text-align:center; font-size:0.72rem; color:#8ba4c4 !important; "
+            "margin:0; padding-bottom:8px;'>AUTODEMA</p>",
+            unsafe_allow_html=True,
+        )
         st.divider()
 
-        st.markdown(f"**{sesion.nombre_completo}**")
-        st.caption(f"Rol: {sesion.rol.capitalize()}")
+        # Info del usuario
+        st.markdown(
+            f"<p style='font-weight:600; font-size:0.9rem; margin-bottom:2px; "
+            f"color:#ffffff !important;'>{sesion.nombre_completo}</p>",
+            unsafe_allow_html=True,
+        )
+        badge_rol(sesion.rol)
         st.divider()
 
+        # Navegación agrupada
         nivel_usuario = _ROL_NIVEL.get(sesion.rol, 1)
-        for label, ruta, rol_minimo in _PAGINAS_NAV:
-            if nivel_usuario >= _ROL_NIVEL.get(rol_minimo, 1):
-                st.page_link(ruta, label=label)
+        secciones_vistas: set[str] = set()
+
+        for label, ruta, rol_minimo, seccion in _PAGINAS_NAV:
+            if nivel_usuario < _ROL_NIVEL.get(rol_minimo, 1):
+                continue
+
+            if seccion not in secciones_vistas:
+                secciones_vistas.add(seccion)
+                icono = _SECCION_ICONOS.get(seccion, "")
+                sec_label = _SECCION_LABELS.get(seccion, "")
+                st.markdown(
+                    f"<p style='font-size:0.65rem; font-weight:700; color:#8ba4c4 !important; "
+                    f"text-transform:uppercase; letter-spacing:1px; margin:12px 0 4px 4px; "
+                    f"padding:0;'>{icono} {sec_label}</p>",
+                    unsafe_allow_html=True,
+                )
+
+            st.page_link(ruta, label=label)
 
         st.divider()
-        if st.button("🚪 Cerrar sesión", use_container_width=True, key="btn_logout_guard"):
+        if st.button("Cerrar sesión", use_container_width=True, key="btn_logout_guard", icon="🚪"):
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
             st.rerun()

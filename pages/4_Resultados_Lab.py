@@ -20,6 +20,7 @@ import pandas as pd
 import streamlit as st
 
 from components.auth_guard import require_rol
+from components.ui_styles import aplicar_estilos, page_header
 from services.parametro_registry import clasificar_categoria
 from services.resultado_service import (
     get_campanas,
@@ -255,8 +256,8 @@ def main() -> None:
         st.error("Sesión expirada. Inicia sesión nuevamente.")
         st.stop()
 
-    st.title("Resultados de Laboratorio")
-    st.caption("Ingreso y validación con semáforo ECA  ·  D.S. N° 004-2017-MINAM")
+    aplicar_estilos()
+    page_header("Resultados de Laboratorio", "Ingreso y validacion con semaforo ECA &middot; D.S. N° 004-2017-MINAM")
 
     # ── Selección en cascada ─────────────────────────────────────────────────
     with st.expander("📋 Seleccionar muestra", expanded=True):

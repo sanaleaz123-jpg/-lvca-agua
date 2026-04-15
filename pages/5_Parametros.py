@@ -16,6 +16,7 @@ import pandas as pd
 import streamlit as st
 
 from components.auth_guard import require_rol
+from components.ui_styles import aplicar_estilos, page_header
 from services.parametro_service import (
     get_parametros,
     get_parametro,
@@ -594,8 +595,8 @@ def _render_valores_eca() -> None:
 
 @require_rol("administrador")
 def main() -> None:
-    st.title("Parámetros y ECAs")
-    st.caption("Gestión de parámetros de calidad de agua y estándares ambientales — AUTODEMA")
+    aplicar_estilos()
+    page_header("Parametros y ECAs", "Gestion de parametros de calidad de agua y estandares ambientales")
 
     tab_lista, tab_nuevo, tab_eca = st.tabs([
         "Listado de parámetros",

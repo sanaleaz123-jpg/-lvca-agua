@@ -17,6 +17,7 @@ import pandas as pd
 import streamlit as st
 
 from components.auth_guard import require_rol
+from components.ui_styles import aplicar_estilos, page_header
 from services.informe_service import (
     get_resumen_campana,
     get_resumen_punto,
@@ -280,8 +281,8 @@ def _render_informe_punto() -> None:
 
 @require_rol("visualizador")
 def main() -> None:
-    st.title("Informes")
-    st.caption("Generación de informes y exportación de datos — AUTODEMA / LVCA")
+    aplicar_estilos()
+    page_header("Informes", "Generacion de informes y exportacion de datos")
 
     tab_campana, tab_punto = st.tabs([
         "Informe por campaña",
