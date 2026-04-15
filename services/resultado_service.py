@@ -186,26 +186,13 @@ def get_datos_muestra(muestra_id: str) -> dict:
         .order("codigo")
         .execute()
     )
+    from services.parametro_registry import clasificar_categoria
     _CATEGORIAS_EXCLUIDAS = {"Plaguicidas", "Microbiologico"}
-    _CODIGOS_CAMPO = {f"P{i:03d}" for i in range(1, 19)}
-    # Normalización de nombres de categoría DB → interno corto
-    _NORM = {
-        "Parámetros de Campo": "Campo",
-        "Parámetros Físico-Químicos (Inorgánicos / Orgánicos)": "Fisicoquimico",
-        "Parámetros Hidrobiológicos": "Hidrobiologico",
-        "Metales": "Fisicoquimico",
-        "Campo": "Campo",
-        "Fisicoquimico": "Fisicoquimico",
-        "Hidrobiologico": "Hidrobiologico",
-    }
     par_data = []
     for p in (par_res.data or []):
-        cat_raw = (p.get("categorias_parametro") or {}).get("nombre", "")
-        cat_nombre = _NORM.get(cat_raw, cat_raw)
-        if cat_nombre in _CATEGORIAS_EXCLUIDAS or cat_raw in _CATEGORIAS_EXCLUIDAS:
+        cat_nombre = clasificar_categoria(p)
+        if cat_nombre in _CATEGORIAS_EXCLUIDAS:
             continue
-        if p.get("codigo") in _CODIGOS_CAMPO:
-            cat_nombre = "Campo"
         if p.get("categorias_parametro"):
             p["categorias_parametro"] = {"nombre": cat_nombre}
         par_data.append(p)
