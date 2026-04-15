@@ -2,8 +2,10 @@
 components/ui_styles.py
 Sistema de estilos globales para la plataforma LVCA.
 
-Provee CSS unificado, helpers de tarjetas KPI, encabezados de página
-y componentes visuales reutilizables.
+Paleta institucional:
+    - Verde AUTODEMA/PEIMS: sidebar, headers, elementos principales
+    - Naranja/ambar LVCA: acentos, highlights, botones primarios
+    - Teal/turquesa LVCA: elementos secundarios, info, links
 """
 
 from __future__ import annotations
@@ -12,23 +14,31 @@ import streamlit as st
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Paleta de colores
+# Paleta de colores institucional
 # ─────────────────────────────────────────────────────────────────────────────
 
 COLORS = {
-    "primary":    "#0e6ba8",
-    "primary_light": "#e8f4fd",
-    "secondary":  "#0a9396",
-    "accent":     "#ee9b00",
-    "success":    "#2d6a4f",
-    "danger":     "#e63946",
-    "warning":    "#f4a261",
-    "info":       "#457b9d",
-    "text":       "#1d3557",
-    "text_light": "#6c757d",
-    "bg_card":    "#ffffff",
-    "bg_subtle":  "#f8f9fa",
-    "border":     "#e0e4e8",
+    # Verde AUTODEMA/PEIMS
+    "primary":       "#1b6b35",
+    "primary_dark":  "#0d3f1e",
+    "primary_light": "#e8f5e9",
+    # Naranja/ambar LVCA
+    "accent":        "#e8870e",
+    "accent_light":  "#fef3e2",
+    "accent_dark":   "#c56d00",
+    # Teal LVCA
+    "secondary":     "#0a9396",
+    "secondary_light": "#e0f7f7",
+    # Semaforo
+    "success":       "#2e7d32",
+    "danger":        "#c62828",
+    "warning":       "#ef8c00",
+    # Neutros
+    "text":          "#1a2e1a",
+    "text_light":    "#5f7161",
+    "bg_card":       "#ffffff",
+    "bg_subtle":     "#f5f7f5",
+    "border":        "#d5ddd5",
 }
 
 
@@ -38,12 +48,12 @@ COLORS = {
 
 _GLOBAL_CSS = """
 <style>
-/* ── Tipografía general ─────────────────────────────────────────────────── */
+/* ── Sidebar — verde AUTODEMA oscuro ───────────────────────────────────── */
 [data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #0e1f3d 0%, #132d5e 100%);
+    background: linear-gradient(180deg, #0d3f1e 0%, #145228 50%, #1b6b35 100%);
 }
 [data-testid="stSidebar"] * {
-    color: #e0e8f0 !important;
+    color: #d4e8d4 !important;
 }
 [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h2 {
     color: #ffffff !important;
@@ -55,12 +65,12 @@ _GLOBAL_CSS = """
 [data-testid="stSidebar"] button {
     background: rgba(255,255,255,0.08) !important;
     border: 1px solid rgba(255,255,255,0.15) !important;
-    color: #e0e8f0 !important;
+    color: #d4e8d4 !important;
     transition: all 0.2s ease;
 }
 [data-testid="stSidebar"] button:hover {
-    background: rgba(255,255,255,0.18) !important;
-    border-color: rgba(255,255,255,0.3) !important;
+    background: rgba(232,135,14,0.2) !important;
+    border-color: rgba(232,135,14,0.4) !important;
 }
 /* Sidebar links */
 [data-testid="stSidebar"] a[data-testid="stPageLink-NavLink"] {
@@ -70,7 +80,7 @@ _GLOBAL_CSS = """
     transition: all 0.2s ease;
 }
 [data-testid="stSidebar"] a[data-testid="stPageLink-NavLink"]:hover {
-    background: rgba(255,255,255,0.1) !important;
+    background: rgba(232,135,14,0.15) !important;
 }
 
 /* ── Ocultar nav nativa ────────────────────────────────────────────────── */
@@ -78,22 +88,23 @@ _GLOBAL_CSS = """
     display: none;
 }
 
-/* ── Métricas st.metric más limpias ────────────────────────────────────── */
+/* ── Metricas st.metric ────────────────────────────────────────────────── */
 [data-testid="stMetric"] {
     background: #ffffff;
-    border: 1px solid #e0e4e8;
-    border-radius: 12px;
+    border: 1px solid #d5ddd5;
+    border-left: 4px solid #1b6b35;
+    border-radius: 10px;
     padding: 16px 20px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    box-shadow: 0 1px 4px rgba(27,107,53,0.06);
     transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 [data-testid="stMetric"]:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    box-shadow: 0 4px 14px rgba(27,107,53,0.12);
 }
 [data-testid="stMetric"] label {
-    color: #6c757d !important;
-    font-size: 0.8rem !important;
+    color: #5f7161 !important;
+    font-size: 0.78rem !important;
     text-transform: uppercase;
     letter-spacing: 0.5px;
     font-weight: 600 !important;
@@ -101,102 +112,115 @@ _GLOBAL_CSS = """
 [data-testid="stMetric"] [data-testid="stMetricValue"] {
     font-size: 1.8rem !important;
     font-weight: 700 !important;
-    color: #1d3557 !important;
+    color: #1a2e1a !important;
 }
 
-/* ── Tabs más elegantes ─────────────────────────────────────────────────── */
+/* ── Tabs ───────────────────────────────────────────────────────────────── */
 [data-testid="stTabs"] button[data-baseweb="tab"] {
     font-weight: 600;
     font-size: 0.88rem;
     padding: 10px 20px;
     border-radius: 8px 8px 0 0;
 }
+[data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"] {
+    border-bottom-color: #e8870e !important;
+}
 
 /* ── DataFrames ────────────────────────────────────────────────────────── */
 [data-testid="stDataFrame"] {
     border-radius: 10px;
     overflow: hidden;
-    border: 1px solid #e0e4e8;
+    border: 1px solid #d5ddd5;
 }
 
-/* ── Botones primarios ─────────────────────────────────────────────────── */
-.stButton > button[kind="primary"] {
+/* ── Botones primarios — naranja LVCA ──────────────────────────────────── */
+.stButton > button[kind="primary"],
+button[kind="primary"] {
+    background-color: #e8870e !important;
+    border-color: #e8870e !important;
     border-radius: 8px;
     font-weight: 600;
     letter-spacing: 0.3px;
     transition: all 0.2s ease;
 }
+.stButton > button[kind="primary"]:hover,
+button[kind="primary"]:hover {
+    background-color: #c56d00 !important;
+    border-color: #c56d00 !important;
+}
 
 /* ── Formularios ───────────────────────────────────────────────────────── */
 [data-testid="stForm"] {
-    border: 1px solid #e0e4e8 !important;
+    border: 1px solid #d5ddd5 !important;
     border-radius: 12px !important;
     padding: 20px !important;
-    background: #fafbfc !important;
+    background: #fafcfa !important;
 }
 
 /* ── Expanders ─────────────────────────────────────────────────────────── */
 [data-testid="stExpander"] {
-    border: 1px solid #e0e4e8;
+    border: 1px solid #d5ddd5;
     border-radius: 10px;
     overflow: hidden;
 }
 
-/* ── Dividers más sutiles ──────────────────────────────────────────────── */
+/* ── Dividers ──────────────────────────────────────────────────────────── */
 hr {
-    border-color: #e8ecf0 !important;
+    border-color: #dde5dd !important;
     margin: 1rem 0 !important;
 }
 
-/* ── Page link cards ───────────────────────────────────────────────────── */
+/* ── Cards de acceso rapido ────────────────────────────────────────────── */
 .lvca-card {
     background: #ffffff;
-    border: 1px solid #e0e4e8;
-    border-radius: 12px;
+    border: 1px solid #d5ddd5;
+    border-top: 3px solid #1b6b35;
+    border-radius: 10px;
     padding: 24px 20px;
     text-align: center;
     transition: all 0.2s ease;
     height: 100%;
 }
 .lvca-card:hover {
-    border-color: #0e6ba8;
-    box-shadow: 0 4px 16px rgba(14,107,168,0.1);
+    border-top-color: #e8870e;
+    box-shadow: 0 4px 16px rgba(27,107,53,0.1);
     transform: translateY(-2px);
 }
 .lvca-card-icon {
-    font-size: 2rem;
-    margin-bottom: 8px;
+    font-size: 2.2rem;
+    margin-bottom: 10px;
 }
 .lvca-card-title {
     font-size: 1rem;
     font-weight: 700;
-    color: #1d3557;
+    color: #1a2e1a;
     margin-bottom: 6px;
 }
 .lvca-card-desc {
     font-size: 0.82rem;
-    color: #6c757d;
+    color: #5f7161;
     line-height: 1.4;
 }
 
-/* ── Header de página ─────────────────────────────────────────────────── */
+/* ── Header de pagina ──────────────────────────────────────────────────── */
 .lvca-page-header {
-    padding: 8px 0 16px 0;
-    margin-bottom: 8px;
+    padding: 4px 0 12px 0;
+    margin-bottom: 4px;
+    border-bottom: 2px solid #e8870e;
 }
 .lvca-page-header h1 {
-    font-size: 1.6rem !important;
+    font-size: 1.5rem !important;
     font-weight: 700 !important;
-    color: #1d3557 !important;
+    color: #1b6b35 !important;
     margin-bottom: 2px !important;
 }
 .lvca-page-header p {
-    color: #6c757d;
+    color: #5f7161;
     font-size: 0.85rem;
     margin: 0;
 }
 
-/* ── Badge de rol mejorado ─────────────────────────────────────────────── */
+/* ── Badge de rol ──────────────────────────────────────────────────────── */
 .lvca-badge {
     display: inline-block;
     padding: 3px 10px;
@@ -206,29 +230,34 @@ hr {
     letter-spacing: 0.3px;
     text-transform: uppercase;
 }
-.lvca-badge-admin { background: #d4edda; color: #1a472a; }
-.lvca-badge-visual { background: #cce5ff; color: #0c3547; }
-.lvca-badge-visit { background: #fff3cd; color: #4a3300; }
+.lvca-badge-admin { background: rgba(232,135,14,0.2); color: #c56d00; }
+.lvca-badge-visual { background: rgba(10,147,150,0.15); color: #0a9396; }
+.lvca-badge-visit { background: rgba(255,255,255,0.15); color: #d4e8d4; }
 
-/* ── Sección info box ──────────────────────────────────────────────────── */
+/* ── Info box — teal LVCA ──────────────────────────────────────────────── */
 .lvca-info-box {
-    background: linear-gradient(135deg, #e8f4fd 0%, #f0f8ff 100%);
-    border-left: 4px solid #0e6ba8;
+    background: linear-gradient(135deg, #e0f7f7 0%, #f0faf5 100%);
+    border-left: 4px solid #0a9396;
     border-radius: 0 10px 10px 0;
     padding: 14px 18px;
     margin: 8px 0;
     font-size: 0.9rem;
-    color: #1d3557;
+    color: #1a2e1a;
 }
 
-/* ── Scroll suave ─────────────────────────────────────────────────────── */
+/* ── Alertas / success ─────────────────────────────────────────────────── */
+[data-testid="stAlert"] {
+    border-radius: 10px;
+}
+
+/* ── Scroll suave ──────────────────────────────────────────────────────── */
 html { scroll-behavior: smooth; }
 </style>
 """
 
 
 def aplicar_estilos() -> None:
-    """Inyecta el CSS global. Llamar al inicio de cada página."""
+    """Inyecta el CSS global. Llamar al inicio de cada pagina."""
     st.markdown(_GLOBAL_CSS, unsafe_allow_html=True)
 
 
@@ -237,7 +266,7 @@ def aplicar_estilos() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def page_header(titulo: str, subtitulo: str = "") -> None:
-    """Encabezado de página estilizado."""
+    """Encabezado de pagina estilizado."""
     sub_html = f"<p>{subtitulo}</p>" if subtitulo else ""
     st.markdown(
         f'<div class="lvca-page-header">'
@@ -261,7 +290,7 @@ def badge_rol(rol: str) -> None:
 
 
 def info_box(texto: str) -> None:
-    """Caja informativa con borde azul lateral."""
+    """Caja informativa con borde teal lateral."""
     st.markdown(
         f'<div class="lvca-info-box">{texto}</div>',
         unsafe_allow_html=True,
@@ -269,10 +298,10 @@ def info_box(texto: str) -> None:
 
 
 def section_header(titulo: str, icono: str = "") -> None:
-    """Sub-encabezado de sección."""
+    """Sub-encabezado de seccion."""
     prefix = f"{icono} " if icono else ""
     st.markdown(
-        f"<h3 style='color:#1d3557; font-size:1.15rem; font-weight:600; "
+        f"<h3 style='color:#1b6b35; font-size:1.15rem; font-weight:600; "
         f"margin-top:1.2rem; margin-bottom:0.5rem;'>{prefix}{titulo}</h3>",
         unsafe_allow_html=True,
     )

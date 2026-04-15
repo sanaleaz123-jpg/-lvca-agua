@@ -90,7 +90,7 @@ def _render_sidebar() -> None:
             unsafe_allow_html=True,
         )
         st.markdown(
-            "<p style='text-align:center; font-size:0.72rem; color:#8ba4c4 !important; "
+            "<p style='text-align:center; font-size:0.72rem; color:#8bbf8b !important; "
             "margin:0; padding-bottom:8px;'>AUTODEMA</p>",
             unsafe_allow_html=True,
         )
@@ -118,7 +118,7 @@ def _render_sidebar() -> None:
                 icono = _SECCION_ICONOS.get(seccion, "")
                 sec_label = _SECCION_LABELS.get(seccion, "")
                 st.markdown(
-                    f"<p style='font-size:0.65rem; font-weight:700; color:#8ba4c4 !important; "
+                    f"<p style='font-size:0.65rem; font-weight:700; color:#8bbf8b !important; "
                     f"text-transform:uppercase; letter-spacing:1px; margin:12px 0 4px 4px; "
                     f"padding:0;'>{icono} {sec_label}</p>",
                     unsafe_allow_html=True,

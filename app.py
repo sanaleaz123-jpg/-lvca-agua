@@ -102,18 +102,18 @@ def _pantalla_login() -> None:
             f"""
             <div style="text-align:center; margin-bottom:2rem;">
                 <div style="display:inline-flex; align-items:center; justify-content:center;
-                     width:70px; height:70px; border-radius:18px;
-                     background:linear-gradient(135deg, #0e6ba8, #0a9396);
-                     margin-bottom:12px; box-shadow:0 4px 16px rgba(14,107,168,0.25);">
+                     width:72px; height:72px; border-radius:18px;
+                     background:linear-gradient(135deg, #1b6b35, #0a9396);
+                     margin-bottom:12px; box-shadow:0 4px 18px rgba(27,107,53,0.3);">
                     <span style="font-size:2rem; filter:brightness(2);">💧</span>
                 </div>
-                <h1 style="font-size:2rem; margin:0; color:#1d3557; font-weight:700;">
+                <h1 style="font-size:2rem; margin:0; color:#1b6b35; font-weight:700;">
                     LVCA
                 </h1>
-                <p style="color:#6c757d; margin:4px 0 0 0; font-size:0.9rem;">
-                    Laboratorio de Calidad de Agua
+                <p style="color:#5f7161; margin:4px 0 0 0; font-size:0.9rem;">
+                    Laboratorio de Vigilancia de la Calidad del Agua
                 </p>
-                <p style="color:#adb5bd; font-size:0.8rem; margin:2px 0 0 0;">
+                <p style="color:#e8870e; font-size:0.8rem; font-weight:600; margin:4px 0 0 0;">
                     {APP_ENTIDAD}
                 </p>
             </div>
@@ -123,7 +123,7 @@ def _pantalla_login() -> None:
 
         with st.form("form_login", clear_on_submit=False):
             st.markdown(
-                "<p style='font-weight:600; font-size:1.05rem; color:#1d3557; "
+                "<p style='font-weight:600; font-size:1.05rem; color:#1b6b35; "
                 "margin-bottom:4px;'>Iniciar sesion</p>",
                 unsafe_allow_html=True,
             )
@@ -181,7 +181,7 @@ def _sidebar(sesion: SesionUsuario) -> None:
             unsafe_allow_html=True,
         )
         st.markdown(
-            f"<p style='text-align:center; font-size:0.72rem; color:#8ba4c4 !important; "
+            f"<p style='text-align:center; font-size:0.72rem; color:#8bbf8b !important; "
             f"margin:0; padding-bottom:8px;'>{APP_ENTIDAD}</p>",
             unsafe_allow_html=True,
         )
@@ -196,7 +196,7 @@ def _sidebar(sesion: SesionUsuario) -> None:
         badge_rol(sesion.rol)
         if sesion.institucion:
             st.markdown(
-                f"<p style='font-size:0.75rem; color:#8ba4c4 !important; margin-top:4px;'>"
+                f"<p style='font-size:0.75rem; color:#8bbf8b !important; margin-top:4px;'>"
                 f"{sesion.institucion}</p>",
                 unsafe_allow_html=True,
             )
@@ -215,7 +215,7 @@ def _sidebar(sesion: SesionUsuario) -> None:
                 icono = _SECCION_ICONOS.get(seccion, "")
                 sec_label = _SECCION_LABELS.get(seccion, "")
                 st.markdown(
-                    f"<p style='font-size:0.65rem; font-weight:700; color:#8ba4c4 !important; "
+                    f"<p style='font-size:0.65rem; font-weight:700; color:#8bbf8b !important; "
                     f"text-transform:uppercase; letter-spacing:1px; margin:12px 0 4px 4px; "
                     f"padding:0;'>{icono} {sec_label}</p>",
                     unsafe_allow_html=True,
@@ -230,7 +230,7 @@ def _sidebar(sesion: SesionUsuario) -> None:
             st.rerun()
 
         st.markdown(
-            f"<p style='text-align:center; font-size:0.65rem; color:#5a7a9a !important; "
+            f"<p style='text-align:center; font-size:0.65rem; color:#6a9a6a !important; "
             f"margin-top:8px;'>v{APP_VERSION}</p>",
             unsafe_allow_html=True,
         )

@@ -122,7 +122,7 @@ def _render_grafico_excedencias(excedencias: list[dict]) -> None:
         orientation="h",
         marker=dict(
             color=df_chart["Excedencias"],
-            colorscale=[[0, "#ffc107"], [0.5, "#fd7e14"], [1, "#dc3545"]],
+            colorscale=[[0, "#e8870e"], [0.5, "#c56d00"], [1, "#c62828"]],
         ),
         text=df_chart["Excedencias"],
         textposition="outside",
@@ -166,7 +166,7 @@ def _render_excedencias_por_punto(excedencias: list[dict]) -> None:
         orientation="h",
         marker=dict(
             color=df_chart["Excedencias"],
-            colorscale=[[0, "#17a2b8"], [0.5, "#6f42c1"], [1, "#dc3545"]],
+            colorscale=[[0, "#0a9396"], [0.5, "#1b6b35"], [1, "#c62828"]],
         ),
         text=df_chart["Excedencias"],
         textposition="outside",
@@ -198,7 +198,7 @@ def _render_donut_estado(puntos: list[dict]) -> None:
     }
     labels = [etiquetas.get(k, k) for k in estados.keys()]
     values = list(estados.values())
-    colors = [{"excedencia": "#dc3545", "cumple": "#28a745", "sin_datos": "#6c757d"}.get(k, "#999") for k in estados.keys()]
+    colors = [{"excedencia": "#c62828", "cumple": "#2e7d32", "sin_datos": "#9e9e9e"}.get(k, "#999") for k in estados.keys()]
 
     fig = go.Figure(data=[go.Pie(
         labels=labels,
