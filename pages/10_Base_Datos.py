@@ -28,6 +28,7 @@ from services.parametro_registry import (
     get_codigos_parametros,
     get_cat_params,
 )
+from components.ui_styles import aplicar_estilos, page_header
 from services.resultado_service import get_campanas
 from services.punto_service import get_puntos
 
@@ -71,8 +72,11 @@ def _colorear_celda(val, eca_id, param_codigo, limites):
 
 @require_rol("visitante")
 def main() -> None:
-    st.title("Base de Datos — Resultados de Monitoreo")
-    st.caption("Consolidado de datos de campo, fisicoquímicos e hidrobiológicos por campaña")
+    aplicar_estilos()
+    page_header(
+        "Base de Datos",
+        "Consolidado de datos de campo, fisicoquimicos e hidrobiologicos por campana",
+    )
 
     es_admin = _es_admin()
 

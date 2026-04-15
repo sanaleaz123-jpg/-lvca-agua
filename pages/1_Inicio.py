@@ -21,6 +21,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from components.auth_guard import require_rol
+from components.ui_styles import aplicar_estilos, page_header, section_header
 from services.resultado_service import get_metricas_dashboard, get_puntos_con_estado
 
 # Centro del mapa: Arequipa / cuenca Chili-Quilca
@@ -324,10 +325,10 @@ def main() -> None:
         st.error("Sesión expirada. Inicia sesión nuevamente.")
         st.stop()
 
-    st.title("Panel de Control LVCA")
-    st.caption(
-        f"AUTODEMA — Cuenca Chili-Quilca  ·  "
-        f"Sesión: **{sesion.nombre_completo}** · Rol: `{sesion.rol}`"
+    aplicar_estilos()
+    page_header(
+        "Panel de Control LVCA",
+        f"AUTODEMA — Cuenca Chili-Quilca &middot; {sesion.nombre_completo}",
     )
 
     # ── Cargar datos ─────────────────────────────────────────────────────────

@@ -16,6 +16,7 @@ import pandas as pd
 import streamlit as st
 
 from components.auth_guard import require_rol
+from components.ui_styles import aplicar_estilos, page_header
 from services.admin_service import (
     ROLES,
     get_usuarios,
@@ -334,8 +335,8 @@ def _render_sistema() -> None:
 
 @require_rol("administrador")
 def main() -> None:
-    st.title("Administración")
-    st.caption("Gestión de usuarios y estado del sistema — AUTODEMA / LVCA")
+    aplicar_estilos()
+    page_header("Administracion", "Gestion de usuarios y estado del sistema")
 
     tab_usuarios, tab_nuevo, tab_sistema = st.tabs([
         "Usuarios",

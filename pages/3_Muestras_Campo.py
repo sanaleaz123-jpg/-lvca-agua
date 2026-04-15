@@ -21,6 +21,7 @@ import pandas as pd
 import streamlit as st
 
 from components.auth_guard import require_rol
+from components.ui_styles import aplicar_estilos, page_header
 from database.client import get_admin_client
 from services.muestra_service import (
     ESTADOS_MUESTRA,
@@ -1569,8 +1570,8 @@ def _render_ficha_campo() -> None:
 
 @require_rol("administrador")
 def main() -> None:
-    st.title("Muestras de Campo")
-    st.caption("Registro, mediciones in situ, cadena de custodia y etiquetas QR")
+    aplicar_estilos()
+    page_header("Muestras de Campo", "Registro, mediciones in situ, cadena de custodia y etiquetas QR")
 
     tab_reg, tab_insitu, tab_custodia, tab_lista, tab_cadena, tab_fotos, tab_ficha = st.tabs([
         "Registro",
