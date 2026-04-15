@@ -116,8 +116,8 @@ _CAT_NORMALIZE: dict[str, str] = {
 
 _CATEGORIAS_EXCLUIDAS = {"Plaguicidas", "Microbiologico"}
 
-# Códigos P001–P018 siempre son "Campo" independientemente de su categoría en BD
-_CODIGOS_CAMPO = {f"P{i:03d}" for i in range(1, 19)}
+# Códigos que siempre son "Campo" independientemente de su categoría en BD
+_CODIGOS_CAMPO = {"P001", "P002", "P003", "P004", "P006", "P008", "P009"}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
