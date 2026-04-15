@@ -166,8 +166,11 @@ def main() -> None:
     for d in datos:
         row = {
             "Fecha": d["fecha"],
+            "Hora": d.get("hora", ""),
             "Código Punto": d["punto_codigo"],
             "Punto": d["punto_nombre"],
+            "Código Muestra": d.get("codigo_muestra", ""),
+            "Código Lab.": d.get("codigo_laboratorio", ""),
             "Cuenca": d["cuenca"],
             "Tipo": (d["tipo"] or "").capitalize(),
             "ECA": d["eca_codigo"],
