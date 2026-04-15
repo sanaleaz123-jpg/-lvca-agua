@@ -176,7 +176,7 @@ def get_parametros_activos() -> list[dict]:
 _RECLASIFICAR_A_FISICOQUIMICO = {"P124"}  # Clorofila A → Fisicoquímico
 
 
-def _clasificar_categoria(param: dict) -> str:
+def clasificar_categoria(param: dict) -> str:
     """Determina la categoría normalizada de un parámetro."""
     cat_raw = (param.get("categorias_parametro") or {}).get("nombre", "")
     codigo = param.get("codigo", "")
@@ -200,7 +200,7 @@ def get_columnas_parametros() -> list[tuple[str, str]]:
     items: list[tuple[str, str, int]] = []
 
     for p in params:
-        cat = _clasificar_categoria(p)
+        cat = clasificar_categoria(p)
         if cat in _CATEGORIAS_EXCLUIDAS:
             continue
         codigo = p.get("codigo", "")
@@ -228,7 +228,7 @@ def get_cat_params() -> dict[str, list[str]]:
     cats: dict[str, list[str]] = {}
 
     for p in params:
-        cat = _clasificar_categoria(p)
+        cat = clasificar_categoria(p)
         if cat in _CATEGORIAS_EXCLUIDAS:
             continue
         display = _CAT_DISPLAY.get(cat, cat)
@@ -291,7 +291,7 @@ def get_parametros_lab_cadena() -> list[dict]:
     params = get_parametros_activos()
     result = []
     for p in params:
-        cat = _clasificar_categoria(p)
+        cat = clasificar_categoria(p)
         if cat in _CATEGORIAS_EXCLUIDAS or cat == "Campo":
             continue
         codigo = p.get("codigo", "")

@@ -20,6 +20,7 @@ import pandas as pd
 import streamlit as st
 
 from components.auth_guard import require_rol
+from services.parametro_registry import clasificar_categoria
 from services.resultado_service import (
     get_campanas,
     get_puntos_de_campana,
@@ -70,7 +71,7 @@ def _preparar_filas(datos: dict) -> list[dict]:
             "resultado_id":   resultado.get("id"),
             "codigo":         p["codigo"],
             "parametro":      p["nombre"],
-            "categoria":      (p.get("categorias_parametro") or {}).get("nombre", "Sin categoría"),
+            "categoria":      clasificar_categoria(p),
             "valor_numerico": resultado.get("valor_numerico"),
             "unidad":         (p.get("unidades_medida") or {}).get("simbolo", ""),
             "lim_max":        limite.get("valor_maximo"),
