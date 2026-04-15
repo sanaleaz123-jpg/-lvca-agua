@@ -38,9 +38,9 @@ MAPA_CENTRO = [-15.75, -71.53]
 MAPA_ZOOM = 8
 
 COLORES = {
-    "excedencia": "#dc3545",
-    "cumple":     "#1a73e8",
-    "sin_datos":  "#808080",
+    "excedencia": "#c62828",
+    "cumple":     "#2e7d32",
+    "sin_datos":  "#9e9e9e",
 }
 
 MESES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun",
@@ -57,7 +57,7 @@ _CAT_NORMALIZE: dict[str, str] = {
     "Metales": "Fisicoquimico",
 }
 
-_CODIGOS_CAMPO = {f"P{i:03d}" for i in range(1, 19)}
+_CODIGOS_CAMPO = {"P001", "P002", "P003", "P004", "P006", "P008", "P009"}
 
 
 # ─── Helpers de color ────────────────────────────────────────────────────────
@@ -68,7 +68,7 @@ def _color_termico(p: dict) -> str:
     if ic is None:
         return "#808080"
     if ic == 1.0:
-        return "#1a73e8"
+        return "#2e7d32"
     t = 1.0 - ic
     if t <= 0.5:
         r = int(40 + t * 2 * 200)
@@ -98,8 +98,21 @@ def _clasificar_cat(param: dict) -> str:
 # 1. DASHBOARD RESUMEN
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _render_kpi_card(valor, label: str, color: str, icono: str) -> str:
+    """Genera HTML para una tarjeta KPI estilo ANA."""
+    return f"""
+    <div style="background:{color}; border-radius:10px; padding:16px 20px;
+         text-align:center; color:white; box-shadow:0 2px 8px rgba(0,0,0,0.12);
+         transition: transform 0.15s ease;">
+        <div style="font-size:1.6rem; margin-bottom:2px;">{icono}</div>
+        <div style="font-size:2rem; font-weight:800; line-height:1.1;">{valor}</div>
+        <div style="font-size:0.75rem; opacity:0.9; margin-top:4px; text-transform:uppercase;
+             letter-spacing:0.5px;">{label}</div>
+    </div>"""
+
+
 def _render_dashboard(puntos: list[dict]) -> None:
-    """Métricas globales + torta + alertas."""
+    """Metricas globales estilo ANA + torta + alertas."""
     n_total = len(puntos)
     n_exc = sum(1 for p in puntos if p["estado"] == "excedencia")
     n_ok = sum(1 for p in puntos if p["estado"] == "cumple")
@@ -108,35 +121,78 @@ def _render_dashboard(puntos: list[dict]) -> None:
     indices = [p["indice_cumplimiento"] for p in puntos if p.get("indice_cumplimiento") is not None]
     ic_general = round(sum(indices) / len(indices) * 100, 1) if indices else 0
 
-    col_metricas, col_torta = st.columns([3, 2])
+    # ── KPIs estilo ANA con colores fuertes ──────────────────────────────
+    k1, k2, k3, k4, k5 = st.columns(5)
+    with k1:
+        st.markdown(_render_kpi_card(n_total, "Puntos Monitoreados", "#1b6b35", "📍"), unsafe_allow_html=True)
+    with k2:
+        st.markdown(_render_kpi_card(n_ok, "Cumplen ECA", "#2e7d32", "✅"), unsafe_allow_html=True)
+    with k3:
+        st.markdown(_render_kpi_card(n_exc, "Con Excedencias", "#c62828", "⚠️"), unsafe_allow_html=True)
+    with k4:
+        st.markdown(_render_kpi_card(n_sin, "Sin Datos", "#616161", "—"), unsafe_allow_html=True)
+    with k5:
+        color_ic = "#2e7d32" if ic_general >= 80 else "#e8870e" if ic_general >= 50 else "#c62828"
+        st.markdown(_render_kpi_card(f"{ic_general}%", "Cumplimiento ECA", color_ic, "📊"), unsafe_allow_html=True)
 
-    with col_metricas:
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Puntos monitoreados", n_total)
-        m2.metric("Cumplen ECA", n_ok, delta=f"{round(n_ok/n_total*100)}%" if n_total else "0%")
-        m3.metric("Con excedencias", n_exc, delta=f"-{round(n_exc/n_total*100)}%" if n_total else "0%", delta_color="inverse")
-        m4.metric("Sin datos", n_sin)
+    st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
 
-        color_barra = "#28a745" if ic_general >= 80 else "#ffc107" if ic_general >= 50 else "#dc3545"
+    # ── Barra de cumplimiento + torta ────────────────────────────────────
+    col_barra, col_torta = st.columns([3, 2])
+
+    with col_barra:
+        color_barra = "#2e7d32" if ic_general >= 80 else "#e8870e" if ic_general >= 50 else "#c62828"
         st.markdown(
-            f"""<div style="margin:8px 0;">
-            <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:4px;">
-                <span><b>Cumplimiento general ECA</b></span>
-                <span style="color:{color_barra}; font-weight:bold;">{ic_general}%</span>
+            f"""<div style="background:white; border-radius:10px; padding:16px 20px;
+                 border:1px solid #d5ddd5; margin-top:4px;">
+            <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:6px;">
+                <span style="font-weight:600; color:#1a2e1a;">Indice de Cumplimiento General ECA</span>
+                <span style="color:{color_barra}; font-weight:bold; font-size:1.1rem;">{ic_general}%</span>
             </div>
-            <div style="background:#e9ecef; border-radius:8px; height:22px; overflow:hidden;">
-                <div style="background:{color_barra}; width:{ic_general}%; height:100%; border-radius:8px;
+            <div style="background:#e8ece8; border-radius:8px; height:24px; overflow:hidden;">
+                <div style="background:linear-gradient(90deg, {color_barra}, {color_barra}dd);
+                     width:{ic_general}%; height:100%; border-radius:8px;
                      transition: width 0.5s;"></div>
+            </div>
+            <div style="font-size:11px; color:#5f7161; margin-top:6px;">
+                D.S. N° 004-2017-MINAM — Estandares Nacionales de Calidad Ambiental para Agua
             </div>
             </div>""",
             unsafe_allow_html=True,
         )
 
+        # Panel de alertas compacto
+        criticos = sorted(
+            [p for p in puntos if p["estado"] == "excedencia"],
+            key=lambda x: x.get("n_excedencias", 0),
+            reverse=True,
+        )
+        if criticos:
+            with st.expander(f"⚠️ {len(criticos)} punto(s) con excedencia", expanded=False):
+                for p in criticos[:5]:
+                    exc_list = p.get("excedencias", [])
+                    params_exc = ", ".join(
+                        f"{e['parametro']}" for e in exc_list[:4]
+                    )
+                    if len(exc_list) > 4:
+                        params_exc += f" (+{len(exc_list)-4})"
+                    st.markdown(
+                        f"""<div style="display:flex; align-items:center; padding:6px 10px; margin:2px 0;
+                            background:#fef5f5; border-left:3px solid #c62828; border-radius:4px; font-size:12px;">
+                            <div style="flex:1;">
+                                <b>{p['codigo']}</b> — {p['nombre']}
+                                <span style="color:#888; margin-left:6px; font-size:11px;">{params_exc}</span>
+                            </div>
+                            <span style="color:#c62828; font-weight:bold; font-size:11px;">{len(exc_list)}</span>
+                        </div>""",
+                        unsafe_allow_html=True,
+                    )
+
     with col_torta:
         fig_torta = go.Figure(go.Pie(
             labels=["Cumple ECA", "Excedencia", "Sin datos"],
             values=[n_ok, n_exc, n_sin],
-            marker_colors=["#1a73e8", "#dc3545", "#adb5bd"],
+            marker_colors=["#2e7d32", "#c62828", "#9e9e9e"],
             hole=0.55,
             textinfo="value+percent",
             textfont_size=12,
@@ -144,51 +200,15 @@ def _render_dashboard(puntos: list[dict]) -> None:
         ))
         fig_torta.update_layout(
             margin=dict(l=10, r=10, t=10, b=10),
-            height=200,
+            height=220,
             showlegend=True,
             legend=dict(orientation="h", yanchor="bottom", y=-0.15, xanchor="center", x=0.5, font_size=11),
+            annotations=[dict(
+                text=f"<b>{n_total}</b><br>puntos",
+                x=0.5, y=0.5, font_size=14, showarrow=False,
+            )],
         )
         st.plotly_chart(fig_torta, use_container_width=True, key="torta_general")
-
-    # Panel de alertas
-    criticos = sorted(
-        [p for p in puntos if p["estado"] == "excedencia"],
-        key=lambda x: x.get("n_excedencias", 0),
-        reverse=True,
-    )
-
-    if criticos:
-        with st.expander(f"Alertas: {len(criticos)} punto(s) con excedencia", expanded=True):
-            for p in criticos[:5]:
-                exc_list = p.get("excedencias", [])
-                params_exc = ", ".join(
-                    f"{e['parametro']} ({e['unidad']})" if e.get('unidad') else e['parametro']
-                    for e in exc_list[:4]
-                )
-                if len(exc_list) > 4:
-                    params_exc += f" (+{len(exc_list)-4})"
-                ic_val = p.get("indice_cumplimiento")
-                pct = f"{int(ic_val*100)}%" if ic_val is not None else "—"
-
-                st.markdown(
-                    f"""<div style="display:flex; align-items:center; padding:6px 12px; margin:3px 0;
-                        background:#fff5f5; border-left:4px solid #dc3545; border-radius:4px; font-size:13px;">
-                        <div style="flex:1;">
-                            <b>{p['codigo']}</b> — {p['nombre']}
-                            <span style="color:#888; margin-left:8px;">{p.get('cuenca','')}</span>
-                        </div>
-                        <div style="text-align:right; min-width:180px;">
-                            <span style="color:#dc3545; font-weight:bold;">{len(exc_list)} excedencia(s)</span>
-                            <span style="color:#888; margin-left:8px;">Cumple: {pct}</span>
-                        </div>
-                    </div>
-                    <div style="font-size:11px; color:#666; padding:0 12px 4px 16px;">
-                        Parámetros: {params_exc}
-                    </div>""",
-                    unsafe_allow_html=True,
-                )
-            if len(criticos) > 5:
-                st.caption(f"... y {len(criticos)-5} punto(s) más con excedencias")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -353,11 +373,11 @@ def _construir_mapa(puntos: list[dict], solo_excedencias: bool, mostrar_heatmap:
             radius=30,
             blur=20,
             gradient={
-                "0.0": "#1a73e8",
-                "0.3": "#28a745",
-                "0.5": "#ffc107",
-                "0.7": "#fd7e14",
-                "1.0": "#dc3545",
+                "0.0": "#2e7d32",
+                "0.3": "#0a9396",
+                "0.5": "#e8870e",
+                "0.7": "#c56d00",
+                "1.0": "#c62828",
             },
         ).add_to(fg_heat)
         fg_heat.add_to(m)
@@ -398,11 +418,11 @@ def _construir_mapa(puntos: list[dict], solo_excedencias: bool, mostrar_heatmap:
       <b style="font-size:12px;">Estado ECA</b><br>
       <span style="font-size:9px; color:#666;">D.S. N° 004-2017-MINAM</span>
       <div style="margin:6px 0;">
-        <span style="color:#1a73e8; font-size:14px;">&#9679;</span> Cumple ECA<br>
-        <span style="color:#28a745; font-size:14px;">&#9679;</span> Excedencia leve<br>
-        <span style="color:#ffc107; font-size:14px;">&#9679;</span> Excedencia media<br>
-        <span style="color:#dc3545; font-size:14px;">&#9679;</span> Excedencia alta<br>
-        <span style="color:#808080; font-size:14px;">&#9679;</span> Sin datos
+        <span style="color:#2e7d32; font-size:14px;">&#9679;</span> Cumple ECA<br>
+        <span style="color:#0a9396; font-size:14px;">&#9679;</span> Excedencia leve<br>
+        <span style="color:#e8870e; font-size:14px;">&#9679;</span> Excedencia media<br>
+        <span style="color:#c62828; font-size:14px;">&#9679;</span> Excedencia alta<br>
+        <span style="color:#9e9e9e; font-size:14px;">&#9679;</span> Sin datos
       </div>
       <div style="font-size:9px; color:#999; border-top:1px solid #eee; padding-top:3px;">
         Radio = N° parámetros evaluados
@@ -432,18 +452,18 @@ def _render_gauge(punto: dict) -> None:
         mode="gauge+number+delta",
         value=pct,
         number={"suffix": "%", "font": {"size": 36}},
-        delta={"reference": 100, "suffix": "%", "decreasing": {"color": "#dc3545"}},
+        delta={"reference": 100, "suffix": "%", "decreasing": {"color": "#c62828"}},
         title={"text": f"Cumplimiento ECA<br><span style='font-size:12px; color:#666;'>{n_eval-n_exc}/{n_eval} parámetros OK</span>"},
         gauge={
             "axis": {"range": [0, 100], "tickwidth": 1},
-            "bar": {"color": "#1a73e8"},
+            "bar": {"color": "#1b6b35"},
             "steps": [
-                {"range": [0, 50], "color": "#ffe0e0"},
-                {"range": [50, 80], "color": "#fff3cd"},
-                {"range": [80, 100], "color": "#d4edda"},
+                {"range": [0, 50], "color": "#fce4e4"},
+                {"range": [50, 80], "color": "#fef3e2"},
+                {"range": [80, 100], "color": "#e8f5e9"},
             ],
             "threshold": {
-                "line": {"color": "#dc3545", "width": 3},
+                "line": {"color": "#c62828", "width": 3},
                 "thickness": 0.8,
                 "value": 100,
             },
@@ -886,38 +906,68 @@ def main() -> None:
     # ── 3. Detalle del punto seleccionado ───────────────────────────────
     st.divider()
     eca_info = punto_sel.get("ecas") or {}
+    exc_punto = punto_sel.get("excedencias", [])
+    n_exc_punto = len(exc_punto)
+    estado_punto = punto_sel.get("estado", "sin_datos")
+    color_estado = {"excedencia": "#c62828", "cumple": "#2e7d32", "sin_datos": "#9e9e9e"}.get(estado_punto, "#9e9e9e")
+    estado_label = {"excedencia": "EXCEDENCIA", "cumple": "CUMPLE ECA", "sin_datos": "SIN DATOS"}.get(estado_punto, "—")
 
-    st.subheader(f"{punto_sel['codigo']} — {punto_sel['nombre']}")
+    # Header del punto con estilo
+    st.markdown(
+        f"""<div style="background:white; border:1px solid #d5ddd5; border-left:5px solid {color_estado};
+             border-radius:10px; padding:16px 20px; margin-bottom:12px;">
+            <div style="display:flex; align-items:center; justify-content:space-between;">
+                <div>
+                    <span style="font-size:1.2rem; font-weight:700; color:#1a2e1a;">
+                        {punto_sel['codigo']} — {punto_sel['nombre']}
+                    </span>
+                    <span style="background:{color_estado}; color:white; padding:3px 10px; border-radius:20px;
+                         font-size:0.7rem; font-weight:600; margin-left:12px; letter-spacing:0.5px;">
+                        {estado_label}
+                    </span>
+                </div>
+                <div style="text-align:right; font-size:0.8rem; color:#5f7161;">
+                    {(punto_sel.get('tipo') or '—').capitalize()} &middot;
+                    {punto_sel.get('cuenca', '—')} &middot;
+                    {punto_sel.get('altitud_msnm', '—')} msnm
+                </div>
+            </div>
+        </div>""",
+        unsafe_allow_html=True,
+    )
 
     col_info, col_gauge = st.columns([3, 2])
 
     with col_info:
-        i1, i2 = st.columns(2)
-        i1.markdown(f"**Tipo:** {(punto_sel.get('tipo') or '—').capitalize()}")
-        i1.markdown(f"**Cuenca:** {punto_sel.get('cuenca', '—')}")
-        i1.markdown(f"**Sistema Hídrico:** {punto_sel.get('sistema_hidrico', '—')}")
-
-        i2.markdown(f"**Altitud:** {punto_sel.get('altitud_msnm', '—')} msnm")
-        i2.markdown(f"**ECA:** {eca_info.get('codigo', '—')} — {eca_info.get('nombre', '')}")
-        i2.markdown(f"**Último dato:** {punto_sel.get('ultima_fecha', '—')}")
-
-        # Nivel embalse
-        nivel = punto_sel.get("nivel_agua")
-        if nivel:
-            i1.markdown(f"**Nivel del embalse:** {nivel}")
+        # Info cards en grid
+        i1, i2, i3 = st.columns(3)
+        i1.markdown(
+            f"""<div style="background:#e8f5e9; border-radius:8px; padding:10px 14px; text-align:center;">
+            <div style="font-size:0.7rem; color:#5f7161; text-transform:uppercase;">Sistema Hidrico</div>
+            <div style="font-weight:700; color:#1b6b35;">{punto_sel.get('sistema_hidrico', '—')}</div>
+            </div>""", unsafe_allow_html=True)
+        i2.markdown(
+            f"""<div style="background:#e0f7f7; border-radius:8px; padding:10px 14px; text-align:center;">
+            <div style="font-size:0.7rem; color:#5f7161; text-transform:uppercase;">ECA Aplicable</div>
+            <div style="font-weight:700; color:#0a9396;">{eca_info.get('codigo', '—')}</div>
+            </div>""", unsafe_allow_html=True)
+        i3.markdown(
+            f"""<div style="background:#fef3e2; border-radius:8px; padding:10px 14px; text-align:center;">
+            <div style="font-size:0.7rem; color:#5f7161; text-transform:uppercase;">Ultimo Dato</div>
+            <div style="font-weight:700; color:#c56d00;">{punto_sel.get('ultima_fecha', '—')}</div>
+            </div>""", unsafe_allow_html=True)
 
         # Excedencias activas
-        exc_punto = punto_sel.get("excedencias", [])
         if exc_punto:
-            st.markdown(f"**:red[{len(exc_punto)} excedencia(s) activa(s)]**")
+            st.markdown(f"**{n_exc_punto} excedencia(s) activa(s)**")
             df_exc = pd.DataFrame(exc_punto)
             df_exc["pct_exceso"] = df_exc.apply(
                 lambda r: round((r["valor"] / r["lim_max"] - 1) * 100, 1) if r.get("lim_max") and r["lim_max"] > 0 else None,
                 axis=1,
             )
             df_show = df_exc[["fecha", "parametro", "valor", "lim_max", "unidad", "pct_exceso"]].rename(columns={
-                "fecha": "Fecha", "parametro": "Parámetro", "valor": "Valor",
-                "lim_max": "Límite", "unidad": "Unidad", "pct_exceso": "% Exceso",
+                "fecha": "Fecha", "parametro": "Parametro", "valor": "Valor",
+                "lim_max": "Limite", "unidad": "Unidad", "pct_exceso": "% Exceso",
             })
             st.dataframe(df_show, use_container_width=True, hide_index=True,
                          column_config={"% Exceso": st.column_config.NumberColumn(format="%.1f%%")})
