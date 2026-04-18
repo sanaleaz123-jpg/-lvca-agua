@@ -26,6 +26,7 @@ from io import BytesIO
 from typing import Optional
 
 from database.client import get_admin_client
+from services.audit_service import registrar_cambio
 from services.parametro_registry import (
     get_parametros_insitu,
     get_campo_a_parametro_map,
@@ -141,13 +142,30 @@ def get_puntos_de_campana_activa(campana_id: str) -> list[dict]:
 
 
 def get_usuarios_campo() -> list[dict]:
-    """Usuarios activos con rol visualizador o superior (técnicos de campo)."""
+    """
+    Usuarios activos aptos para trabajo de campo.
+    Incluye administrador, analista_lab, tecnico_campo y visualizador.
+    """
     db = get_admin_client()
     res = (
         db.table("usuarios")
         .select("id, nombre, apellido, rol, institucion")
         .eq("activo", True)
-        .in_("rol", ["administrador", "visualizador"])
+        .in_("rol", ["administrador", "analista_lab", "tecnico_campo", "visualizador"])
+        .order("apellido")
+        .execute()
+    )
+    return res.data or []
+
+
+def get_responsables_lab() -> list[dict]:
+    """Usuarios activos aptos para responsable de laboratorio."""
+    db = get_admin_client()
+    res = (
+        db.table("usuarios")
+        .select("id, nombre, apellido, rol")
+        .eq("activo", True)
+        .in_("rol", ["administrador", "analista_lab"])
         .order("apellido")
         .execute()
     )
@@ -462,7 +480,7 @@ class TransicionMuestraError(Exception):
     """Transición de estado inválida para la muestra."""
 
 
-def actualizar_estado_muestra(muestra_id: str, nuevo_estado: str) -> None:
+def actualizar_estado_muestra(muestra_id: str, nuevo_estado: str, usuario_id: Optional[str] = None) -> None:
     """
     Transición simple de estado.
     recolectada → en_transporte → en_laboratorio → analizada
@@ -487,6 +505,15 @@ def actualizar_estado_muestra(muestra_id: str, nuevo_estado: str) -> None:
     db.table("muestras").update(
         {"estado": nuevo_estado}
     ).eq("id", muestra_id).execute()
+    registrar_cambio(
+        tabla="muestras",
+        registro_id=muestra_id,
+        accion="cambio_estado",
+        campo="estado",
+        valor_anterior=actual,
+        valor_nuevo=nuevo_estado,
+        usuario_id=usuario_id,
+    )
     _invalidar_cache()
 
 
@@ -499,7 +526,16 @@ def recibir_en_laboratorio(
     """
     Registra la recepción de una muestra en el laboratorio.
     Cambia el estado a 'en_laboratorio' y guarda datos de custodia.
+
+    receptor_id debe ser un UUID válido de la tabla usuarios. Si llega vacío
+    o None se rechaza para no romper la cadena de custodia silenciosamente.
     """
+    if not receptor_id:
+        raise ValueError(
+            "Receptor de laboratorio requerido — la cadena de custodia no "
+            "puede registrarse sin identificar quién recibió la muestra."
+        )
+
     db = get_admin_client()
 
     # Verificar que esté en estado 'en_transporte'
@@ -523,6 +559,15 @@ def recibir_en_laboratorio(
         "estado_frasco_recepcion":  estado_frasco,
         "observaciones_recepcion":  observaciones or None,
     }).eq("id", muestra_id).execute()
+    registrar_cambio(
+        tabla="muestras",
+        registro_id=muestra_id,
+        accion="cambio_estado",
+        campo="estado",
+        valor_anterior="en_transporte",
+        valor_nuevo=f"en_laboratorio (frasco: {estado_frasco})",
+        usuario_id=receptor_id,
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -840,7 +885,7 @@ def actualizar_muestra(muestra_id: str, datos: dict) -> dict:
         return res.data[0] if res.data else {}
 
 
-def eliminar_muestra(muestra_id: str) -> None:
+def eliminar_muestra(muestra_id: str, usuario_id: Optional[str] = None) -> None:
     """
     Elimina una muestra y sus registros relacionados.
     Solo se permite eliminar muestras en estado 'recolectada'.
@@ -878,29 +923,45 @@ def eliminar_muestra(muestra_id: str) -> None:
     db.table("mediciones_insitu").delete().eq("muestra_id", muestra_id).execute()
     # Eliminar muestra
     db.table("muestras").delete().eq("id", muestra_id).execute()
+    registrar_cambio(
+        tabla="muestras",
+        registro_id=muestra_id,
+        accion="eliminar",
+        valor_anterior=f"estado={estado}",
+        usuario_id=usuario_id,
+    )
 
 
 def _generar_codigo_muestra(db) -> str:
     """
     Genera código secuencial: LVCA-YYYY-NNN.
-    Ejemplo: LVCA-2025-001, LVCA-2025-002, ...
+    Usa la función PostgreSQL siguiente_codigo() (atómica, sin race conditions).
+    Cae a SELECT MAX+1 solo si la migración 006 no se ha aplicado.
     """
     year = datetime.utcnow().year
     prefijo = f"LVCA-{year}-"
 
-    res = (
-        db.table("muestras")
-        .select("codigo")
-        .like("codigo", f"{prefijo}%")
-        .execute()
-    )
-
-    max_seq = 0
-    for row in (res.data or []):
-        try:
-            seq = int(row["codigo"].replace(prefijo, ""))
-            max_seq = max(max_seq, seq)
-        except (ValueError, KeyError):
-            pass
-
-    return f"{prefijo}{max_seq + 1:03d}"
+    try:
+        res = db.rpc("siguiente_codigo", {
+            "p_tabla": "muestras",
+            "p_prefijo": "LVCA",
+            "p_anio": year,
+        }).execute()
+        seq = int(res.data)
+        return f"{prefijo}{seq:03d}"
+    except Exception:
+        # Fallback pre-migración 006 (sujeto a race condition)
+        res = (
+            db.table("muestras")
+            .select("codigo")
+            .like("codigo", f"{prefijo}%")
+            .execute()
+        )
+        max_seq = 0
+        for row in (res.data or []):
+            try:
+                seq = int(row["codigo"].replace(prefijo, ""))
+                max_seq = max(max_seq, seq)
+            except (ValueError, KeyError):
+                pass
+        return f"{prefijo}{max_seq + 1:03d}"

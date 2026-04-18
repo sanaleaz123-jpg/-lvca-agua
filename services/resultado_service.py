@@ -21,6 +21,7 @@ from typing import Optional
 
 from database.client import get_admin_client
 from services.cache import cached
+from services.audit_service import registrar_cambio
 
 
 def _invalidar_cache() -> None:
@@ -198,12 +199,22 @@ def get_datos_muestra(muestra_id: str) -> dict:
         par_data.append(p)
 
     # 4. Resultados ya guardados para esta muestra
-    res_res = (
-        db.table("resultados_laboratorio")
-        .select("id, parametro_id, valor_numerico, valor_texto, observaciones")
-        .eq("muestra_id", muestra_id)
-        .execute()
-    )
+    try:
+        res_res = (
+            db.table("resultados_laboratorio")
+            .select("id, parametro_id, valor_numerico, valor_texto, observaciones, "
+                    "cualificador, validado, validado_at")
+            .eq("muestra_id", muestra_id)
+            .execute()
+        )
+    except Exception:
+        # Fallback pre-migración 006
+        res_res = (
+            db.table("resultados_laboratorio")
+            .select("id, parametro_id, valor_numerico, valor_texto, observaciones")
+            .eq("muestra_id", muestra_id)
+            .execute()
+        )
     resultados = {r["parametro_id"]: r for r in (res_res.data or [])}
 
     return {
@@ -281,21 +292,49 @@ def guardar_resultado(
 
 def guardar_resultados_lote(
     muestra_id:  str,
-    filas:       list[dict],   # [{parametro_id, valor_numerico, valor_texto, observaciones}]
+    filas:       list[dict],   # [{parametro_id, valor_numerico, valor_texto, observaciones, cualificador}]
     analista_id: Optional[str] = None,
-) -> tuple[int, list[str]]:
+) -> tuple[int, list[str], list[str]]:
     """
     Guarda múltiples resultados en lotes de 50.
-    Retorna (ok_count, lista_de_errores).
+
+    Resultados ya marcados como validado=true NO se sobreescriben — quedan
+    bloqueados hasta que un administrador los desvalide explícitamente.
+
+    Retorna (ok_count, lista_de_errores, lista_de_bloqueados).
     """
     db = get_admin_client()
     hoy = datetime.utcnow().date().isoformat()
     ok = 0
     errores: list[str] = []
+    bloqueados: list[str] = []
     LOTE = 50
 
-    payload = [
-        {
+    # Identificar parámetros con resultado validado (no se pueden sobreescribir)
+    param_ids = [f["parametro_id"] for f in filas]
+    if param_ids:
+        try:
+            res_val = (
+                db.table("resultados_laboratorio")
+                .select("parametro_id, validado")
+                .eq("muestra_id", muestra_id)
+                .in_("parametro_id", param_ids)
+                .eq("validado", True)
+                .execute()
+            )
+            ids_validados = {r["parametro_id"] for r in (res_val.data or [])}
+        except Exception:
+            # Pre-migración 006: no existe columna validado
+            ids_validados = set()
+    else:
+        ids_validados = set()
+
+    payload = []
+    for f in filas:
+        if f["parametro_id"] in ids_validados:
+            bloqueados.append(f["parametro_id"])
+            continue
+        row = {
             "muestra_id":     muestra_id,
             "parametro_id":   f["parametro_id"],
             "valor_numerico": f.get("valor_numerico"),
@@ -304,8 +343,9 @@ def guardar_resultados_lote(
             "analista_id":    analista_id,
             "fecha_analisis": hoy,
         }
-        for f in filas
-    ]
+        if f.get("cualificador"):
+            row["cualificador"] = f["cualificador"]
+        payload.append(row)
 
     for i in range(0, len(payload), LOTE):
         lote = payload[i : i + LOTE]
@@ -315,18 +355,89 @@ def guardar_resultados_lote(
             ).execute()
             ok += len(lote)
         except Exception:
+            # Reintenta sin cualificador (pre-migración 006)
             for fila in lote:
+                fila_compat = {k: v for k, v in fila.items() if k != "cualificador"}
                 try:
                     db.table("resultados_laboratorio").upsert(
-                        fila, on_conflict="muestra_id,parametro_id"
+                        fila_compat, on_conflict="muestra_id,parametro_id"
                     ).execute()
                     ok += 1
                 except Exception as exc:
-                    errores.append(
-                        f"{fila['parametro_id']}: {exc}"
-                    )
+                    errores.append(f"{fila['parametro_id']}: {exc}")
     _invalidar_cache()
-    return ok, errores
+    return ok, errores, bloqueados
+
+
+def validar_resultados(
+    muestra_id: str,
+    parametro_ids: list[str],
+    validador_id: Optional[str] = None,
+) -> int:
+    """
+    Marca resultados como validados (firmados por supervisor).
+    Una vez validados quedan bloqueados contra ediciones por upsert.
+    Retorna el número de resultados validados.
+    """
+    db = get_admin_client()
+    payload = {
+        "validado":     True,
+        "validado_por": validador_id,
+        "validado_at":  datetime.utcnow().isoformat(),
+    }
+    res = (
+        db.table("resultados_laboratorio")
+        .update(payload)
+        .eq("muestra_id", muestra_id)
+        .in_("parametro_id", parametro_ids)
+        .execute()
+    )
+    n = len(res.data or [])
+    if n > 0:
+        registrar_cambio(
+            tabla="resultados_laboratorio",
+            registro_id=muestra_id,
+            accion="validar",
+            valor_nuevo=f"{n} resultado(s) validado(s)",
+            usuario_id=validador_id,
+        )
+    _invalidar_cache()
+    return n
+
+
+def desvalidar_resultados(
+    muestra_id: str,
+    parametro_ids: list[str],
+    usuario_id: Optional[str] = None,
+) -> int:
+    """
+    Quita la marca de validado para permitir corregir un resultado.
+    Solo administradores deben llamar a esta función (la UI debe enforzarlo).
+    """
+    db = get_admin_client()
+    payload = {
+        "validado":     False,
+        "validado_por": None,
+        "validado_at":  None,
+    }
+    res = (
+        db.table("resultados_laboratorio")
+        .update(payload)
+        .eq("muestra_id", muestra_id)
+        .in_("parametro_id", parametro_ids)
+        .execute()
+    )
+    n = len(res.data or [])
+    if n > 0:
+        registrar_cambio(
+            tabla="resultados_laboratorio",
+            registro_id=muestra_id,
+            accion="desvalidar",
+            valor_nuevo=f"{n} resultado(s) desvalidado(s)",
+            usuario_id=usuario_id,
+        )
+    _invalidar_cache()
+    return n
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -340,7 +451,7 @@ def eliminar_resultado(resultado_id: str) -> None:
     _invalidar_cache()
 
 
-def eliminar_resultados_muestra(muestra_id: str) -> int:
+def eliminar_resultados_muestra(muestra_id: str, usuario_id: Optional[str] = None) -> int:
     """
     Elimina todos los resultados de laboratorio de una muestra.
     Retorna la cantidad eliminada.
@@ -355,6 +466,13 @@ def eliminar_resultados_muestra(muestra_id: str) -> int:
     count = res.count or 0
     if count > 0:
         db.table("resultados_laboratorio").delete().eq("muestra_id", muestra_id).execute()
+        registrar_cambio(
+            tabla="resultados_laboratorio",
+            registro_id=muestra_id,
+            accion="eliminar",
+            valor_anterior=f"{count} resultado(s)",
+            usuario_id=usuario_id,
+        )
         _invalidar_cache()
     return count
 

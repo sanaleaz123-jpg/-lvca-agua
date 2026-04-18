@@ -78,6 +78,8 @@ def _preparar_filas(datos: dict) -> list[dict]:
             "lim_max":        limite.get("valor_maximo"),
             "lim_min":        limite.get("valor_minimo"),
             "observaciones":  resultado.get("observaciones") or "",
+            "cualificador":   resultado.get("cualificador"),
+            "validado":       bool(resultado.get("validado")),
         })
     return filas
 
@@ -168,13 +170,16 @@ def _render_categoria(
     cs[2].caption(f"🔴 Exceden: **{n_exc}**")
 
     # Encabezado
-    hcols = st.columns([3, 2, 0.7, 1, 0.6, 0.5])
+    hcols = st.columns([3, 1.6, 1.1, 0.7, 1, 0.6, 0.5])
     hcols[0].markdown("**Parámetro**")
-    hcols[1].markdown("**Valor medido**")
-    hcols[2].markdown("**Unidad**")
-    hcols[3].markdown("**Lím. ECA**")
-    hcols[4].markdown("**ECA**")
-    hcols[5].markdown("")
+    hcols[1].markdown("**Valor**")
+    hcols[2].markdown("**Cualif.**")
+    hcols[3].markdown("**Unidad**")
+    hcols[4].markdown("**Lím. ECA**")
+    hcols[5].markdown("**ECA**")
+    hcols[6].markdown("")
+
+    _CUALIFS = ["", "<LMD", "<LCM", ">LCM", "Ausencia", "Presencia", "ND", "Trazas"]
 
     valores: dict[str, dict] = {}
 
@@ -183,51 +188,74 @@ def _render_categoria(
         lim_max = fila["lim_max"]
         lim_min = fila["lim_min"]
         existing_val = fila["valor_numerico"]
+        is_validado = fila.get("validado", False)
+        cualif_actual = fila.get("cualificador") or ""
 
-        cols = st.columns([3, 2, 0.7, 1, 0.6, 0.5])
+        cols = st.columns([3, 1.6, 1.1, 0.7, 1, 0.6, 0.5])
 
-        # Nombre del parámetro
-        cols[0].markdown(f"**{fila['parametro']}**")
+        # Nombre del parámetro (con candado si está validado)
+        nombre = fila["parametro"]
+        if is_validado:
+            cols[0].markdown(f"🔒 **{nombre}**", help="Resultado validado — bloqueado")
+        else:
+            cols[0].markdown(f"**{nombre}**")
 
-        # Input de valor (value=None muestra campo vacío)
+        # Input de valor (deshabilitado si validado)
         val = cols[1].number_input(
             fila["parametro"],
             value=existing_val,
             format="%.4g",
             label_visibility="collapsed",
+            disabled=is_validado,
             key=f"lab_v_{key_prefix}_{pid}",
         )
 
+        # Cualificador
+        cualif_idx = _CUALIFS.index(cualif_actual) if cualif_actual in _CUALIFS else 0
+        cualif = cols[2].selectbox(
+            "Cualif",
+            _CUALIFS,
+            index=cualif_idx,
+            label_visibility="collapsed",
+            disabled=is_validado,
+            key=f"lab_q_{key_prefix}_{pid}",
+        )
+
         # Unidad
-        cols[2].caption(fila["unidad"])
+        cols[3].caption(fila["unidad"])
 
         # Límite ECA
         if lim_max is not None and lim_min is not None:
-            cols[3].caption(f"{lim_min} – {lim_max}")
+            cols[4].caption(f"{lim_min} – {lim_max}")
         elif lim_max is not None:
-            cols[3].caption(f"≤ {lim_max}")
+            cols[4].caption(f"≤ {lim_max}")
         elif lim_min is not None:
-            cols[3].caption(f"≥ {lim_min}")
+            cols[4].caption(f"≥ {lim_min}")
         else:
-            cols[3].caption("—")
+            cols[4].caption("—")
 
-        # Semáforo ECA en tiempo real (desde el valor actual del widget)
+        # Semáforo ECA en tiempo real
         emoji, bg = _semaforo_eca(val, lim_min, lim_max)
         if emoji:
-            cols[4].markdown(
+            cols[5].markdown(
                 f'<div style="background:{bg};padding:2px 8px;border-radius:4px;'
                 f'text-align:center;font-size:1.1em">{emoji}</div>',
                 unsafe_allow_html=True,
             )
 
-        # Badge de guardado (✅ para parámetros ya persistidos en BD)
-        if pid in saved_params:
-            cols[5].markdown(
+        # Badge de estado: validado tiene prioridad sobre guardado
+        if is_validado:
+            cols[6].markdown(
+                '<div style="text-align:center" title="Validado">🛡️</div>',
+                unsafe_allow_html=True,
+            )
+        elif pid in saved_params:
+            cols[6].markdown(
                 '<div style="text-align:center" title="Guardado">✅</div>',
                 unsafe_allow_html=True,
             )
 
-        valores[pid] = {"valor": val, "observaciones": ""}
+        valores[pid] = {"valor": val, "observaciones": "", "cualificador": cualif or None}
 
     # Observaciones en sección colapsable
     with st.expander("📝 Observaciones", expanded=False):
@@ -380,13 +408,17 @@ def main() -> None:
         for pid, data in all_valores.items():
             valor = data.get("valor")
             obs = data.get("observaciones", "")
-            if valor is None and not obs:
+            cualif = data.get("cualificador")
+            # Cualificadores cualitativos válidos sin valor numérico
+            cualif_solo = cualif in ("Ausencia", "Presencia", "ND", "<LMD", "<LCM")
+            if valor is None and not obs and not cualif_solo:
                 continue
             cambios.append({
                 "parametro_id":   pid,
                 "valor_numerico": float(valor) if valor is not None else None,
-                "valor_texto":    None,
+                "valor_texto":    cualif if cualif in ("Ausencia", "Presencia") else None,
                 "observaciones":  obs or None,
+                "cualificador":   cualif,
             })
 
         if not cambios:
@@ -394,12 +426,17 @@ def main() -> None:
         else:
             analista_id = _get_usuario_interno_id(sesion.uid)
             with st.spinner(f"Guardando {len(cambios)} resultado(s)..."):
-                ok, errores = guardar_resultados_lote(
+                ok, errores, bloqueados = guardar_resultados_lote(
                     muestra_id=muestra_id,
                     filas=cambios,
                     analista_id=analista_id,
                 )
 
+            if bloqueados:
+                st.warning(
+                    f"🔒 {len(bloqueados)} resultado(s) están **validados** y no se sobreescribieron. "
+                    "Un administrador debe desvalidarlos primero para poder editar."
+                )
             if errores:
                 st.error(f"Se guardaron {ok}/{len(cambios)} resultados. Errores:")
                 for e in errores:
@@ -416,6 +453,151 @@ def main() -> None:
 
     # ── Eliminar todos los resultados de esta muestra ────────────────────────
     sesion_rol = sesion.rol if sesion else "visitante"
+
+    # ── Validación / desvalidación de resultados (solo administrador) ─────────
+    if sesion_rol == "administrador":
+        n_validados = sum(1 for f in filas if f.get("validado"))
+        n_no_validados = sum(1 for f in filas if not f.get("validado") and f["valor_numerico"] is not None)
+        with st.expander(
+            f"🛡️ Validar resultados ({n_validados} validados, {n_no_validados} pendientes)",
+            expanded=False,
+        ):
+            st.caption(
+                "Validar bloquea los resultados contra ediciones accidentales. "
+                "Solo admins pueden desvalidar para corregir."
+            )
+            from services.resultado_service import validar_resultados, desvalidar_resultados
+            col_v, col_d = st.columns(2)
+            pendientes_ids = [f["parametro_id"] for f in filas
+                              if not f.get("validado") and f["valor_numerico"] is not None]
+            validados_ids = [f["parametro_id"] for f in filas if f.get("validado")]
+            with col_v:
+                if pendientes_ids and st.button(
+                    f"Validar {len(pendientes_ids)} pendiente(s)",
+                    key="btn_validar_todos", type="primary",
+                ):
+                    validador_id = _get_usuario_interno_id(sesion.uid)
+                    n = validar_resultados(muestra_id, pendientes_ids, validador_id)
+                    st.success(f"{n} resultado(s) validado(s).")
+                    get_datos_muestra.clear()
+                    st.rerun()
+            with col_d:
+                if validados_ids and st.button(
+                    f"Desvalidar {len(validados_ids)} (permitir editar)",
+                    key="btn_desvalidar_todos",
+                ):
+                    n = desvalidar_resultados(muestra_id, validados_ids)
+                    st.warning(f"{n} resultado(s) desvalidado(s) — ahora son editables.")
+                    get_datos_muestra.clear()
+                    st.rerun()
+
+    # ── Carga masiva desde Excel / CSV ────────────────────────────────────────
+    with st.expander("📥 Carga masiva desde Excel / CSV", expanded=False):
+        st.caption(
+            "Sube un archivo con dos columnas: **codigo** (P001, P019, ...) y **valor** "
+            "(numérico, opcional). Una columna **cualificador** (opcional) acepta "
+            "<LMD, <LCM, Ausencia, Presencia, ND, Trazas. "
+            "Resultados validados quedarán bloqueados."
+        )
+
+        # Plantilla descargable
+        codigos_existentes = sorted({f["codigo"] for f in filas})
+        plantilla_csv = "codigo,valor,cualificador,observaciones\n" + "\n".join(
+            f"{c},,," for c in codigos_existentes
+        )
+        st.download_button(
+            "Descargar plantilla CSV",
+            data=plantilla_csv.encode("utf-8"),
+            file_name=f"plantilla_resultados_{muestra_id[:8]}.csv",
+            mime="text/csv",
+            key="dl_plantilla_csv",
+        )
+
+        archivo = st.file_uploader(
+            "Archivo de carga (Excel o CSV)",
+            type=["xlsx", "csv"],
+            key=f"upload_lab_{muestra_id}",
+        )
+        if archivo is not None:
+            try:
+                import pandas as _pd
+                if archivo.name.lower().endswith(".csv"):
+                    df_carga = _pd.read_csv(archivo)
+                else:
+                    df_carga = _pd.read_excel(archivo)
+                df_carga.columns = [str(c).strip().lower() for c in df_carga.columns]
+                if "codigo" not in df_carga.columns:
+                    st.error("El archivo debe tener una columna 'codigo'.")
+                else:
+                    cod_a_pid = {f["codigo"]: f["parametro_id"] for f in filas}
+                    cargas: list[dict] = []
+                    no_match: list[str] = []
+                    for _, row in df_carga.iterrows():
+                        cod = str(row.get("codigo", "")).strip().upper()
+                        if not cod:
+                            continue
+                        pid = cod_a_pid.get(cod)
+                        if not pid:
+                            no_match.append(cod)
+                            continue
+                        valor = row.get("valor")
+                        if _pd.isna(valor):
+                            valor = None
+                        else:
+                            try:
+                                valor = float(valor)
+                            except (TypeError, ValueError):
+                                valor = None
+                        cualif = row.get("cualificador")
+                        if _pd.isna(cualif) or not cualif:
+                            cualif = None
+                        else:
+                            cualif = str(cualif).strip()
+                        obs = row.get("observaciones")
+                        if _pd.isna(obs) or not obs:
+                            obs = None
+                        else:
+                            obs = str(obs).strip()
+                        if valor is None and not cualif and not obs:
+                            continue
+                        cargas.append({
+                            "parametro_id":   pid,
+                            "valor_numerico": valor,
+                            "valor_texto":    cualif if cualif in ("Ausencia", "Presencia") else None,
+                            "cualificador":   cualif,
+                            "observaciones":  obs,
+                        })
+
+                    st.info(f"Filas válidas detectadas: **{len(cargas)}**")
+                    if no_match:
+                        st.warning(
+                            f"{len(no_match)} código(s) no coinciden con parámetros activos: "
+                            f"{', '.join(no_match[:10])}"
+                        )
+
+                    if cargas and st.button(
+                        f"💾 Cargar {len(cargas)} resultado(s)",
+                        key="btn_bulk_upload", type="primary",
+                    ):
+                        analista_id = _get_usuario_interno_id(sesion.uid)
+                        ok, errs, blocs = guardar_resultados_lote(
+                            muestra_id=muestra_id,
+                            filas=cargas,
+                            analista_id=analista_id,
+                        )
+                        if blocs:
+                            st.warning(f"🔒 {len(blocs)} validado(s) no sobreescritos.")
+                        if errs:
+                            st.error(f"Cargados {ok}/{len(cargas)}. Errores:")
+                            for e in errs:
+                                st.caption(f"• {e}")
+                        else:
+                            st.success(f"✅ {ok} resultado(s) cargado(s) correctamente.")
+                        get_datos_muestra.clear()
+                        st.rerun()
+            except Exception as exc:
+                st.error(f"Error procesando el archivo: {exc}")
+
     if sesion_rol == "administrador" and con_valor > 0:
         with st.expander("🗑️ Eliminar todos los resultados de esta muestra", expanded=False):
             st.warning(

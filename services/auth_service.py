@@ -19,12 +19,29 @@ from gotrue.errors import AuthApiError
 
 from database.client import get_client
 
-Rol = Literal["administrador", "visualizador", "visitante"]
+Rol = Literal["administrador", "analista_lab", "tecnico_campo", "visualizador", "visitante"]
 
+# Jerarquía operacional:
+#   administrador  : control total (configura sistema, gestiona usuarios, valida)
+#   analista_lab   : ingresa y valida resultados de laboratorio
+#   tecnico_campo  : registra muestras y mediciones in-situ
+#   visualizador   : solo lectura del sistema
+#   visitante      : acceso público (geoportal, dashboards)
 ROL_JERARQUIA: dict[Rol, int] = {
-    "administrador": 3,
+    "administrador": 5,
+    "analista_lab":  4,
+    "tecnico_campo": 3,
     "visualizador":  2,
     "visitante":     1,
+}
+
+# Etiquetas para la UI
+ROL_LABELS: dict[Rol, str] = {
+    "administrador": "Administrador",
+    "analista_lab":  "Analista de laboratorio",
+    "tecnico_campo": "Técnico de campo",
+    "visualizador":  "Visualizador",
+    "visitante":     "Visitante",
 }
 
 

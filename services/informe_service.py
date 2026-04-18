@@ -436,6 +436,55 @@ def generar_pdf_campana(campana_id: str) -> bytes:
             styles["Normal"],
         ))
 
+    # ── Anexo: fotografías de campo ──────────────────────────────────────
+    try:
+        from reportlab.platypus import Image as PdfImage, PageBreak
+        from services.storage_service import get_fotos_campo, download_imagen
+
+        muestras_con_fotos: list[tuple[dict, list[dict]]] = []
+        for m in resumen.get("muestras", [])[:30]:  # tope: 30 muestras
+            fotos = get_fotos_campo(m["id"])
+            if fotos:
+                muestras_con_fotos.append((m, fotos))
+
+        if muestras_con_fotos:
+            elementos.append(PageBreak())
+            elementos.append(Paragraph("Anexo — Fotografías de Campo", subtitulo_style))
+            elementos.append(Paragraph(
+                f"Se incluyen fotografías de {len(muestras_con_fotos)} muestra(s).",
+                styles["Normal"],
+            ))
+            elementos.append(Spacer(1, 0.4 * cm))
+
+            for muestra, fotos in muestras_con_fotos:
+                elementos.append(Paragraph(
+                    f"<b>{muestra.get('codigo', '')}</b> — "
+                    f"{(muestra.get('puntos_muestreo') or {}).get('codigo', '')} "
+                    f"({muestra.get('fecha_muestreo', '')[:10]})",
+                    styles["Normal"],
+                ))
+                # Máx 4 fotos por muestra para no inflar el PDF
+                for foto in fotos[:4]:
+                    img_bytes = download_imagen(foto.get("url", ""))
+                    if not img_bytes:
+                        continue
+                    try:
+                        img = PdfImage(BytesIO(img_bytes), width=8 * cm, height=6 * cm)
+                        elementos.append(img)
+                        elementos.append(Paragraph(
+                            f"<i>{foto.get('name', '')}</i>",
+                            ParagraphStyle("PieFoto", parent=styles["Normal"],
+                                           fontSize=7, textColor=colors.grey),
+                        ))
+                        elementos.append(Spacer(1, 0.3 * cm))
+                    except Exception:
+                        # Imagen corrupta o formato no soportado — saltar
+                        continue
+                elementos.append(Spacer(1, 0.4 * cm))
+    except Exception:
+        # Si Storage no está disponible, omitir el anexo silenciosamente
+        pass
+
     # Pie
     elementos.append(Spacer(1, 1*cm))
     elementos.append(Paragraph(

@@ -102,10 +102,12 @@ def main() -> None:
         sel_punto = st.selectbox("Punto de muestreo", list(opciones_punto.keys()), key="bd_punto")
         punto_id = opciones_punto[sel_punto]
 
-        # Fechas
+        # Fechas — por defecto: ultimos 12 meses corridos
         st.markdown("**Rango de fechas**")
-        fecha_inicio = st.date_input("Desde", value=date(2025, 1, 1), key="bd_desde")
-        fecha_fin = st.date_input("Hasta", value=date.today(), key="bd_hasta")
+        _hoy = date.today()
+        _default_desde = _hoy.replace(year=_hoy.year - 1)
+        fecha_inicio = st.date_input("Desde", value=_default_desde, key="bd_desde")
+        fecha_fin = st.date_input("Hasta", value=_hoy, key="bd_hasta")
 
         st.divider()
 

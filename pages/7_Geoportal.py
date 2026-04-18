@@ -99,15 +99,15 @@ def _clasificar_cat(param: dict) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_kpi_card(valor, label: str, color: str, icono: str) -> str:
-    """Genera HTML para una tarjeta KPI estilo ANA."""
+    """Genera HTML para una tarjeta KPI — estilo limpio con acento de color."""
     return f"""
-    <div style="background:{color}; border-radius:10px; padding:16px 20px;
-         text-align:center; color:white; box-shadow:0 2px 8px rgba(0,0,0,0.12);
-         transition: transform 0.15s ease;">
-        <div style="font-size:1.6rem; margin-bottom:2px;">{icono}</div>
-        <div style="font-size:2rem; font-weight:800; line-height:1.1;">{valor}</div>
-        <div style="font-size:0.75rem; opacity:0.9; margin-top:4px; text-transform:uppercase;
-             letter-spacing:0.5px;">{label}</div>
+    <div style="background:#ffffff; border-radius:10px; padding:16px 20px;
+         text-align:center; border:1px solid #e2e8f0;
+         box-shadow:0 1px 3px rgba(0,0,0,0.04); transition: all 0.15s ease;">
+        <div style="font-size:1.4rem; margin-bottom:4px;">{icono}</div>
+        <div style="font-size:2rem; font-weight:800; line-height:1.1; color:{color};">{valor}</div>
+        <div style="font-size:0.72rem; color:#64748b; margin-top:4px; text-transform:uppercase;
+             letter-spacing:0.5px; font-weight:600;">{label}</div>
     </div>"""
 
 
@@ -143,18 +143,18 @@ def _render_dashboard(puntos: list[dict]) -> None:
     with col_barra:
         color_barra = "#2e7d32" if ic_general >= 80 else "#e8870e" if ic_general >= 50 else "#c62828"
         st.markdown(
-            f"""<div style="background:white; border-radius:10px; padding:16px 20px;
-                 border:1px solid #d5ddd5; margin-top:4px;">
+            f"""<div style="background:#ffffff; border-radius:10px; padding:16px 20px;
+                 border:1px solid #e2e8f0; margin-top:4px;">
             <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:6px;">
-                <span style="font-weight:600; color:#1a2e1a;">Indice de Cumplimiento General ECA</span>
+                <span style="font-weight:600; color:#1e293b;">Indice de Cumplimiento General ECA</span>
                 <span style="color:{color_barra}; font-weight:bold; font-size:1.1rem;">{ic_general}%</span>
             </div>
-            <div style="background:#e8ece8; border-radius:8px; height:24px; overflow:hidden;">
+            <div style="background:#f1f5f9; border-radius:8px; height:24px; overflow:hidden;">
                 <div style="background:linear-gradient(90deg, {color_barra}, {color_barra}dd);
                      width:{ic_general}%; height:100%; border-radius:8px;
                      transition: width 0.5s;"></div>
             </div>
-            <div style="font-size:11px; color:#5f7161; margin-top:6px;">
+            <div style="font-size:11px; color:#64748b; margin-top:6px;">
                 D.S. N° 004-2017-MINAM — Estandares Nacionales de Calidad Ambiental para Agua
             </div>
             </div>""",
@@ -914,11 +914,11 @@ def main() -> None:
 
     # Header del punto con estilo
     st.markdown(
-        f"""<div style="background:white; border:1px solid #d5ddd5; border-left:5px solid {color_estado};
+        f"""<div style="background:white; border:1px solid #e2e8f0; border-left:5px solid {color_estado};
              border-radius:10px; padding:16px 20px; margin-bottom:12px;">
             <div style="display:flex; align-items:center; justify-content:space-between;">
                 <div>
-                    <span style="font-size:1.2rem; font-weight:700; color:#1a2e1a;">
+                    <span style="font-size:1.2rem; font-weight:700; color:#1e293b;">
                         {punto_sel['codigo']} — {punto_sel['nombre']}
                     </span>
                     <span style="background:{color_estado}; color:white; padding:3px 10px; border-radius:20px;
@@ -926,7 +926,7 @@ def main() -> None:
                         {estado_label}
                     </span>
                 </div>
-                <div style="text-align:right; font-size:0.8rem; color:#5f7161;">
+                <div style="text-align:right; font-size:0.8rem; color:#64748b;">
                     {(punto_sel.get('tipo') or '—').capitalize()} &middot;
                     {punto_sel.get('cuenca', '—')} &middot;
                     {punto_sel.get('altitud_msnm', '—')} msnm
@@ -943,17 +943,17 @@ def main() -> None:
         i1, i2, i3 = st.columns(3)
         i1.markdown(
             f"""<div style="background:#e8f5e9; border-radius:8px; padding:10px 14px; text-align:center;">
-            <div style="font-size:0.7rem; color:#5f7161; text-transform:uppercase;">Sistema Hidrico</div>
+            <div style="font-size:0.7rem; color:#64748b; text-transform:uppercase;">Sistema Hidrico</div>
             <div style="font-weight:700; color:#1b6b35;">{punto_sel.get('sistema_hidrico', '—')}</div>
             </div>""", unsafe_allow_html=True)
         i2.markdown(
             f"""<div style="background:#e0f7f7; border-radius:8px; padding:10px 14px; text-align:center;">
-            <div style="font-size:0.7rem; color:#5f7161; text-transform:uppercase;">ECA Aplicable</div>
+            <div style="font-size:0.7rem; color:#64748b; text-transform:uppercase;">ECA Aplicable</div>
             <div style="font-weight:700; color:#0a9396;">{eca_info.get('codigo', '—')}</div>
             </div>""", unsafe_allow_html=True)
         i3.markdown(
             f"""<div style="background:#fef3e2; border-radius:8px; padding:10px 14px; text-align:center;">
-            <div style="font-size:0.7rem; color:#5f7161; text-transform:uppercase;">Ultimo Dato</div>
+            <div style="font-size:0.7rem; color:#64748b; text-transform:uppercase;">Ultimo Dato</div>
             <div style="font-weight:700; color:#c56d00;">{punto_sel.get('ultima_fecha', '—')}</div>
             </div>""", unsafe_allow_html=True)
 

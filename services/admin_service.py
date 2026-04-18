@@ -21,7 +21,7 @@ from database.client import get_admin_client
 from services.auth_service import Rol
 
 
-ROLES: list[Rol] = ["administrador", "visualizador", "visitante"]
+ROLES: list[Rol] = ["administrador", "analista_lab", "tecnico_campo", "visualizador", "visitante"]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
