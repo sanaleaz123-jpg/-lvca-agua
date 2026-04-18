@@ -239,6 +239,71 @@ def get_datos_cadena(campana_id: str) -> dict:
 # Configuración por defecto
 # ─────────────────────────────────────────────────────────────────────────────
 
+def get_config_persistida(campana_id: str) -> dict | None:
+    """
+    Recupera la configuración guardada de cadena de custodia para una campaña.
+    Retorna None si nunca se guardó.
+    Requiere migración 006 (tabla cadena_custodia_config).
+    """
+    try:
+        from database.client import get_admin_client
+        db = get_admin_client()
+        res = (
+            db.table("cadena_custodia_config")
+            .select("config")
+            .eq("campana_id", campana_id)
+            .maybe_single()
+            .execute()
+        )
+        if res and res.data:
+            return res.data.get("config")
+    except Exception:
+        pass
+    return None
+
+
+def guardar_config_persistida(
+    campana_id: str,
+    config: dict,
+    usuario_id: str | None = None,
+) -> bool:
+    """
+    Persiste la configuración de cadena para reutilizarla en próximas
+    generaciones. Upsert por campana_id.
+    Retorna True si se guardó, False si la tabla no existe (migración 006 pendiente).
+    """
+    try:
+        from database.client import get_admin_client
+        db = get_admin_client()
+        payload = {
+            "campana_id":      campana_id,
+            "config":          config,
+            "actualizado_por": usuario_id,
+            "updated_at":      datetime.utcnow().isoformat(),
+        }
+        db.table("cadena_custodia_config").upsert(
+            payload, on_conflict="campana_id"
+        ).execute()
+        return True
+    except Exception:
+        return False
+
+
+def config_para_campana(campana_id: str) -> dict:
+    """
+    Devuelve la configuración a usar para una campaña:
+        - persistida si existe
+        - default si no
+    """
+    persistida = get_config_persistida(campana_id)
+    if persistida:
+        # Mezclar con defaults para llenar campos faltantes (compat futura)
+        base = config_default()
+        base.update(persistida)
+        return base
+    return config_default()
+
+
 def config_default() -> dict:
     """Retorna la configuración por defecto de la cadena."""
     return {
@@ -279,6 +344,9 @@ def _safe_set(ws, row: int, col: int, value):
 # Generación Excel — basada en plantilla original
 # ─────────────────────────────────────────────────────────────────────────────
 
+_SLOTS_POR_HOJA = 11
+
+
 def generar_excel_cadena(campana_id: str, config: dict | None = None) -> bytes:
     """
     Genera el Excel de cadena de custodia a partir de la plantilla AUTODEMA.
@@ -289,6 +357,9 @@ def generar_excel_cadena(campana_id: str, config: dict | None = None) -> bytes:
     La plantilla tiene estructura fija: 15 columnas lab (Z–AN) y 7 campo
     (AO–AU).  Los nombres de los headers se sobreescriben dinámicamente
     con los parámetros activos de la BD.
+
+    Si la campaña tiene más de 11 muestras, genera hojas adicionales
+    (Página 1, Página 2, ...) preservando el formato del template.
     """
     from openpyxl import load_workbook
 
@@ -296,6 +367,12 @@ def generar_excel_cadena(campana_id: str, config: dict | None = None) -> bytes:
     datos = get_datos_cadena(campana_id)
     campana = datos["campana"]
     muestras = datos["muestras"]
+    n_muestras = len(muestras)
+    n_hojas = max(1, (n_muestras + _SLOTS_POR_HOJA - 1) // _SLOTS_POR_HOJA)
+    chunks = [
+        muestras[i : i + _SLOTS_POR_HOJA]
+        for i in range(0, max(n_muestras, 1), _SLOTS_POR_HOJA)
+    ] or [[]]
 
     # Parámetros dinámicos — acotados a la capacidad del template
     all_lab = _get_parametros_lab_default()
@@ -316,7 +393,17 @@ def generar_excel_cadena(campana_id: str, config: dict | None = None) -> bytes:
     # ── Cargar plantilla ──────────────────────────────────────────────────
     wb = load_workbook(_TEMPLATE_PATH)
     ws = wb.active
-    _set = lambda r, c, v: _safe_set(ws, r, c, v)
+    _ws_actual = [ws]  # contenedor mutable para que _set use la hoja actual
+    _set = lambda r, c, v: _safe_set(_ws_actual[0], r, c, v)
+
+    # Si hay más de 11 muestras, duplicamos la hoja una vez por cada chunk
+    hojas: list = [ws]
+    for i in range(1, n_hojas):
+        nueva = wb.copy_worksheet(ws)
+        nueva.title = f"Pagina {i + 1}"
+        hojas.append(nueva)
+    if n_hojas > 1:
+        ws.title = "Pagina 1"
 
     # ── Sobreescribir headers de parámetros (fila 11) ────────────────────
     for i in range(_TEMPLATE_LAB_COUNT):
@@ -394,10 +481,14 @@ def generar_excel_cadena(campana_id: str, config: dict | None = None) -> bytes:
                 _set(row_pres, _COL_LAB_START + idx, "X")
 
     # ══════════════════════════════════════════════════════════════════════
-    # 3. DATOS DE MUESTRAS (filas 15–36: 11 slots × 2 filas)
+    # 3. DATOS DE MUESTRAS (filas 15–36: 11 slots × 2 filas) — multi-hoja
     # ══════════════════════════════════════════════════════════════════════
 
-    for slot in range(11):
+    for hoja_idx, muestras_chunk in enumerate(chunks):
+      _ws_actual[0] = hojas[hoja_idx]
+      base_offset = hoja_idx * _SLOTS_POR_HOJA
+
+      for slot in range(_SLOTS_POR_HOJA):
         r1 = 15 + slot * 2   # fila impar (E: / alt:)
         r2 = r1 + 1          # fila par   (N: / Z:)
 
@@ -413,15 +504,15 @@ def generar_excel_cadena(campana_id: str, config: dict | None = None) -> bytes:
             _set(r1, col, None)
 
         # ── Si no hay muestra para este slot, saltar ─────────────────────
-        if slot >= len(muestras):
+        if slot >= len(muestras_chunk):
             continue
 
-        m = muestras[slot]
+        m = muestras_chunk[slot]
         pt = m.get("puntos_muestreo") or {}
         insitu = m.get("insitu", {})
 
-        # N° (B = col 2, merge B:B r1:r2)
-        _set(r1, 2, float(slot + 1))
+        # N° global (B = col 2, merge B:B r1:r2)
+        _set(r1, 2, float(base_offset + slot + 1))
 
         # Código de laboratorio (C = col 3, merge C:E r1:r2)
         _set(r1, 3, m.get("codigo", ""))
@@ -513,69 +604,53 @@ def generar_excel_cadena(campana_id: str, config: dict | None = None) -> bytes:
             _set(r1, col_obs, obs)
 
     # ══════════════════════════════════════════════════════════════════════
-    # 4. PIE DE PÁGINA (filas 38–65)
+    # 4. PIE DE PÁGINA (filas 38–65) — replicado en cada hoja
     # ══════════════════════════════════════════════════════════════════════
 
-    # Muestreo realizado por
-    muestreo = cfg.get("muestreo_por", "laboratorio")
-    _set(39, 4, "(   X      )" if muestreo == "laboratorio" else "(         )")
-    _set(39, 8, "(   X      )" if muestreo != "laboratorio" else "(         )")
-
-    # Nombre del muestreador (B40, merge B40:D41)
-    _set(40, 2, f"Nombre:  {cfg.get('nombre_muestreador', '')}")
-
-    # Nombre receptor en sección muestreo (E40, merge E40:H41)
-    _set(40, 5, f"Nombre: {cfg.get('nombre_receptor', '')}")
-
-    # Fecha muestreo (B42, merge B42:D44)
     fecha_hoy = datetime.utcnow().strftime("%d/%m/%Y")
-    _set(42, 2, f"Fecha: {fecha_hoy}")
-
-    # Fecha recepción (E42, merge E42:H44)
-    _set(42, 5, "Fecha:")
-
-    # Firma muestreador (B45, merge B45:D48)
-    _set(45, 2, "Firma:")
-
-    # Firma receptor (E45, merge E45:H48)
-    _set(45, 5, "Firma:")
-
-    # Equipos (R40:V43 = código, W40:AC43 = nombre — equipo 1)
-    # (R44:V47 = código, W44:AC47 = nombre — equipo 2)
+    fecha_corta = datetime.utcnow().strftime("%d/%m/%y")
+    fecha_hora = datetime.utcnow().strftime("%d/%m/%y - %H:%M")
+    muestreo = cfg.get("muestreo_por", "laboratorio")
     equipos = cfg.get("equipos", EQUIPOS_DEFAULT)
-    if len(equipos) > 0:
-        _set(40, 18, equipos[0].get("codigo", ""))
-        _set(40, 23, equipos[0].get("nombre", ""))
-    else:
-        _set(40, 18, "")
-        _set(40, 23, "")
-    if len(equipos) > 1:
-        _set(44, 18, equipos[1].get("codigo", ""))
-        _set(44, 23, equipos[1].get("nombre", ""))
-    else:
-        _set(44, 18, "")
-        _set(44, 23, "")
-
-    # Coordinador / Supervisor (B49 es header fijo)
-    _set(50, 2, f"Nombre: {cfg.get('nombre_supervisor', '')}")
-    _set(52, 2, f"Fecha: {datetime.utcnow().strftime('%d/%m/%y')}")
-    _set(54, 2, "Firma:")
-
-    # Recepción de muestra — nombre y fecha (J51:N53, J54:N56)
-    _set(51, 10, f"Nombre: {cfg.get('nombre_receptor', '')}")
-    _set(54, 10, f"Fecha / Hora: {datetime.utcnow().strftime('%d/%m/%y - %H:%M')}")
-
-    # Condiciones de la muestra (columna AW = 49, posición fija del template)
     cond = cfg.get("condiciones", {})
-    _set(39, 49, f"({'X' if cond.get('temp_ambiente') else '   '})")
-    _set(42, 49, f"({'x' if cond.get('refrigerado') else '    '})")
-    _set(47, 49, f"({'x' if cond.get('congelado') else '    '})")
-    _set(50, 49, f"({'x' if cond.get('caja_conservadora') else '    '})")
-    _set(53, 49, f"({'x' if cond.get('icepack') else '    '})")
-    _set(55, 49, f"({'x' if cond.get('hielo_potable') else '    '})")
 
-    # Observaciones generales (B60, merge B60:AW65)
-    _set(60, 2, cfg.get("observaciones_generales", ""))
+    def _footer(set_fn):
+        set_fn(39, 4, "(   X      )" if muestreo == "laboratorio" else "(         )")
+        set_fn(39, 8, "(   X      )" if muestreo != "laboratorio" else "(         )")
+        set_fn(40, 2, f"Nombre:  {cfg.get('nombre_muestreador', '')}")
+        set_fn(40, 5, f"Nombre: {cfg.get('nombre_receptor', '')}")
+        set_fn(42, 2, f"Fecha: {fecha_hoy}")
+        set_fn(42, 5, "Fecha:")
+        set_fn(45, 2, "Firma:")
+        set_fn(45, 5, "Firma:")
+        if len(equipos) > 0:
+            set_fn(40, 18, equipos[0].get("codigo", ""))
+            set_fn(40, 23, equipos[0].get("nombre", ""))
+        else:
+            set_fn(40, 18, "")
+            set_fn(40, 23, "")
+        if len(equipos) > 1:
+            set_fn(44, 18, equipos[1].get("codigo", ""))
+            set_fn(44, 23, equipos[1].get("nombre", ""))
+        else:
+            set_fn(44, 18, "")
+            set_fn(44, 23, "")
+        set_fn(50, 2, f"Nombre: {cfg.get('nombre_supervisor', '')}")
+        set_fn(52, 2, f"Fecha: {fecha_corta}")
+        set_fn(54, 2, "Firma:")
+        set_fn(51, 10, f"Nombre: {cfg.get('nombre_receptor', '')}")
+        set_fn(54, 10, f"Fecha / Hora: {fecha_hora}")
+        set_fn(39, 49, f"({'X' if cond.get('temp_ambiente') else '   '})")
+        set_fn(42, 49, f"({'x' if cond.get('refrigerado') else '    '})")
+        set_fn(47, 49, f"({'x' if cond.get('congelado') else '    '})")
+        set_fn(50, 49, f"({'x' if cond.get('caja_conservadora') else '    '})")
+        set_fn(53, 49, f"({'x' if cond.get('icepack') else '    '})")
+        set_fn(55, 49, f"({'x' if cond.get('hielo_potable') else '    '})")
+        set_fn(60, 2, cfg.get("observaciones_generales", ""))
+
+    for _h in hojas:
+        _ws_actual[0] = _h
+        _footer(_set)
 
     # ══════════════════════════════════════════════════════════════════════
     # 5. GUARDAR

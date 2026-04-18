@@ -32,19 +32,8 @@ st.set_page_config(
 )
 
 # ─── definición de páginas por rol ───────────────────────────────────────────
-# Cada entrada: (label, ruta_streamlit, rol_minimo, seccion)
-PAGINAS = [
-    ("Inicio",              "pages/1_Inicio.py",            "visitante",      "principal"),
-    ("Campañas",            "pages/2_Campanas.py",           "administrador", "campo"),
-    ("Muestras de campo",   "pages/3_Muestras_Campo.py",     "administrador", "campo"),
-    ("Resultados de lab",   "pages/4_Resultados_Lab.py",     "visualizador",  "datos"),
-    ("Base de Datos",       "pages/10_Base_Datos.py",        "visualizador",  "datos"),
-    ("Informes",            "pages/8_Informes.py",           "visualizador",  "datos"),
-    ("Geoportal",           "pages/7_Geoportal.py",          "visitante",     "visualizacion"),
-    ("Parámetros / ECAs",   "pages/5_Parametros.py",         "administrador", "config"),
-    ("Puntos de muestreo",  "pages/6_Puntos_Muestreo.py",   "administrador", "config"),
-    ("Administración",      "pages/9_Administracion.py",     "administrador", "config"),
-]
+# La lista única vive en components/auth_guard._PAGINAS_NAV para evitar drift.
+from components.auth_guard import _PAGINAS_NAV as PAGINAS  # noqa: E402
 
 _SECCION_LABELS = {
     "principal":     "INICIO",
@@ -62,7 +51,7 @@ _SECCION_ICONOS = {
     "config":        "⚙️",
 }
 
-_ROL_NIVEL = {"administrador": 3, "visualizador": 2, "visitante": 1}
+from services.auth_service import ROL_JERARQUIA as _ROL_NIVEL  # noqa: E402
 
 
 # ─── helpers de sesión ────────────────────────────────────────────────────────
@@ -111,7 +100,7 @@ def _pantalla_login() -> None:
                 <h1 style="font-size:1.8rem; margin:0; color:#1b6b35; font-weight:700;">
                     Plataforma LVCA
                 </h1>
-                <p style="color:#5f7161; margin:4px 0 0 0; font-size:0.85rem;">
+                <p style="color:#64748b; margin:4px 0 0 0; font-size:0.85rem;">
                     Laboratorio de Vigilancia de la Calidad del Agua
                 </p>
                 <p style="color:#e8870e; font-size:0.8rem; font-weight:600; margin:4px 0 0 0;">
@@ -173,7 +162,7 @@ def _sidebar(sesion: SesionUsuario) -> None:
         # Header con logo
         st.image("imagenes/logo_lvca.png", width=80)
         st.markdown(
-            f"<p style='font-size:0.72rem; color:#8bbf8b !important; "
+            f"<p style='font-size:0.72rem; color:#64748b !important; "
             f"margin:0; padding-bottom:4px;'>{APP_ENTIDAD}</p>",
             unsafe_allow_html=True,
         )
@@ -182,13 +171,13 @@ def _sidebar(sesion: SesionUsuario) -> None:
         # Info del usuario
         st.markdown(
             f"<p style='font-weight:600; font-size:0.9rem; margin-bottom:2px; "
-            f"color:#ffffff !important;'>{sesion.nombre_completo}</p>",
+            f"color:#1e293b !important;'>{sesion.nombre_completo}</p>",
             unsafe_allow_html=True,
         )
         badge_rol(sesion.rol)
         if sesion.institucion:
             st.markdown(
-                f"<p style='font-size:0.75rem; color:#8bbf8b !important; margin-top:4px;'>"
+                f"<p style='font-size:0.75rem; color:#64748b !important; margin-top:4px;'>"
                 f"{sesion.institucion}</p>",
                 unsafe_allow_html=True,
             )
@@ -207,7 +196,7 @@ def _sidebar(sesion: SesionUsuario) -> None:
                 icono = _SECCION_ICONOS.get(seccion, "")
                 sec_label = _SECCION_LABELS.get(seccion, "")
                 st.markdown(
-                    f"<p style='font-size:0.65rem; font-weight:700; color:#8bbf8b !important; "
+                    f"<p style='font-size:0.65rem; font-weight:700; color:#94a3b8 !important; "
                     f"text-transform:uppercase; letter-spacing:1px; margin:12px 0 4px 4px; "
                     f"padding:0;'>{icono} {sec_label}</p>",
                     unsafe_allow_html=True,
@@ -222,7 +211,7 @@ def _sidebar(sesion: SesionUsuario) -> None:
             st.rerun()
 
         st.markdown(
-            f"<p style='text-align:center; font-size:0.65rem; color:#6a9a6a !important; "
+            f"<p style='text-align:center; font-size:0.65rem; color:#94a3b8 !important; "
             f"margin-top:8px;'>v{APP_VERSION}</p>",
             unsafe_allow_html=True,
         )
@@ -255,8 +244,10 @@ def _dashboard(sesion: SesionUsuario) -> None:
     st.divider()
 
     nivel = _ROL_NIVEL.get(sesion.rol, 1)
+    nivel_visualizador = _ROL_NIVEL.get("visualizador", 0)
+    nivel_admin = _ROL_NIVEL.get("administrador", 0)
 
-    if nivel >= 2:
+    if nivel >= nivel_visualizador:
         col1, col2, col3, col4 = st.columns(4)
         with col1:
             _render_card(
@@ -289,7 +280,7 @@ def _dashboard(sesion: SesionUsuario) -> None:
         )
         st.page_link("pages/7_Geoportal.py", label="🗺️ Ver Geoportal")
 
-    if nivel >= 3:
+    if nivel >= nivel_admin:
         st.divider()
         st.markdown(
             "<p style='font-size:0.75rem; font-weight:700; color:#6c757d; "

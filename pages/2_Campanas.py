@@ -27,26 +27,62 @@ from services.campana_service import (
     actualizar_campana,
     actualizar_estado,
     actualizar_puntos_campana,
+    archivar_campana,
     crear_campana,
     eliminar_campana,
     get_campanas,
     get_detalle_campana,
     get_todos_los_puntos,
+    restaurar_campana,
 )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Constantes del módulo
+# Constantes / helpers del módulo
 # ─────────────────────────────────────────────────────────────────────────────
 
-_RESPONSABLES_CAMPO = [
+# Fallback si no hay usuarios cargados aún en la BD (primera instalación)
+_RESPONSABLES_CAMPO_FALLBACK = [
     "Adrian Llacho",
     "Alexis Vilcapaza",
     "Alfonso Torres",
     "J. Pierre Madariaga",
 ]
+_RESPONSABLE_LAB_FALLBACK = "Ing. Ana Lucía Paz Alcázar"
 
-_RESPONSABLE_LAB_FIJO = "Ing. Ana Lucía Paz Alcázar"
+
+def _opciones_responsables_campo() -> list[str]:
+    """Lista de nombres elegibles como responsable de campo, leídos de usuarios."""
+    try:
+        from services.muestra_service import get_usuarios_campo
+        usuarios = get_usuarios_campo()
+        nombres = [
+            f"{u.get('nombre', '').strip()} {u.get('apellido', '').strip()}".strip()
+            for u in usuarios
+        ]
+        nombres = [n for n in nombres if n]
+        if nombres:
+            return nombres
+    except Exception:
+        pass
+    return _RESPONSABLES_CAMPO_FALLBACK
+
+
+def _opciones_responsable_lab() -> list[str]:
+    """Lista de nombres elegibles como responsable de laboratorio."""
+    try:
+        from services.muestra_service import get_responsables_lab
+        usuarios = get_responsables_lab()
+        nombres = [
+            f"{u.get('nombre', '').strip()} {u.get('apellido', '').strip()}".strip()
+            for u in usuarios
+        ]
+        nombres = [n for n in nombres if n]
+        if nombres:
+            return nombres
+    except Exception:
+        pass
+    return [_RESPONSABLE_LAB_FALLBACK]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -135,43 +171,88 @@ def _render_listado() -> None:
         hide_index=True,
     )
 
-    # ── Eliminar campaña (directamente desde el listado) ──────────────────
+    # ── Archivar campaña (soft-delete, recomendado) ──────────────────────
     st.divider()
-    with st.expander("🗑️ Eliminar una campaña", expanded=False):
-        opciones_eliminar = {
+    with st.expander("📦 Archivar / restaurar campaña", expanded=False):
+        st.caption(
+            "Archivar oculta la campaña de los listados sin borrar datos. "
+            "Recomendado para campañas finalizadas que ya no se consultan."
+        )
+        opciones_archivar = {
             f"{c['codigo']} — {c['nombre']} ({_badge_estado(c['estado'])})": c
             for c in campanas
         }
-        sel_eliminar = st.selectbox(
-            "Seleccionar campaña a eliminar",
-            list(opciones_eliminar.keys()),
-            key="sel_eliminar_camp",
+        sel_archivar = st.selectbox(
+            "Seleccionar campaña",
+            list(opciones_archivar.keys()),
+            key="sel_archivar_camp",
         )
-        camp_eliminar = opciones_eliminar[sel_eliminar]
-
-        st.warning(
-            f"Se eliminará **{camp_eliminar['codigo']}** y **todos** sus datos asociados "
-            f"(muestras, resultados de laboratorio, mediciones in situ)."
+        camp_target = opciones_archivar[sel_archivar]
+        motivo = st.text_input(
+            "Motivo (opcional)",
+            placeholder="Ej. Campaña cerrada, datos consolidados en informe anual",
+            key="motivo_archivado_camp",
         )
-        confirmar_codigo = st.text_input(
-            f"Escribe **{camp_eliminar['codigo']}** para confirmar:",
-            key="confirmar_codigo_elim",
-        )
-        if st.button("Eliminar campaña y todos sus datos", key="btn_elim_camp_listado", type="primary"):
-            if confirmar_codigo.strip() != camp_eliminar["codigo"]:
-                st.error("El código no coincide.")
+        col_a, col_b = st.columns(2)
+        sesion = st.session_state.get("sesion")
+        usuario_id = sesion.uid if sesion else None
+        with col_a:
+            if camp_target["estado"] != "archivada":
+                if st.button("📦 Archivar", key="btn_archivar_camp", type="primary"):
+                    try:
+                        archivar_campana(camp_target["id"], motivo=motivo, usuario_id=usuario_id)
+                        st.success(f"Campaña {camp_target['codigo']} archivada.")
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Error al archivar: {exc}")
             else:
-                try:
-                    info = eliminar_campana(camp_eliminar["id"], forzar=True)
-                    st.success(
-                        f"Campaña eliminada. Se eliminaron: "
-                        f"{info['muestras']} muestra(s), "
-                        f"{info['resultados']} resultado(s), "
-                        f"{info['mediciones']} medición(es) in situ."
-                    )
-                    st.rerun()
-                except Exception as exc:
-                    st.error(f"Error: {exc}")
+                if st.button("↩️ Restaurar", key="btn_restaurar_camp"):
+                    try:
+                        restaurar_campana(camp_target["id"])
+                        st.success(f"Campaña {camp_target['codigo']} restaurada.")
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Error al restaurar: {exc}")
+
+    # ── Eliminación PERMANENTE (solo casos extremos) ─────────────────────
+    if sesion and getattr(sesion, "rol", "") == "administrador":
+        with st.expander("⚠️ Eliminar permanentemente (irreversible)", expanded=False):
+            st.error(
+                "**ATENCIÓN:** El borrado físico destruye datos para siempre. "
+                "Para campañas con datos válidos usa **Archivar** en su lugar."
+            )
+            opciones_eliminar = {
+                f"{c['codigo']} — {c['nombre']} ({_badge_estado(c['estado'])})": c
+                for c in campanas
+            }
+            sel_eliminar = st.selectbox(
+                "Seleccionar campaña a eliminar permanentemente",
+                list(opciones_eliminar.keys()),
+                key="sel_eliminar_camp",
+            )
+            camp_eliminar = opciones_eliminar[sel_eliminar]
+            st.warning(
+                f"Se eliminará **{camp_eliminar['codigo']}** y **todos** sus datos: "
+                f"muestras, resultados, mediciones."
+            )
+            confirmar_codigo = st.text_input(
+                f"Escribe **{camp_eliminar['codigo']}** para confirmar:",
+                key="confirmar_codigo_elim",
+            )
+            if st.button("ELIMINAR PERMANENTEMENTE", key="btn_elim_camp_listado"):
+                if confirmar_codigo.strip() != camp_eliminar["codigo"]:
+                    st.error("El código no coincide.")
+                else:
+                    try:
+                        info = eliminar_campana(camp_eliminar["id"], forzar=True)
+                        st.success(
+                            f"Campaña eliminada. {info['muestras']} muestra(s), "
+                            f"{info['resultados']} resultado(s), "
+                            f"{info['mediciones']} medición(es)."
+                        )
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Error: {exc}")
 
     # ── Selector de detalle ──────────────────────────────────────────────────
     st.divider()
@@ -381,20 +462,29 @@ def _render_editar_campana(campana_id: str, camp: dict) -> None:
             )
         with ec4:
             # Parsear responsables actuales desde el texto almacenado
+            opciones_resp = _opciones_responsables_campo()
             resp_actual = camp.get("responsable_campo") or ""
             default_resp = [
                 r.strip() for r in resp_actual.split(",")
-                if r.strip() in _RESPONSABLES_CAMPO
+                if r.strip() in opciones_resp
             ]
             resp_campo_sel = st.multiselect(
                 "Responsable de campo (máx. 2)",
-                _RESPONSABLES_CAMPO,
+                opciones_resp,
                 default=default_resp,
                 max_selections=2,
                 key="edit_resp_campo",
             )
 
-        st.markdown(f"**Responsable de laboratorio:** {_RESPONSABLE_LAB_FIJO}")
+        opciones_resp_lab = _opciones_responsable_lab()
+        resp_lab_actual = camp.get("responsable_laboratorio") or opciones_resp_lab[0]
+        idx_lab = opciones_resp_lab.index(resp_lab_actual) if resp_lab_actual in opciones_resp_lab else 0
+        resp_lab_sel = st.selectbox(
+            "Responsable de laboratorio",
+            opciones_resp_lab,
+            index=idx_lab,
+            key="edit_resp_lab",
+        )
 
         observaciones = st.text_area(
             "Observaciones",
@@ -415,7 +505,7 @@ def _render_editar_campana(campana_id: str, camp: dict) -> None:
                 "fecha_fin":               str(fecha_f),
                 "frecuencia":              frecuencia.lower(),
                 "responsable_campo":       ", ".join(resp_campo_sel) if resp_campo_sel else None,
-                "responsable_laboratorio": _RESPONSABLE_LAB_FIJO,
+                "responsable_laboratorio": resp_lab_sel,
                 "observaciones":           observaciones.strip() or None,
             })
             st.success("Campaña actualizada correctamente.")
@@ -496,12 +586,18 @@ def _render_formulario_nueva() -> None:
         with fc4:
             responsable_campo_sel = st.multiselect(
                 "Responsable de campo (máx. 2)",
-                _RESPONSABLES_CAMPO,
+                _opciones_responsables_campo(),
                 max_selections=2,
                 key="new_resp_campo",
             )
 
-        st.markdown(f"**Responsable de laboratorio:** {_RESPONSABLE_LAB_FIJO}")
+        opciones_lab_new = _opciones_responsable_lab()
+        responsable_lab_sel = st.selectbox(
+            "Responsable de laboratorio",
+            opciones_lab_new,
+            index=0,
+            key="new_resp_lab",
+        )
 
         puntos_sel = st.multiselect(
             "Puntos de muestreo incluidos *",
@@ -543,14 +639,16 @@ def _render_formulario_nueva() -> None:
             "fecha_fin":                 str(fecha_fin),
             "frecuencia":                frecuencia.lower(),
             "responsable_campo":         ", ".join(responsable_campo_sel) if responsable_campo_sel else None,
-            "responsable_laboratorio":   _RESPONSABLE_LAB_FIJO,
+            "responsable_laboratorio":   responsable_lab_sel,
             "observaciones":             observaciones.strip() or None,
             "puntos_ids":                puntos_ids,
         }
 
+        sesion = st.session_state.get("sesion")
+        usuario_id = sesion.uid if sesion else None
         with st.spinner("Creando campaña..."):
             try:
-                creada = crear_campana(datos)
+                creada = crear_campana(datos, usuario_id=usuario_id)
                 st.success(
                     f"Campaña **{creada['codigo']}** creada exitosamente "
                     f"con {len(puntos_ids)} punto(s) de muestreo."

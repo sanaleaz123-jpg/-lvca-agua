@@ -32,22 +32,25 @@ from components.ui_styles import aplicar_estilos, badge_rol
 # Mensajes por rol requerido
 _MENSAJES: dict[Rol, str] = {
     "administrador": "Solo los **administradores** pueden acceder a esta sección.",
+    "analista_lab":  "Necesitas al menos el rol **Analista de laboratorio**.",
+    "tecnico_campo": "Necesitas al menos el rol **Técnico de campo**.",
     "visualizador":  "Necesitas al menos el rol **Visualizador** para ver esta sección.",
     "visitante":     "Debes iniciar sesión para continuar.",
 }
 
 # Páginas agrupadas por sección
+# (label, ruta, rol_minimo, seccion)
 _PAGINAS_NAV = [
-    ("Inicio",              "pages/1_Inicio.py",            "visitante",      "principal"),
-    ("Campañas",            "pages/2_Campanas.py",           "administrador", "campo"),
-    ("Muestras de campo",   "pages/3_Muestras_Campo.py",     "administrador", "campo"),
-    ("Resultados de lab",   "pages/4_Resultados_Lab.py",     "visualizador",  "datos"),
-    ("Base de Datos",       "pages/10_Base_Datos.py",        "visualizador",  "datos"),
-    ("Informes",            "pages/8_Informes.py",           "visualizador",  "datos"),
-    ("Geoportal",           "pages/7_Geoportal.py",          "visitante",     "visualizacion"),
-    ("Parámetros / ECAs",   "pages/5_Parametros.py",         "administrador", "config"),
+    ("Inicio",              "pages/1_Inicio.py",            "visitante",     "principal"),
+    ("Campañas",            "pages/2_Campanas.py",          "tecnico_campo", "campo"),
+    ("Muestras de campo",   "pages/3_Muestras_Campo.py",    "tecnico_campo", "campo"),
+    ("Resultados de lab",   "pages/4_Resultados_Lab.py",    "analista_lab",  "datos"),
+    ("Base de Datos",       "pages/10_Base_Datos.py",       "visualizador",  "datos"),
+    ("Informes",            "pages/8_Informes.py",          "visualizador",  "datos"),
+    ("Geoportal",           "pages/7_Geoportal.py",         "visitante",     "visualizacion"),
+    ("Parámetros / ECAs",   "pages/5_Parametros.py",        "administrador", "config"),
     ("Puntos de muestreo",  "pages/6_Puntos_Muestreo.py",   "administrador", "config"),
-    ("Administración",      "pages/9_Administracion.py",     "administrador", "config"),
+    ("Administración",      "pages/9_Administracion.py",    "administrador", "config"),
 ]
 
 _SECCION_LABELS = {
@@ -66,7 +69,7 @@ _SECCION_ICONOS = {
     "config":        "⚙️",
 }
 
-_ROL_NIVEL = {"administrador": 3, "visualizador": 2, "visitante": 1}
+_ROL_NIVEL = ROL_JERARQUIA
 
 
 def _render_sidebar() -> None:
@@ -81,7 +84,7 @@ def _render_sidebar() -> None:
         # Header con logo
         st.image("imagenes/logo_lvca.png", width=80)
         st.markdown(
-            "<p style='font-size:0.72rem; color:#8bbf8b !important; "
+            "<p style='font-size:0.72rem; color:#64748b !important; "
             "margin:0; padding-bottom:4px;'>AUTODEMA</p>",
             unsafe_allow_html=True,
         )
@@ -90,7 +93,7 @@ def _render_sidebar() -> None:
         # Info del usuario
         st.markdown(
             f"<p style='font-weight:600; font-size:0.9rem; margin-bottom:2px; "
-            f"color:#ffffff !important;'>{sesion.nombre_completo}</p>",
+            f"color:#1e293b !important;'>{sesion.nombre_completo}</p>",
             unsafe_allow_html=True,
         )
         badge_rol(sesion.rol)
@@ -109,7 +112,7 @@ def _render_sidebar() -> None:
                 icono = _SECCION_ICONOS.get(seccion, "")
                 sec_label = _SECCION_LABELS.get(seccion, "")
                 st.markdown(
-                    f"<p style='font-size:0.65rem; font-weight:700; color:#8bbf8b !important; "
+                    f"<p style='font-size:0.65rem; font-weight:700; color:#94a3b8 !important; "
                     f"text-transform:uppercase; letter-spacing:1px; margin:12px 0 4px 4px; "
                     f"padding:0;'>{icono} {sec_label}</p>",
                     unsafe_allow_html=True,

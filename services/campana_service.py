@@ -17,6 +17,7 @@ from datetime import datetime
 from typing import Optional
 
 from database.client import get_admin_client
+from services.audit_service import registrar_cambio
 
 
 def _invalidar_cache() -> None:
@@ -38,6 +39,7 @@ ESTADOS = [
     "en_laboratorio",
     "completada",
     "anulada",
+    "archivada",
 ]
 
 TRANSICIONES_VALIDAS: dict[str, str] = {
@@ -52,6 +54,7 @@ ETIQUETA_ESTADO: dict[str, str] = {
     "en_laboratorio":   "🔬 En laboratorio",
     "completada":       "✅ Completada",
     "anulada":          "❌ Anulada",
+    "archivada":        "📦 Archivada",
 }
 
 FRECUENCIAS = [
@@ -72,11 +75,14 @@ def get_campanas(
     filtro_estado: Optional[str] = None,
     fecha_desde:   Optional[str] = None,
     fecha_hasta:   Optional[str] = None,
+    incluir_archivadas: bool = False,
 ) -> list[dict]:
     """
     Retorna campañas con filtros opcionales.
     filtro_estado: uno de ESTADOS o None para todos.
     fecha_desde/hasta: ISO date strings (YYYY-MM-DD).
+    incluir_archivadas: por defecto False — campañas archivadas quedan ocultas
+                       hasta que se pidan explícitamente.
     """
     db = get_admin_client()
     query = (
@@ -90,6 +96,8 @@ def get_campanas(
 
     if filtro_estado and filtro_estado in ESTADOS:
         query = query.eq("estado", filtro_estado)
+    elif not incluir_archivadas:
+        query = query.neq("estado", "archivada")
     if fecha_desde:
         query = query.gte("fecha_inicio", fecha_desde)
     if fecha_hasta:
@@ -115,7 +123,7 @@ def get_todos_los_puntos() -> list[dict]:
     return res.data or []
 
 
-def crear_campana(datos: dict) -> dict:
+def crear_campana(datos: dict, usuario_id: Optional[str] = None) -> dict:
     """
     Inserta una campaña nueva con código autogenerado y la vincula
     a los puntos de muestreo seleccionados.
@@ -154,6 +162,13 @@ def crear_campana(datos: dict) -> dict:
         ]
         db.table("campana_puntos").insert(links).execute()
 
+    registrar_cambio(
+        tabla="campanas",
+        registro_id=campana_creada["id"],
+        accion="crear",
+        valor_nuevo=f"{codigo} — {datos['nombre']} ({len(puntos_ids)} pto)",
+        usuario_id=usuario_id,
+    )
     _invalidar_cache()
     return campana_creada
 
@@ -166,7 +181,7 @@ class TransicionInvalidaError(Exception):
     """El cambio de estado solicitado no es válido."""
 
 
-def actualizar_estado(campana_id: str, nuevo_estado: str) -> None:
+def actualizar_estado(campana_id: str, nuevo_estado: str, usuario_id: Optional[str] = None) -> None:
     """
     Actualiza el estado de una campaña con validación de transición.
 
@@ -203,6 +218,15 @@ def actualizar_estado(campana_id: str, nuevo_estado: str) -> None:
     db.table("campanas").update(
         {"estado": nuevo_estado}
     ).eq("id", campana_id).execute()
+    registrar_cambio(
+        tabla="campanas",
+        registro_id=campana_id,
+        accion="cambio_estado",
+        campo="estado",
+        valor_anterior=estado_actual,
+        valor_nuevo=nuevo_estado,
+        usuario_id=usuario_id,
+    )
     _invalidar_cache()
 
 
@@ -361,9 +385,71 @@ def actualizar_puntos_campana(campana_id: str, puntos_ids: list[str]) -> None:
     _invalidar_cache()
 
 
-def eliminar_campana(campana_id: str, forzar: bool = False) -> dict:
+def archivar_campana(campana_id: str, motivo: str = "", usuario_id: Optional[str] = None) -> None:
     """
-    Elimina una campaña y sus registros relacionados.
+    Soft-delete: marca la campaña como 'archivada' sin borrar datos.
+
+    La campaña queda oculta en listados regulares pero todos sus datos
+    (muestras, resultados, mediciones, audit) se preservan íntegros.
+    Recuperable con restaurar_campana().
+    """
+    db = get_admin_client()
+    payload: dict = {
+        "estado": "archivada",
+        "archivada_at": datetime.utcnow().isoformat(),
+    }
+    if usuario_id:
+        payload["archivada_por"] = usuario_id
+    if motivo:
+        payload["motivo_archivado"] = motivo
+
+    try:
+        db.table("campanas").update(payload).eq("id", campana_id).execute()
+    except Exception:
+        # Fallback pre-migración 006: solo cambiar estado
+        db.table("campanas").update({"estado": "archivada"}).eq("id", campana_id).execute()
+    registrar_cambio(
+        tabla="campanas",
+        registro_id=campana_id,
+        accion="archivar",
+        valor_nuevo=motivo or "(sin motivo)",
+        usuario_id=usuario_id,
+    )
+    _invalidar_cache()
+
+
+def restaurar_campana(campana_id: str, nuevo_estado: str = "completada", usuario_id: Optional[str] = None) -> None:
+    """Saca una campaña del archivo y la devuelve a un estado operativo."""
+    if nuevo_estado == "archivada":
+        raise ValueError("Para restaurar elige un estado distinto a 'archivada'.")
+    db = get_admin_client()
+    payload = {
+        "estado": nuevo_estado,
+        "archivada_at": None,
+        "archivada_por": None,
+        "motivo_archivado": None,
+    }
+    try:
+        db.table("campanas").update(payload).eq("id", campana_id).execute()
+    except Exception:
+        db.table("campanas").update({"estado": nuevo_estado}).eq("id", campana_id).execute()
+    registrar_cambio(
+        tabla="campanas",
+        registro_id=campana_id,
+        accion="restaurar",
+        valor_nuevo=nuevo_estado,
+        usuario_id=usuario_id,
+    )
+    _invalidar_cache()
+
+
+def eliminar_campana(campana_id: str, forzar: bool = False, usuario_id: Optional[str] = None) -> dict:
+    """
+    BORRADO FÍSICO de una campaña y sus registros relacionados.
+
+    ⚠️  DESTRUCTIVO. En operación normal usa archivar_campana() (soft-delete).
+        Esta función queda solo para limpieza administrativa de campañas
+        de prueba o errores groseros antes de que se generen datos reales.
 
     Si forzar=False: solo permite planificada/anulada sin muestras.
     Si forzar=True:  elimina en cascada (resultados → mediciones → muestras → puntos → campaña).
@@ -438,6 +524,14 @@ def eliminar_campana(campana_id: str, forzar: bool = False) -> dict:
 
     # 5. Eliminar campaña
     db.table("campanas").delete().eq("id", campana_id).execute()
+
+    registrar_cambio(
+        tabla="campanas",
+        registro_id=campana_id,
+        accion="eliminar",
+        valor_anterior=f"{n_muestras} muestras, {n_resultados} resultados, {n_mediciones} mediciones",
+        usuario_id=usuario_id,
+    )
     _invalidar_cache()
 
     return {
@@ -450,24 +544,33 @@ def eliminar_campana(campana_id: str, forzar: bool = False) -> dict:
 def _generar_codigo(db) -> str:
     """
     Genera el siguiente código secuencial: CAMP-YYYY-NNN.
-    Ejemplo: CAMP-2025-001, CAMP-2025-002, ...
+    Usa la función PostgreSQL siguiente_codigo() (atómica, sin race conditions).
+    Cae a SELECT MAX+1 solo si la migración 006 no se ha aplicado.
     """
     year = datetime.utcnow().year
     prefijo = f"CAMP-{year}-"
 
-    res = (
-        db.table("campanas")
-        .select("codigo")
-        .like("codigo", f"{prefijo}%")
-        .execute()
-    )
-
-    max_seq = 0
-    for row in (res.data or []):
-        try:
-            seq = int(row["codigo"].replace(prefijo, ""))
-            max_seq = max(max_seq, seq)
-        except (ValueError, KeyError):
-            pass
-
-    return f"{prefijo}{max_seq + 1:03d}"
+    try:
+        res = db.rpc("siguiente_codigo", {
+            "p_tabla": "campanas",
+            "p_prefijo": "CAMP",
+            "p_anio": year,
+        }).execute()
+        seq = int(res.data)
+        return f"{prefijo}{seq:03d}"
+    except Exception:
+        # Fallback pre-migración 006 (sujeto a race condition)
+        res = (
+            db.table("campanas")
+            .select("codigo")
+            .like("codigo", f"{prefijo}%")
+            .execute()
+        )
+        max_seq = 0
+        for row in (res.data or []):
+            try:
+                seq = int(row["codigo"].replace(prefijo, ""))
+                max_seq = max(max_seq, seq)
+            except (ValueError, KeyError):
+                pass
+        return f"{prefijo}{max_seq + 1:03d}"

@@ -58,9 +58,11 @@ from services.resultado_service import get_campanas, _get_usuario_interno_id
 from services.cadena_custodia_service import (
     EQUIPOS_DEFAULT,
     config_default,
+    config_para_campana,
     generar_excel_cadena,
     generar_pdf_cadena,
     get_equipos_registrados,
+    guardar_config_persistida,
     registrar_equipo,
 )
 from services.storage_service import (
@@ -91,7 +93,29 @@ def _selector_campana_campo(key_prefix: str) -> str | None:
     """Selector de campaña en estado 'en_campo'. Retorna campana_id o None."""
     campanas = get_campanas_en_campo()
     if not campanas:
-        st.warning("No hay campañas en estado 'en_campo'. Cambia el estado de una campaña primero.")
+        # Diagnóstico: hay otras campañas? en qué estado están?
+        todas = get_campanas()
+        if not todas:
+            st.warning("No hay campañas registradas todavía.")
+            st.info(
+                "👉 Crea una campaña en la página **Campañas** y márcala como "
+                "**'en_campo'** para empezar a registrar muestras."
+            )
+        else:
+            estados = {}
+            for c in todas:
+                estados.setdefault(c.get("estado", "desconocido"), []).append(c["codigo"])
+            st.warning(
+                "No hay campañas en estado **'en_campo'**, por eso no se pueden registrar muestras."
+            )
+            with st.expander("Ver campañas existentes y cómo activarlas", expanded=True):
+                for est, codigos in estados.items():
+                    st.markdown(f"- **{est}** ({len(codigos)}): {', '.join(codigos[:5])}"
+                                + (f" (+{len(codigos)-5})" if len(codigos) > 5 else ""))
+                st.info(
+                    "Ve a la página **Campañas**, abre una de estas campañas "
+                    "y cambia su estado a **'en_campo'**."
+                )
         return None
     opciones = {f"{c['codigo']} — {c['nombre']}": c["id"] for c in campanas}
     label = st.selectbox("Campaña activa", list(opciones.keys()), key=f"{key_prefix}_camp")
@@ -714,13 +738,14 @@ def _render_insitu_single(
         val = cols[1].number_input(
             p["nombre"],
             value=existente.get("valor"),
+            min_value=p.get("valor_minimo"),
+            max_value=p.get("valor_maximo"),
             format="%.4g",
             label_visibility="collapsed",
+            placeholder="No medido",
             key=f"insitu_{key_prefix}_{clave}",
         )
-        valores[clave] = val if val != 0.0 or existente.get("valor") == 0.0 else None
-        if val == 0.0 and existente.get("valor") is None:
-            valores[clave] = None
+        valores[clave] = val
 
         cols[2].caption(p["unidad"])
 
@@ -829,14 +854,14 @@ def _render_insitu_columna(
             val = cols[1 + j].number_input(
                 f"{p['nombre']} ({tp})",
                 value=existente.get("valor"),
+                min_value=p.get("valor_minimo"),
+                max_value=p.get("valor_maximo"),
                 format="%.4g",
                 label_visibility="collapsed",
+                placeholder="—",
                 key=f"insitu_{m['id'][:8]}_{tp}_{clave}",
             )
-            parsed = val if val != 0.0 or existente.get("valor") == 0.0 else None
-            if val == 0.0 and existente.get("valor") is None:
-                parsed = None
-            valores_por_prof[j][clave] = parsed
+            valores_por_prof[j][clave] = val
 
         # Unidad
         cols[1 + n_prof].caption(p["unidad"])
@@ -974,17 +999,26 @@ def _render_custodia() -> None:
 
         if btn_recibir:
             receptor_id = _get_usuario_interno_id(sesion.uid) if sesion else None
-            try:
-                recibir_en_laboratorio(
-                    muestra["id"],
-                    receptor_id or "",
-                    estado_frasco,
-                    obs_recepcion,
+            if not receptor_id:
+                st.error(
+                    "Tu usuario no tiene un perfil interno asociado. "
+                    "Contacta al administrador para que te dé de alta en la tabla `usuarios` "
+                    "antes de recibir muestras (la cadena de custodia exige identificar al receptor)."
                 )
-                st.success("Muestra recibida en laboratorio.")
-                st.rerun()
-            except TransicionMuestraError as exc:
-                st.error(str(exc))
+            else:
+                try:
+                    recibir_en_laboratorio(
+                        muestra["id"],
+                        receptor_id,
+                        estado_frasco,
+                        obs_recepcion,
+                    )
+                    st.success("Muestra recibida en laboratorio.")
+                    st.rerun()
+                except TransicionMuestraError as exc:
+                    st.error(str(exc))
+                except ValueError as exc:
+                    st.error(str(exc))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1172,7 +1206,8 @@ def _render_cadena_custodia() -> None:
 
     # ── Configuración del documento ──────────────────────────────────────
     with st.expander("Configuración del documento", expanded=False):
-        cfg = config_default()
+        # Cargar config persistida si existe (sino, default)
+        cfg = config_para_campana(campana_id)
 
         # Campaña (read-only, reemplaza "Lugar de monitoreo")
         campana_label = f"{camp_info.get('nombre', '')} [{camp_info.get('codigo', '')}]"
@@ -1354,6 +1389,21 @@ def _render_cadena_custodia() -> None:
     # ── Botones de descarga ──────────────────────────────────────────────
     st.divider()
     st.markdown("#### Descargar cadena de custodia")
+
+    # Persistir configuración para reutilizar en próximas generaciones
+    sesion = st.session_state.get("sesion")
+    col_save, _ = st.columns([1, 3])
+    with col_save:
+        if st.button("💾 Guardar configuración para esta campaña",
+                     key="btn_cc_save_cfg", use_container_width=True):
+            uid = sesion.uid if sesion else None
+            if guardar_config_persistida(campana_id, cfg, usuario_id=uid):
+                st.success("Configuración guardada — se cargará automáticamente la próxima vez.")
+            else:
+                st.warning(
+                    "No se pudo guardar (¿migración 006 aplicada?). "
+                    "La configuración seguirá funcionando solo en esta sesión."
+                )
 
     dc1, dc2 = st.columns(2)
 

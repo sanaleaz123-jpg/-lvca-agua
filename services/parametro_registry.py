@@ -155,21 +155,39 @@ _INSITU_A_CADENA = {
 @cached(ttl=300)
 def get_parametros_activos() -> list[dict]:
     """
-    Todos los parámetros activos con categoría y unidad, ordenados por código.
+    Todos los parámetros activos con categoría, unidad, rangos físicos y LMD/LCM.
+    Si las columnas rango_min/rango_max/lmd/lcm no existen aún (migración 006),
+    cae al select básico sin romper.
     """
     db = get_admin_client()
-    res = (
-        db.table("parametros")
-        .select(
-            "id, codigo, nombre, activo, "
-            "categorias_parametro(id, nombre), "
-            "unidades_medida(id, simbolo, nombre)"
+    try:
+        res = (
+            db.table("parametros")
+            .select(
+                "id, codigo, nombre, activo, "
+                "rango_min, rango_max, lmd, lcm, "
+                "categorias_parametro(id, nombre), "
+                "unidades_medida(id, simbolo, nombre)"
+            )
+            .eq("activo", True)
+            .order("codigo")
+            .execute()
         )
-        .eq("activo", True)
-        .order("codigo")
-        .execute()
-    )
-    return res.data or []
+        return res.data or []
+    except Exception:
+        # Fallback pre-migración 006
+        res = (
+            db.table("parametros")
+            .select(
+                "id, codigo, nombre, activo, "
+                "categorias_parametro(id, nombre), "
+                "unidades_medida(id, simbolo, nombre)"
+            )
+            .eq("activo", True)
+            .order("codigo")
+            .execute()
+        )
+        return res.data or []
 
 
 # Parámetros reclasificados por decisión funcional
@@ -250,7 +268,7 @@ def get_cat_params() -> dict[str, list[str]]:
 def get_parametros_insitu() -> list[dict]:
     """
     Reemplazo dinámico de ``PARAMETROS_INSITU``.
-    Retorna parámetros de campo con clave, nombre, unidad y código.
+    Retorna parámetros de campo con clave, nombre, unidad, código y rangos físicos.
     """
     params = get_parametros_activos()
     result = []
@@ -265,6 +283,10 @@ def get_parametros_insitu() -> list[dict]:
             "nombre": p.get("nombre", ""),
             "unidad": unidad,
             "codigo": codigo,
+            "valor_minimo": p.get("rango_min"),
+            "valor_maximo": p.get("rango_max"),
+            "lmd": p.get("lmd"),
+            "lcm": p.get("lcm"),
         })
 
     # Orden fijo según la convención de medición
