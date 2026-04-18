@@ -487,14 +487,98 @@ def get_comparativa_eca_punto(
 # Datos mensuales de un parámetro en todos los puntos (gráfico de barras)
 # ─────────────────────────────────────────────────────────────────────────────
 
+@cached(ttl=180)
+def get_ultimo_valor_parametro_por_punto(
+    parametro_id: str,
+    fecha_inicio: str,
+    fecha_fin: str,
+    campana_id: Optional[str] = None,
+) -> dict[str, dict]:
+    """
+    Para UN parámetro y un rango de fechas, devuelve el último valor por punto.
+    Reemplaza el patrón N+1 de llamar get_comparativa_eca_punto N veces.
+
+    Retorna: { punto_muestreo_id: {valor, fecha, lim_max, lim_min, estado} }
+    """
+    db = get_admin_client()
+
+    query = (
+        db.table("resultados_laboratorio")
+        .select(
+            "valor_numerico, fecha_analisis, "
+            "muestras(punto_muestreo_id, campana_id, "
+            "  puntos_muestreo(eca_id))"
+        )
+        .eq("parametro_id", parametro_id)
+        .gte("fecha_analisis", fecha_inicio[:10])
+        .lte("fecha_analisis", fecha_fin[:10])
+        .not_.is_("valor_numerico", "null")
+        .order("fecha_analisis", desc=True)
+    )
+    rows = query.execute().data or []
+
+    if campana_id:
+        rows = [
+            r for r in rows
+            if (r.get("muestras") or {}).get("campana_id") == campana_id
+        ]
+
+    # Deduplicar por punto, quedándonos con el más reciente
+    por_punto: dict[str, dict] = {}
+    eca_ids: set[str] = set()
+    for r in rows:
+        m = r.get("muestras") or {}
+        pid = m.get("punto_muestreo_id")
+        if not pid or pid in por_punto:
+            continue
+        eca_id = (m.get("puntos_muestreo") or {}).get("eca_id")
+        por_punto[pid] = {
+            "valor":   r["valor_numerico"],
+            "fecha":   (r.get("fecha_analisis") or "")[:10],
+            "eca_id":  eca_id,
+        }
+        if eca_id:
+            eca_ids.add(eca_id)
+
+    # Cargar límites ECA para todos los ECAs encontrados (1 query)
+    limites: dict[str, dict] = {}
+    if eca_ids:
+        lim_res = (
+            db.table("eca_valores")
+            .select("eca_id, valor_minimo, valor_maximo")
+            .in_("eca_id", list(eca_ids))
+            .eq("parametro_id", parametro_id)
+            .execute()
+        )
+        limites = {l["eca_id"]: l for l in (lim_res.data or [])}
+
+    # Anotar cada punto con sus límites y estado
+    for pid, info in por_punto.items():
+        lim = limites.get(info.get("eca_id") or "")
+        info["lim_max"] = (lim or {}).get("valor_maximo")
+        info["lim_min"] = (lim or {}).get("valor_minimo")
+        v = info["valor"]
+        excede = (
+            (info["lim_max"] is not None and v > info["lim_max"])
+            or
+            (info["lim_min"] is not None and v < info["lim_min"])
+        )
+        info["estado"] = "excede" if excede else "cumple" if lim else "sin_eca"
+
+    return por_punto
+
+
 @cached(ttl=300)
 def get_datos_mensuales_parametro(
     parametro_id: str,
     anio: int,
+    punto_id: str | None = None,
 ) -> list[dict]:
     """
-    Retorna valores mensuales de un parámetro para todos los puntos activos
-    durante un año.
+    Retorna valores mensuales de un parámetro durante un año.
+
+    Si se pasa punto_id, filtra solo a las muestras de ese punto.
+    Si es None, devuelve todos los puntos activos.
 
     Cada dict: {punto_codigo, punto_nombre, mes (1-12), valor, fecha}
     """
@@ -503,8 +587,22 @@ def get_datos_mensuales_parametro(
     fecha_inicio = f"{anio}-01-01"
     fecha_fin = f"{anio}-12-31"
 
-    # Resultados del parámetro en el año
-    r_res = (
+    # Si filtramos por punto, primero obtenemos los muestra_ids de ese punto
+    muestra_ids: list[str] | None = None
+    if punto_id:
+        m_res = (
+            db.table("muestras")
+            .select("id")
+            .eq("punto_muestreo_id", punto_id)
+            .gte("fecha_muestreo", fecha_inicio)
+            .lte("fecha_muestreo", fecha_fin)
+            .execute()
+        )
+        muestra_ids = [m["id"] for m in (m_res.data or [])]
+        if not muestra_ids:
+            return []
+
+    query = (
         db.table("resultados_laboratorio")
         .select(
             "valor_numerico, fecha_analisis, "
@@ -515,8 +613,10 @@ def get_datos_mensuales_parametro(
         .lte("fecha_analisis", fecha_fin)
         .not_.is_("valor_numerico", "null")
         .order("fecha_analisis")
-        .execute()
     )
+    if muestra_ids is not None:
+        query = query.in_("muestra_id", muestra_ids)
+    r_res = query.execute()
 
     datos = []
     for r in (r_res.data or []):

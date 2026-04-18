@@ -27,6 +27,7 @@ from services.mapa_service import (
     get_limite_eca_parametro,
     get_parametros_selector,
     get_puntos_geoportal,
+    get_ultimo_valor_parametro_por_punto,
     get_ultimos_resultados_punto,
 )
 from services.resultado_service import get_campanas
@@ -299,17 +300,29 @@ def _construir_mapa(puntos: list[dict], solo_excedencias: bool, mostrar_heatmap:
         zoom_start=MAPA_ZOOM,
         tiles=None,
         prefer_canvas=True,
+        max_zoom=22,         # permite hacer zoom muy cerca
+        min_zoom=5,
     )
 
-    # Tile layers
-    folium.TileLayer("OpenStreetMap", name="Calles").add_to(m)
+    # Tile layers — max_native_zoom evita que Leaflet quede en blanco al
+    # pedir tiles más allá de lo que el proveedor sirve. max_zoom mantiene
+    # el control de zoom disponible (sobreescala el último tile válido).
+    folium.TileLayer(
+        "OpenStreetMap",
+        name="Calles",
+        max_native_zoom=19, max_zoom=22,
+    ).add_to(m)
     folium.TileLayer(
         tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-        attr="Esri", name="Satélite",
+        attr="Esri",
+        name="Satélite",
+        max_native_zoom=18, max_zoom=22,
     ).add_to(m)
     folium.TileLayer(
         tiles="https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
-        attr="OpenTopoMap", name="Topográfico",
+        attr="OpenTopoMap",
+        name="Topográfico",
+        max_native_zoom=17, max_zoom=22,
     ).add_to(m)
 
     MiniMap(toggle_display=True, position="bottomright", zoom_level_offset=-5).add_to(m)
@@ -363,15 +376,18 @@ def _construir_mapa(puntos: list[dict], solo_excedencias: bool, mostrar_heatmap:
 
     fg_poligonos.add_to(m)
 
-    # FIX 1: HeatMap BEFORE markers so markers render on top
+    # HeatMap antes que los marcadores para que los marcadores queden encima.
+    # max_zoom controla hasta qué zoom el plugin re-genera la grilla; lo
+    # subimos para que el calor siga visible al hacer zoom in. radius/blur
+    # más conservadores para que se vea legible en cualquier zoom.
     if mostrar_heatmap and heat_data:
         fg_heat = folium.FeatureGroup(name="Mapa de calor ECA", show=True)
         HeatMap(
             heat_data,
-            min_opacity=0.3,
-            max_zoom=13,
-            radius=30,
-            blur=20,
+            min_opacity=0.35,
+            max_zoom=18,
+            radius=22,
+            blur=16,
             gradient={
                 "0.0": "#2e7d32",
                 "0.3": "#0a9396",
@@ -439,38 +455,59 @@ def _construir_mapa(puntos: list[dict], solo_excedencias: bool, mostrar_heatmap:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_gauge(punto: dict) -> None:
+    """Indicador de cumplimiento ECA — bullet limpio, sin delta engañoso."""
     ic = punto.get("indice_cumplimiento")
     if ic is None:
-        st.info("Sin datos para evaluar cumplimiento.")
+        st.info("Sin datos suficientes para evaluar el cumplimiento ECA.")
         return
 
     pct = round(ic * 100, 1)
     n_eval = punto.get("n_parametros_evaluados", 0)
     n_exc = punto.get("n_excedencias", 0)
+    n_ok = max(n_eval - n_exc, 0)
 
+    color_principal = "#2e7d32" if pct >= 80 else "#e8870e" if pct >= 50 else "#c62828"
+    color_fondo = "#e8f5e9" if pct >= 80 else "#fef3e2" if pct >= 50 else "#fce4e4"
+
+    # Bullet horizontal: más compacto y legible que el gauge circular
     fig = go.Figure(go.Indicator(
-        mode="gauge+number+delta",
+        mode="number+gauge",
         value=pct,
-        number={"suffix": "%", "font": {"size": 36}},
-        delta={"reference": 100, "suffix": "%", "decreasing": {"color": "#c62828"}},
-        title={"text": f"Cumplimiento ECA<br><span style='font-size:12px; color:#666;'>{n_eval-n_exc}/{n_eval} parámetros OK</span>"},
+        number={"suffix": "%", "font": {"size": 30, "color": color_principal}},
         gauge={
-            "axis": {"range": [0, 100], "tickwidth": 1},
-            "bar": {"color": "#1b6b35"},
+            "shape": "bullet",
+            "axis": {"range": [0, 100], "tickwidth": 1, "ticksuffix": "%"},
+            "bar": {"color": color_principal, "thickness": 0.65},
+            "bgcolor": color_fondo,
+            "borderwidth": 0,
             "steps": [
-                {"range": [0, 50], "color": "#fce4e4"},
-                {"range": [50, 80], "color": "#fef3e2"},
+                {"range": [0, 50],  "color": "#fde8e8"},
+                {"range": [50, 80], "color": "#fff4e0"},
                 {"range": [80, 100], "color": "#e8f5e9"},
             ],
             "threshold": {
-                "line": {"color": "#c62828", "width": 3},
-                "thickness": 0.8,
-                "value": 100,
+                "line": {"color": "#1e293b", "width": 3},
+                "thickness": 0.85,
+                "value": 80,
             },
         },
+        domain={"x": [0.18, 1], "y": [0.15, 0.85]},
+        title={"text": "<b>Cumplimiento ECA</b>",
+               "font": {"size": 13, "color": "#1e293b"}},
     ))
-    fig.update_layout(height=250, margin=dict(l=20, r=20, t=50, b=10))
-    st.plotly_chart(fig, use_container_width=True)
+    fig.update_layout(
+        height=130,
+        margin=dict(l=10, r=10, t=20, b=10),
+        paper_bgcolor="rgba(0,0,0,0)",
+    )
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+    # Detalle bajo el bullet
+    sub_a, sub_b, sub_c = st.columns(3)
+    sub_a.metric("Parámetros evaluados", n_eval)
+    sub_b.metric("Cumplen ECA", n_ok, delta=None)
+    sub_c.metric("Excedencias", n_exc, delta=None,
+                 delta_color="inverse")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -558,119 +595,12 @@ def _render_tendencia(punto: dict, parametro: dict, campana_label: str, cat: str
 # 5. TABLA COMPARATIVA ECA POR PARÁMETRO (reemplaza radar)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _render_tabla_eca_parametros(punto: dict, fecha_inicio: str, fecha_fin: str, cat: str = "") -> None:
-    """Tabla de % del límite ECA por parámetro — reemplaza el radar."""
-    datos = get_comparativa_eca_punto(punto["id"], fecha_inicio, fecha_fin)
-    validos = [d for d in datos if d["valor"] is not None and d.get("tiene_eca")]
-    if not validos:
-        return
-
-    # Build table data
-    rows = []
-    for d in validos:
-        lim_max = d.get("lim_max")
-        lim_min = d.get("lim_min")
-        if lim_max and lim_max > 0:
-            pct = round(d["valor"] / lim_max * 100, 1)
-        elif lim_min and lim_min > 0:
-            pct = round(lim_min / d["valor"] * 100, 1) if d["valor"] > 0 else 0
-        else:
-            continue
-        rows.append({
-            "Parámetro": d["parametro"],
-            "Valor": d["valor"],
-            "Unidad": d["unidad"],
-            "Límite ECA": lim_max if lim_max else lim_min,
-            "% del límite": pct,
-            "Estado": "EXCEDE" if d["estado"] == "excede" else "Cumple",
-        })
-
-    if not rows:
-        return
-
-    st.markdown("**% del límite ECA por parámetro**")
-    df = pd.DataFrame(rows)
-
-    def _style_estado(val):
-        if val == "EXCEDE":
-            return "background-color:#ffe0e0; color:#dc3545; font-weight:bold;"
-        elif val == "Cumple":
-            return "background-color:#e0ffe0; color:#28a745;"
-        return ""
-
-    def _style_pct(val):
-        try:
-            v = float(val)
-            if v > 100:
-                return "color:#dc3545; font-weight:bold;"
-        except (ValueError, TypeError):
-            pass
-        return ""
-
-    st.dataframe(
-        df.style.map(_style_estado, subset=["Estado"]).map(_style_pct, subset=["% del límite"]),
-        use_container_width=True, hide_index=True,
-        height=min(400, 35 * len(df) + 38),
-        key=f"tabla_eca_params_{cat}",
-    )
+# _render_tabla_eca_parametros() se eliminó — su función la cumple ahora
+# _render_comparativa_eca_filtered() en el tab "Estado ECA".
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 6. COMPARATIVA ECA (tabla) — Fix 5: cumple, SIN ECA, no código column
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _render_comparativa_eca(punto: dict, fecha_inicio: str, fecha_fin: str) -> None:
-    datos = get_comparativa_eca_punto(punto["id"], fecha_inicio, fecha_fin)
-    if not datos:
-        st.info("Sin datos para comparativa ECA.")
-        return
-
-    datos_f = [d for d in datos if d["valor"] is not None or d["lim_max"] is not None or d["lim_min"] is not None]
-    if not datos_f:
-        st.info("No hay parámetros con datos o límites ECA definidos.")
-        return
-
-    df = pd.DataFrame(datos_f)
-
-    # Fix 5: "cumple" instead of "OK", "SIN ECA" for parameters without ECA
-    def _map_estado(row):
-        if row.get("estado") == "excede":
-            return "EXCEDE"
-        elif row.get("estado") == "sin_eca":
-            return "SIN ECA"
-        elif row.get("estado") == "cumple":
-            return "Cumple"
-        return "—"
-
-    df["Estado"] = df.apply(_map_estado, axis=1)
-
-    # Fix 5: remove "código" column
-    df_show = df[["parametro", "valor", "unidad", "lim_min", "lim_max", "Estado", "fecha"]].copy()
-    df_show.columns = ["Parámetro", "Valor", "Unidad", "Lím. Mín", "Lím. Máx", "Estado", "Fecha"]
-
-    def _color_estado_cell(val):
-        if val == "EXCEDE":
-            return "background-color:#ffe0e0; color:#dc3545; font-weight:bold;"
-        elif val == "Cumple":
-            return "background-color:#e0ffe0; color:#28a745; font-weight:bold;"
-        elif val == "SIN ECA":
-            return "color:#888;"
-        return ""
-
-    n_exc = sum(1 for d in datos_f if d["estado"] == "excede")
-    n_ok = sum(1 for d in datos_f if d["estado"] == "cumple")
-    n_sin = sum(1 for d in datos_f if d["estado"] == "sin_dato")
-
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Exceden ECA", n_exc)
-    c2.metric("Cumplen ECA", n_ok)
-    c3.metric("Sin dato", n_sin)
-
-    st.dataframe(
-        df_show.style.map(_color_estado_cell, subset=["Estado"]),
-        use_container_width=True, hide_index=True,
-        height=min(400, 35 * len(df_show) + 38),
-    )
+# Nota: la antigua _render_comparativa_eca() se eliminó. La versión activa es
+# _render_comparativa_eca_filtered() — más abajo, llamada desde tab_eca.
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -683,61 +613,83 @@ def _render_barras_comparativa_puntos(
     campana_label: str,
     cat: str = "",
 ) -> None:
-    """Gráfico de barras horizontal: compara un parámetro entre todos los puntos."""
+    """
+    Compara un parámetro entre todos los puntos en barras horizontales.
+
+    Una sola query agrupada (get_ultimo_valor_parametro_por_punto) reemplaza
+    el patrón anterior N+1 (get_comparativa_eca_punto por cada punto).
+    """
+    ultimos = get_ultimo_valor_parametro_por_punto(
+        parametro["id"], fecha_inicio, fecha_fin,
+    )
     db_data = []
     for p in puntos:
-        datos = get_comparativa_eca_punto(p["id"], fecha_inicio, fecha_fin)
-        for d in datos:
-            if d["codigo"] == parametro["codigo"] and d["valor"] is not None:
-                db_data.append({
-                    "punto": p["codigo"],
-                    "nombre": p["nombre"],
-                    "valor": d["valor"],
-                    "lim_max": d["lim_max"],
-                    "estado": d["estado"],
-                })
-                break
+        info = ultimos.get(p["id"])
+        if not info or info.get("valor") is None:
+            continue
+        db_data.append({
+            "punto":  p.get("codigo", ""),
+            "nombre": p.get("nombre", ""),
+            "valor":  info["valor"],
+            "lim_max": info.get("lim_max"),
+            "lim_min": info.get("lim_min"),
+            "estado": info.get("estado"),
+        })
 
     if not db_data:
-        st.info(f"Sin datos de {parametro['nombre']} en los puntos monitoreados.")
+        st.info(
+            f"Sin datos recientes de {parametro['nombre']} en los puntos monitoreados."
+        )
         return
 
     df = pd.DataFrame(db_data).sort_values("valor", ascending=True)
-    colores = ["#dc3545" if r["estado"] == "excede" else "#1a73e8" for _, r in df.iterrows()]
+    colores = ["#c62828" if r["estado"] == "excede" else "#1b6b35" for _, r in df.iterrows()]
 
     unidad = (parametro.get("unidades_medida") or {}).get("simbolo", "")
     x_label = f"{parametro['nombre']} ({unidad})" if unidad else parametro["nombre"]
 
-    # Title with scope
-    scope = "por punto de monitoreo"
+    scope = "Último valor por punto"
     if campana_label and campana_label != "Todas":
         scope += f" · Campaña: {campana_label}"
 
-    fig = go.Figure()
-    fig.add_trace(go.Bar(
+    fig = go.Figure(go.Bar(
         y=df["punto"], x=df["valor"],
         orientation="h",
         marker_color=colores,
         text=[f"{v:.3g}" for v in df["valor"]],
-        textposition="outside",
-        hovertemplate="<b>%{y}</b><br>Valor: %{x:.4g}<extra></extra>",
+        textposition="outside", textfont_size=10,
+        customdata=df[["nombre"]].values,
+        hovertemplate="<b>%{y}</b> — %{customdata[0]}<br>Valor: %{x:.4g}<extra></extra>",
     ))
 
     lim_max = db_data[0].get("lim_max")
+    lim_min = db_data[0].get("lim_min")
     if lim_max is not None:
-        fig.add_vline(x=lim_max, line_dash="dash", line_color="red", line_width=2,
-                      annotation_text=f"ECA máx: {lim_max}", annotation_position="top right",
-                      annotation_font_color="red")
+        fig.add_vline(
+            x=lim_max, line_dash="dash", line_color="#c62828", line_width=2,
+            annotation_text=f"ECA máx: {lim_max}",
+            annotation_position="top right", annotation_font_color="#c62828",
+        )
+    if lim_min is not None:
+        fig.add_vline(
+            x=lim_min, line_dash="dash", line_color="#e8870e", line_width=2,
+            annotation_text=f"ECA mín: {lim_min}",
+            annotation_position="bottom right", annotation_font_color="#e8870e",
+        )
 
     fig.update_layout(
-        title=f"<b>Comparación de {parametro['nombre']}</b><br>"
-              f"<span style='font-size:12px; color:#666;'>{scope}</span>",
+        title=dict(
+            text=f"<b>{parametro['nombre']}</b><br>"
+                 f"<span style='font-size:12px; color:#64748b;'>{scope}</span>",
+            x=0.02, xanchor="left",
+        ),
         xaxis_title=x_label,
-        height=max(300, len(df) * 30 + 100),
-        margin=dict(l=100, r=60, t=70, b=40),
+        height=max(280, len(df) * 32 + 100),
+        margin=dict(l=80, r=40, t=70, b=40),
         plot_bgcolor="white",
-        yaxis=dict(gridcolor="#f5f5f5"),
-        xaxis=dict(gridcolor="#f0f0f0"),
+        yaxis=dict(gridcolor="#f1f5f9", autorange="reversed"),
+        xaxis=dict(gridcolor="#f1f5f9", zerolinecolor="#e2e8f0"),
+        showlegend=False,
     )
     st.plotly_chart(fig, use_container_width=True, key=f"barras_comp_{cat}")
 
@@ -752,35 +704,42 @@ def _render_barras_mensuales(
     campana_label: str = "",
     cat: str = "",
 ) -> None:
-    datos = get_datos_mensuales_parametro(parametro["id"], anio)
+    """
+    Comportamiento mensual del parámetro EN EL PUNTO seleccionado.
+    Antes mostraba todos los puntos a la vez — ahora se ciñe al punto activo
+    para que coincida con el subtítulo y sea interpretable.
+    """
+    datos = get_datos_mensuales_parametro(parametro["id"], anio, punto_id=punto["id"])
     if not datos:
-        st.info(f"Sin datos de {parametro['nombre']} para {anio}.")
+        st.info(f"Sin datos de {parametro['nombre']} para {anio} en este punto.")
         return
 
     df = pd.DataFrame(datos)
-    df_agg = df.groupby(["punto_codigo", "punto_nombre", "mes"], as_index=False)["valor"].mean()
-    fig = go.Figure()
+    # Promedio por mes (puede haber múltiples campañas en un mismo mes)
+    df_agg = df.groupby("mes", as_index=False)["valor"].mean()
+    valores_por_mes = {int(r["mes"]): r["valor"] for _, r in df_agg.iterrows()}
+    valores = [valores_por_mes.get(m) for m in range(1, 13)]
 
-    puntos_u = df_agg[["punto_codigo", "punto_nombre"]].drop_duplicates().sort_values("punto_codigo")
-    for _, row in puntos_u.iterrows():
-        df_p = df_agg[df_agg["punto_codigo"] == row["punto_codigo"]]
-        meses_vals = {r["mes"]: r["valor"] for _, r in df_p.iterrows()}
-        valores = [meses_vals.get(m, None) for m in range(1, 13)]
-        fig.add_trace(go.Bar(
-            name=f"{row['punto_codigo']}", x=MESES, y=valores,
-            text=[f"{v:.2g}" if v is not None else "" for v in valores],
-            textposition="outside", textfont_size=9,
-        ))
+    color_barra = "#1b6b35"
+    fig = go.Figure(go.Bar(
+        x=MESES, y=valores,
+        marker_color=color_barra,
+        text=[f"{v:.3g}" if v is not None else "" for v in valores],
+        textposition="outside", textfont_size=10,
+        hovertemplate="<b>%{x}</b><br>Valor: %{y:.4g}<extra></extra>",
+    ))
 
     if limite_eca:
         lim_max = limite_eca.get("valor_maximo")
         lim_min = limite_eca.get("valor_minimo")
         if lim_max is not None:
-            fig.add_hline(y=lim_max, line_dash="dash", line_color="red", line_width=2,
-                          annotation_text=f"ECA máx: {lim_max}", annotation_position="top right", annotation_font_color="red")
+            fig.add_hline(y=lim_max, line_dash="dash", line_color="#c62828", line_width=2,
+                          annotation_text=f"ECA máx: {lim_max}", annotation_position="top right",
+                          annotation_font_color="#c62828")
         if lim_min is not None:
-            fig.add_hline(y=lim_min, line_dash="dash", line_color="orange", line_width=2,
-                          annotation_text=f"ECA mín: {lim_min}", annotation_position="bottom right", annotation_font_color="orange")
+            fig.add_hline(y=lim_min, line_dash="dash", line_color="#e8870e", line_width=2,
+                          annotation_text=f"ECA mín: {lim_min}", annotation_position="bottom right",
+                          annotation_font_color="#e8870e")
 
     unidad = (parametro.get("unidades_medida") or {}).get("simbolo", "")
     y_label = f"{parametro['nombre']} ({unidad})" if unidad else parametro["nombre"]
@@ -790,11 +749,17 @@ def _render_barras_mensuales(
         subtitle += f" · Campaña: {campana_label}"
 
     fig.update_layout(
-        title=f"<b>{parametro.get('nombre', '')} — Comportamiento mensual {anio}</b><br>"
-              f"<span style='font-size:12px; color:#666;'>{subtitle}</span>",
-        xaxis_title="Mes", yaxis_title=y_label,
-        barmode="group", height=450, margin=dict(b=100, t=80),
-        legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5, font_size=10),
+        title=dict(
+            text=f"<b>{parametro.get('nombre', '')} — Promedio mensual {anio}</b><br>"
+                 f"<span style='font-size:12px; color:#64748b;'>{subtitle}</span>",
+            x=0.02, xanchor="left",
+        ),
+        xaxis_title="", yaxis_title=y_label,
+        height=380, margin=dict(b=40, t=70, l=60, r=30),
+        plot_bgcolor="white",
+        yaxis=dict(gridcolor="#f1f5f9", zerolinecolor="#e2e8f0"),
+        xaxis=dict(showgrid=False),
+        showlegend=False,
     )
     st.plotly_chart(fig, use_container_width=True, key=f"barras_mens_{cat}")
 
@@ -889,19 +854,23 @@ def main() -> None:
     mapa = _construir_mapa(puntos_con_coords, solo_exc, mostrar_heatmap)
     map_data = st_folium(mapa, use_container_width=True, height=520, returned_objects=["last_object_clicked"])
 
-    # Si el usuario hace click en el mapa, seleccionar ese punto
+    # Si el usuario hace click en el mapa, persistir la selección al sidebar
+    # para que sobreviva al siguiente rerun (antes solo cambiaba la variable
+    # local y se perdía con cualquier interacción)
     if map_data and map_data.get("last_object_clicked"):
         clicked = map_data["last_object_clicked"]
         clat, clon = clicked.get("lat"), clicked.get("lng")
         if clat and clon:
             min_dist = float("inf")
+            closest_label = None
             for label, p in opciones_punto.items():
-                dist = (p["latitud"] - clat)**2 + (p["longitud"] - clon)**2
+                dist = (p["latitud"] - clat) ** 2 + (p["longitud"] - clon) ** 2
                 if dist < min_dist:
                     min_dist = dist
                     closest_label = label
-            if min_dist < 0.01:
-                punto_sel = opciones_punto[closest_label]
+            if closest_label and min_dist < 0.01 and closest_label != sel_punto_label:
+                st.session_state["geo_punto"] = closest_label
+                st.rerun()
 
     # ── 3. Detalle del punto seleccionado ───────────────────────────────
     st.divider()
@@ -936,44 +905,50 @@ def main() -> None:
         unsafe_allow_html=True,
     )
 
-    col_info, col_gauge = st.columns([3, 2])
+    # Tres tarjetas de contexto a ancho completo
+    i1, i2, i3 = st.columns(3)
+    i1.markdown(
+        f"""<div style="background:#e8f5e9; border-radius:8px; padding:12px 16px; text-align:center;">
+        <div style="font-size:0.7rem; color:#64748b; text-transform:uppercase; letter-spacing:0.5px;">Sistema Hídrico</div>
+        <div style="font-weight:700; color:#1b6b35; margin-top:4px;">{punto_sel.get('sistema_hidrico', '—')}</div>
+        </div>""", unsafe_allow_html=True)
+    i2.markdown(
+        f"""<div style="background:#e0f7f7; border-radius:8px; padding:12px 16px; text-align:center;">
+        <div style="font-size:0.7rem; color:#64748b; text-transform:uppercase; letter-spacing:0.5px;">ECA Aplicable</div>
+        <div style="font-weight:700; color:#0a9396; margin-top:4px;">{eca_info.get('codigo', '—')}</div>
+        </div>""", unsafe_allow_html=True)
+    i3.markdown(
+        f"""<div style="background:#fef3e2; border-radius:8px; padding:12px 16px; text-align:center;">
+        <div style="font-size:0.7rem; color:#64748b; text-transform:uppercase; letter-spacing:0.5px;">Último dato</div>
+        <div style="font-weight:700; color:#c56d00; margin-top:4px;">{punto_sel.get('ultima_fecha', '—')}</div>
+        </div>""", unsafe_allow_html=True)
 
-    with col_info:
-        # Info cards en grid
-        i1, i2, i3 = st.columns(3)
-        i1.markdown(
-            f"""<div style="background:#e8f5e9; border-radius:8px; padding:10px 14px; text-align:center;">
-            <div style="font-size:0.7rem; color:#64748b; text-transform:uppercase;">Sistema Hidrico</div>
-            <div style="font-weight:700; color:#1b6b35;">{punto_sel.get('sistema_hidrico', '—')}</div>
-            </div>""", unsafe_allow_html=True)
-        i2.markdown(
-            f"""<div style="background:#e0f7f7; border-radius:8px; padding:10px 14px; text-align:center;">
-            <div style="font-size:0.7rem; color:#64748b; text-transform:uppercase;">ECA Aplicable</div>
-            <div style="font-weight:700; color:#0a9396;">{eca_info.get('codigo', '—')}</div>
-            </div>""", unsafe_allow_html=True)
-        i3.markdown(
-            f"""<div style="background:#fef3e2; border-radius:8px; padding:10px 14px; text-align:center;">
-            <div style="font-size:0.7rem; color:#64748b; text-transform:uppercase;">Ultimo Dato</div>
-            <div style="font-weight:700; color:#c56d00;">{punto_sel.get('ultima_fecha', '—')}</div>
-            </div>""", unsafe_allow_html=True)
+    st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
 
-        # Excedencias activas
-        if exc_punto:
-            st.markdown(f"**{n_exc_punto} excedencia(s) activa(s)**")
+    # Cumplimiento ECA: bullet horizontal a ancho completo
+    _render_gauge(punto_sel)
+
+    # Excedencias activas (compactado)
+    if exc_punto:
+        with st.expander(f"⚠️ {n_exc_punto} excedencia(s) activa(s) en este punto", expanded=True):
             df_exc = pd.DataFrame(exc_punto)
             df_exc["pct_exceso"] = df_exc.apply(
-                lambda r: round((r["valor"] / r["lim_max"] - 1) * 100, 1) if r.get("lim_max") and r["lim_max"] > 0 else None,
+                lambda r: round((r["valor"] / r["lim_max"] - 1) * 100, 1)
+                          if r.get("lim_max") and r["lim_max"] > 0 else None,
                 axis=1,
             )
             df_show = df_exc[["fecha", "parametro", "valor", "lim_max", "unidad", "pct_exceso"]].rename(columns={
-                "fecha": "Fecha", "parametro": "Parametro", "valor": "Valor",
-                "lim_max": "Limite", "unidad": "Unidad", "pct_exceso": "% Exceso",
+                "fecha": "Fecha", "parametro": "Parámetro", "valor": "Valor",
+                "lim_max": "Límite", "unidad": "Unidad", "pct_exceso": "% Exceso",
             })
-            st.dataframe(df_show, use_container_width=True, hide_index=True,
-                         column_config={"% Exceso": st.column_config.NumberColumn(format="%.1f%%")})
-
-    with col_gauge:
-        _render_gauge(punto_sel)
+            st.dataframe(
+                df_show, use_container_width=True, hide_index=True,
+                column_config={
+                    "% Exceso": st.column_config.NumberColumn(format="%.1f%%"),
+                    "Valor":    st.column_config.NumberColumn(format="%.4g"),
+                    "Límite":   st.column_config.NumberColumn(format="%.4g"),
+                },
+            )
 
     # ── Fix 6: Tabs de categoría de parámetros ─────────────────────────
     tab_campo, tab_fq, tab_hidro = st.tabs([
@@ -1000,30 +975,47 @@ def _render_categoria_tabs(
     fecha_inicio: str, fecha_fin: str,
     campana_label: str,
 ) -> None:
-    """Render analysis tabs for a given parameter category."""
-    tab_tend, tab_comp_puntos, tab_barras, tab_eca, tab_result = st.tabs([
-        "Tendencia temporal",
-        "Comparar puntos",
-        "Comportamiento mensual",
-        "Comparativa ECA",
-        "Últimos resultados",
+    """
+    Pestañas analíticas para una categoría — reorganizadas para evitar duplicación:
+        1. Tendencia        : evolución temporal del parámetro seleccionado
+        2. Comparar puntos  : un parámetro entre todos los puntos
+        3. Estacionalidad   : comportamiento mensual del parámetro
+        4. Estado ECA       : tabla resumen + últimos resultados (consolidados)
+    """
+    # Validación: si el parámetro elegido no pertenece a esta categoría, avisamos
+    cat_param = _clasificar_cat(param_sel)
+    if cat_param != categoria:
+        st.warning(
+            f"El parámetro **{param_sel.get('nombre', '')}** está en categoría "
+            f"**{cat_param}**, no en **{categoria}**. "
+            "Los gráficos siguen disponibles, pero el filtro por pestaña no aplica."
+        )
+
+    tab_tend, tab_comp_puntos, tab_barras, tab_eca = st.tabs([
+        "📈 Tendencia",
+        "📊 Comparar puntos",
+        "🗓️ Estacionalidad",
+        "🛡️ Estado ECA y últimos resultados",
     ])
 
     with tab_tend:
-        col_chart, col_tabla = st.columns([3, 2])
-        with col_chart:
-            _render_tendencia(punto_sel, param_sel, campana_label, cat=categoria)
-        with col_tabla:
-            _render_tabla_eca_parametros(punto_sel, fecha_inicio, fecha_fin, cat=categoria)
+        # Chart a ancho completo — la tabla redundante se eliminó
+        _render_tendencia(punto_sel, param_sel, campana_label, cat=categoria)
 
     with tab_comp_puntos:
-        st.markdown(f"**Comparación de {param_sel['nombre']} entre todos los puntos**")
-        _render_barras_comparativa_puntos(puntos_con_coords, param_sel, fecha_inicio, fecha_fin, campana_label, cat=categoria)
+        st.markdown(f"**{param_sel['nombre']} — comparación entre puntos**")
+        st.caption(
+            "Cada barra es el último valor disponible del parámetro en el periodo seleccionado."
+        )
+        _render_barras_comparativa_puntos(
+            puntos_con_coords, param_sel, fecha_inicio, fecha_fin, campana_label, cat=categoria,
+        )
 
     with tab_barras:
         fecha_fin_dt = date.fromisoformat(fecha_fin)
         anio_sel = st.selectbox(
-            "Año", list(range(fecha_fin_dt.year, fecha_fin_dt.year - 5, -1)),
+            "Año a visualizar",
+            list(range(fecha_fin_dt.year, fecha_fin_dt.year - 5, -1)),
             key=f"geo_anio_{categoria}",
         )
         limite_eca = get_limite_eca_parametro(punto_sel["id"], param_sel["id"])
@@ -1031,18 +1023,18 @@ def _render_categoria_tabs(
 
     with tab_eca:
         eca_info = punto_sel.get("ecas") or {}
-        st.markdown(f"**Comparativa vs ECA** · {eca_info.get('codigo', '')} — {eca_info.get('nombre', '')}")
-
-        # Filter comparativa data by category
+        st.markdown(
+            f"**Comparativa vs ECA** · {eca_info.get('codigo', '')} — {eca_info.get('nombre', '')}"
+        )
         datos = get_comparativa_eca_punto(punto_sel["id"], fecha_inicio, fecha_fin)
         datos_cat = [d for d in datos if _clasificar_cat_comparativa(d) == categoria]
         if datos_cat:
             _render_comparativa_eca_filtered(datos_cat, cat=categoria)
         else:
-            st.info("Sin datos para esta categoría.")
+            st.info("Sin datos para esta categoría en el periodo seleccionado.")
 
-    with tab_result:
-        st.markdown("**Últimos 15 resultados**")
+        st.divider()
+        st.markdown("**Últimos 15 resultados (todas las categorías)**")
         _render_ultimos_resultados(punto_sel, cat=categoria)
 
 
