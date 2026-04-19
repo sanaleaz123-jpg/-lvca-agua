@@ -115,10 +115,14 @@ def icon_label(name: str, label: str, size: int = 16, color: str | None = None) 
 # CSS global
 # ─────────────────────────────────────────────────────────────────────────────
 
-_GLOBAL_CSS = """<style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+_FONT_LINK = (
+    '<link rel="preconnect" href="https://fonts.googleapis.com">'
+    '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
+    '<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">'
+)
 
-/* ── Tipografía global Inter ───────────────────────────────────────────── */
+_GLOBAL_CSS = """<style>
+/* Tipografía global Inter */
 html, body, [class*="css"], [data-testid="stAppViewContainer"] {
     font-family: 'Inter', -apple-system, 'Segoe UI', Roboto, sans-serif !important;
     font-feature-settings: 'cv11', 'ss01';
@@ -512,14 +516,13 @@ def aplicar_estilos() -> None:
     """
     Inyecta el CSS global y la fuente Inter. Llamar al inicio de cada página.
 
-    Usa st.html() si está disponible (Streamlit >= 1.33) — no procesa el
-    contenido como markdown, así que no rompe el <style>. En versiones
-    anteriores cae a st.markdown(unsafe_allow_html=True).
+    Usa el patrón canónico de Streamlit: dos llamadas separadas a
+    st.markdown(unsafe_allow_html=True) — una para el <link> de Google Fonts
+    y otra para el bloque <style>. Esto evita que el parser de markdown se
+    confunda con múltiples elementos top-level mezclados.
     """
-    if hasattr(st, "html"):
-        st.html(_GLOBAL_CSS)
-    else:
-        st.markdown(_GLOBAL_CSS, unsafe_allow_html=True)
+    st.markdown(_FONT_LINK, unsafe_allow_html=True)
+    st.markdown(_GLOBAL_CSS, unsafe_allow_html=True)
 
 
 def page_header(titulo: str, subtitulo: str = "") -> None:
