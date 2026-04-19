@@ -136,26 +136,39 @@ _FONT_LINK = (
 )
 
 _GLOBAL_CSS = """<style>
-/* Tipografía global Inter */
+/* Tipografía global Inter — densidad ajustada para minimalismo */
 html, body, [class*="css"], [data-testid="stAppViewContainer"] {
     font-family: 'Inter', -apple-system, 'Segoe UI', Roboto, sans-serif !important;
     font-feature-settings: 'cv11', 'ss01';
+    font-size: 14px;
+}
+p, li, span, label {
+    line-height: 1.55;
 }
 h1, h2, h3, h4, h5, h6 {
     font-family: 'Inter', sans-serif !important;
-    letter-spacing: -0.01em;
+    letter-spacing: -0.015em;
+    color: #0f172a;
+}
+h1 { font-weight: 600 !important; font-size: 1.6rem !important; }
+h2 { font-weight: 600 !important; font-size: 1.3rem !important; }
+h3 { font-weight: 600 !important; font-size: 1.1rem !important; }
+h4 { font-weight: 500 !important; font-size: 0.98rem !important; }
+small, .small, .stCaption, [data-testid="stCaption"] {
+    font-size: 0.78rem !important;
+    color: #94a3b8 !important;
 }
 
 /* ── Ocultar nav nativa de Streamlit ───────────────────────────────────── */
 [data-testid='stSidebarNav'] { display: none; }
 
-/* ── Sidebar limpio ────────────────────────────────────────────────────── */
+/* ── Sidebar limpio (separación por espacio, no por línea fuerte) ──────── */
 [data-testid="stSidebar"] {
     background: #ffffff;
-    border-right: 1px solid #e2e8f0;
+    border-right: 1px solid #f1f5f9;
 }
-[data-testid="stSidebar"] * { color: #334155 !important; }
-[data-testid="stSidebar"] .stDivider { border-color: #e2e8f0 !important; }
+[data-testid="stSidebar"] * { color: #334155 !important; font-size: 13px; }
+[data-testid="stSidebar"] .stDivider { border-color: #f1f5f9 !important; }
 [data-testid="stSidebar"] button {
     background: #f8fafc !important;
     border: 1px solid #e2e8f0 !important;
@@ -183,28 +196,34 @@ h1, h2, h3, h4, h5, h6 {
     padding-left: 16px !important;
 }
 
-/* ── Métricas ──────────────────────────────────────────────────────────── */
+/* ── Métricas — minimalismo equilibrado: borde casi invisible, sin sombra ── */
 [data-testid="stMetric"] {
     background: #ffffff;
-    border: 1px solid #e2e8f0;
-    border-radius: 12px;
-    padding: 16px 20px;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    border: 1px solid #f1f5f9;
+    border-radius: 10px;
+    padding: 18px 22px;
+    box-shadow: none;
     transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
 }
 [data-testid="stMetric"]:hover {
-    border-color: #cbd5e1;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.04);
+    border-color: #e2e8f0;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
 }
 [data-testid="stMetric"] label {
-    color: #64748b !important;
-    font-size: 0.78rem !important;
+    color: #94a3b8 !important;
+    font-size: 0.72rem !important;
     font-weight: 500 !important;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
 }
 [data-testid="stMetric"] [data-testid="stMetricValue"] {
-    font-size: 1.7rem !important;
-    font-weight: 700 !important;
-    color: #1e293b !important;
+    font-size: 1.85rem !important;
+    font-weight: 600 !important;
+    color: #0f172a !important;
+    letter-spacing: -0.02em;
+}
+[data-testid="stMetric"] [data-testid="stMetricDelta"] {
+    font-size: 0.78rem !important;
 }
 
 /* ── Tabs ──────────────────────────────────────────────────────────────── */
@@ -219,23 +238,66 @@ h1, h2, h3, h4, h5, h6 {
     background: #f8fafc;
 }
 
-/* ── DataFrames ────────────────────────────────────────────────────────── */
+/* ── DataFrames — sin líneas verticales, header limpio ─────────────────── */
 [data-testid="stDataFrame"] {
     border-radius: 10px;
     overflow: hidden;
-    border: 1px solid #e2e8f0;
+    border: 1px solid #f1f5f9;
+}
+[data-testid="stDataFrame"] [role="columnheader"] {
+    background: #ffffff !important;
+    border-bottom: 1px solid #e2e8f0 !important;
+    border-right: none !important;
+    color: #64748b !important;
+    font-weight: 600 !important;
+    font-size: 0.74rem !important;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+[data-testid="stDataFrame"] [role="gridcell"] {
+    border-right: none !important;
+    border-bottom: 1px solid #f8fafc !important;
+    font-size: 0.86rem !important;
+}
+[data-testid="stDataFrame"] [role="row"]:hover [role="gridcell"] {
+    background: #fafbfc !important;
 }
 
-/* ── Botones — animaciones suaves ──────────────────────────────────────── */
+/* st.table también */
+[data-testid="stTable"] table {
+    border-collapse: collapse;
+    border: none !important;
+}
+[data-testid="stTable"] th {
+    background: transparent !important;
+    border: none !important;
+    border-bottom: 1px solid #e2e8f0 !important;
+    color: #64748b !important;
+    font-weight: 600 !important;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 0.74rem !important;
+    padding: 10px 14px !important;
+}
+[data-testid="stTable"] td {
+    border: none !important;
+    border-bottom: 1px solid #f8fafc !important;
+    padding: 10px 14px !important;
+    font-size: 0.86rem !important;
+}
+
+/* ── Botones — minimalista con animación sutil ─────────────────────────── */
 .stButton > button,
 button[kind="primary"],
 button[kind="secondary"] {
     border-radius: 8px !important;
-    font-weight: 600 !important;
+    font-weight: 500 !important;
+    font-size: 0.86rem !important;
     font-family: 'Inter', sans-serif !important;
-    letter-spacing: 0.01em;
+    letter-spacing: 0.005em;
+    padding: 0.5rem 1rem !important;
     transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1) !important;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    box-shadow: none;
 }
 .stButton > button:hover,
 button[kind="primary"]:hover,
@@ -310,12 +372,54 @@ input:focus, textarea:focus, [data-baseweb="select"]:focus-within {
     box-shadow: 0 0 0 3px rgba(27, 107, 53, 0.12);
 }
 
-/* ── Formularios ───────────────────────────────────────────────────────── */
+/* ── Formularios — borde más sutil, sin sombra ─────────────────────────── */
 [data-testid="stForm"] {
-    border: 1px solid #e2e8f0 !important;
+    border: 1px solid #f1f5f9 !important;
     border-radius: 12px !important;
-    padding: 20px !important;
+    padding: 24px !important;
     background: #ffffff !important;
+    box-shadow: none;
+}
+
+/* Inputs estándar — más livianos, focus en verde institucional */
+[data-baseweb="input"] input,
+[data-baseweb="textarea"] textarea,
+[data-baseweb="select"] > div {
+    background: #fafbfc !important;
+    border-color: #e2e8f0 !important;
+    border-radius: 8px !important;
+    transition: all 0.15s ease;
+}
+[data-baseweb="input"] input:focus,
+[data-baseweb="textarea"] textarea:focus {
+    background: #ffffff !important;
+    border-color: #1b6b35 !important;
+    box-shadow: 0 0 0 3px rgba(27, 107, 53, 0.10) !important;
+}
+
+/* Variante minimalista para formularios largos: solo borde inferior */
+.lvca-form-minimal [data-baseweb="input"] input,
+.lvca-form-minimal [data-baseweb="textarea"] textarea {
+    background: transparent !important;
+    border-radius: 0 !important;
+    border-top: none !important;
+    border-left: none !important;
+    border-right: none !important;
+    border-bottom: 1px solid #d1d5db !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+}
+.lvca-form-minimal [data-baseweb="input"] input:focus,
+.lvca-form-minimal [data-baseweb="textarea"] textarea:focus {
+    border-bottom: 2px solid #1b6b35 !important;
+    box-shadow: none !important;
+}
+.lvca-form-minimal label {
+    color: #64748b !important;
+    font-size: 0.75rem !important;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 500 !important;
 }
 
 /* ── Expanders ─────────────────────────────────────────────────────────── */
@@ -328,26 +432,37 @@ input:focus, textarea:focus, [data-baseweb="select"]:focus-within {
     border-color: #cbd5e1;
 }
 
-/* ── Dividers ──────────────────────────────────────────────────────────── */
+/* ── Dividers — más aireados y casi invisibles ─────────────────────────── */
 hr {
     border-color: #f1f5f9 !important;
-    margin: 1rem 0 !important;
+    margin: 1.5rem 0 !important;
+    opacity: 0.7;
 }
 
-/* ── Cards ─────────────────────────────────────────────────────────────── */
+/* ── Espaciado entre bloques principales ───────────────────────────────── */
+.block-container {
+    padding-top: 2.5rem !important;
+    padding-bottom: 3rem !important;
+}
+[data-testid="stVerticalBlock"] > [data-testid="stVerticalBlock"] {
+    gap: 0.5rem;
+}
+
+/* ── Cards — borde casi invisible, sin sombra base ──────────────────── */
 .lvca-card {
     background: #ffffff;
-    border: 1px solid #e2e8f0;
+    border: 1px solid #f1f5f9;
     border-radius: 12px;
-    padding: 24px 20px;
+    padding: 24px 22px;
     text-align: center;
     transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
     height: 100%;
+    box-shadow: none;
 }
 .lvca-card:hover {
-    border-color: #cbd5e1;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.06);
-    transform: translateY(-2px);
+    border-color: #e2e8f0;
+    box-shadow: 0 2px 8px rgba(15,23,42,0.04);
+    transform: translateY(-1px);
 }
 .lvca-card-icon {
     margin-bottom: 10px;
@@ -365,21 +480,21 @@ hr {
     line-height: 1.4;
 }
 
-/* ── Encabezados de página y sección ───────────────────────────────────── */
+/* ── Encabezados de página y sección — más aireados ───────────────────── */
 .lvca-page-header {
-    padding: 4px 0 14px 0;
-    margin-bottom: 4px;
+    padding: 4px 0 18px 0;
+    margin-bottom: 8px;
 }
 .lvca-page-header h1 {
-    font-size: 1.5rem !important;
-    font-weight: 700 !important;
-    color: #1e293b !important;
-    margin-bottom: 2px !important;
-    letter-spacing: -0.015em;
+    font-size: 1.55rem !important;
+    font-weight: 600 !important;
+    color: #0f172a !important;
+    margin-bottom: 4px !important;
+    letter-spacing: -0.02em;
 }
 .lvca-page-header p {
-    color: #64748b;
-    font-size: 0.85rem;
+    color: #94a3b8;
+    font-size: 0.82rem;
     margin: 0;
 }
 .lvca-section-header {
@@ -387,13 +502,15 @@ hr {
     align-items: center;
     gap: 8px;
     color: #1e293b;
-    font-size: 1.05rem;
-    font-weight: 600;
-    margin: 1.4rem 0 0.6rem 0;
+    font-size: 0.92rem;
+    font-weight: 500;
+    margin: 1.6rem 0 0.6rem 0;
     padding-bottom: 6px;
     border-bottom: 1px solid #f1f5f9;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
 }
-.lvca-section-header svg { color: #64748b; }
+.lvca-section-header svg { color: #94a3b8; }
 
 /* ── Badges ────────────────────────────────────────────────────────────── */
 .lvca-badge {
@@ -426,13 +543,20 @@ hr {
     transition: all 0.15s ease;
 }
 
-/* ── Filter bar (barra de filtros en main area) ────────────────────────── */
+/* ── Filter bar — fondo neutro casi blanco, sin borde ──────────────────── */
 .lvca-filter-bar {
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
+    background: #fafbfc;
+    border: 1px solid #f1f5f9;
     border-radius: 12px;
-    padding: 12px 18px;
-    margin-bottom: 16px;
+    padding: 14px 20px;
+    margin-bottom: 18px;
+}
+.lvca-filter-bar label {
+    color: #64748b !important;
+    font-size: 0.74rem !important;
+    font-weight: 500 !important;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
 }
 
 /* ── Toast / overlay para feedback de guardado ─────────────────────────── */
@@ -783,6 +907,19 @@ def ghost_button_wrapper_open() -> None:
 
 
 def ghost_button_wrapper_close() -> None:
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+def minimal_form_open() -> None:
+    """
+    Wrapper para formularios largos con inputs underline-style.
+    Solo borde inferior en inputs, fondo transparente, focus en verde.
+    Usar antes de st.form() y cerrar después con minimal_form_close().
+    """
+    st.markdown('<div class="lvca-form-minimal">', unsafe_allow_html=True)
+
+
+def minimal_form_close() -> None:
     st.markdown('</div>', unsafe_allow_html=True)
 
 
