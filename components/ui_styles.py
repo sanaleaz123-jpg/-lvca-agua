@@ -86,6 +86,20 @@ _ICON_PATHS: dict[str, str] = {
     "list":      '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>',
     "grid":      '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>',
     "clipboard": '<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>',
+    # Dominio LVCA
+    "microscope":   '<path d="M6 18h8"/><path d="M3 22h18"/><path d="M14 22a7 7 0 1 0 0-14h-1"/><path d="M9 14h2"/><path d="M9 12a2 2 0 0 1-2-2V6h6v4a2 2 0 0 1-2 2"/><path d="M12 6V3a1 1 0 0 0-1-1H9a1 1 0 0 0-1 1v3"/>',
+    "test_tube":    '<path d="M14.5 2v17.5c0 1.4-1.1 2.5-2.5 2.5h0c-1.4 0-2.5-1.1-2.5-2.5V2"/><path d="M8.5 2h7"/><path d="M14.5 16h-5"/>',
+    "thermometer":  '<path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/>',
+    "waves":        '<path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/>',
+    "bug":          '<path d="M8 2l1.88 1.88"/><path d="M14.12 3.88L16 2"/><path d="M9 7.13v-1a3.003 3.003 0 1 1 6 0v1"/><path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6"/><path d="M12 20v-9"/><path d="M6.53 9C4.6 8.8 3 7.1 3 5"/><path d="M6 13H2"/><path d="M3 21c0-2.1 1.7-3.8 3.8-4"/><path d="M20.97 5c0 2.1-1.6 3.8-3.5 4"/><path d="M22 13h-4"/><path d="M17.2 17c2.1.2 3.8 1.9 3.8 4"/>',
+    "database":     '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/>',
+    "map":          '<polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/>',
+    "tube_lab":     '<path d="M9 3h6v8.5a3.5 3.5 0 0 1-7 0V3z" transform="translate(-1 0)"/><path d="M16 3h6v8.5a3.5 3.5 0 0 1-7 0V3z" transform="translate(-2 0)"/>',
+    "ban":          '<circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>',
+    "circle":       '<circle cx="12" cy="12" r="10"/>',
+    "circle_dot":   '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3" fill="currentColor"/>',
+    "clock":        '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+    "arrow_right":  '<line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>',
 }
 
 
@@ -485,23 +499,183 @@ hr {
 }
 .lvca-toast {
     background: white;
-    border-radius: 10px;
-    padding: 12px 16px;
+    border-radius: 12px;
+    padding: 14px 18px;
     box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
     border-left: 4px solid #1b6b35;
-    font-size: 0.88rem;
-    font-weight: 500;
-    color: #1e293b;
-    min-width: 240px;
-    max-width: 360px;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    min-width: 280px;
+    max-width: 420px;
+}
+.lvca-toast .lvca-toast-icon {
+    flex: 0 0 auto;
+    width: 32px;
+    height: 32px;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #e8f5e9;
+    color: #2e7d32;
 }
 .lvca-toast.lvca-toast-info    { border-left-color: #0a9396; }
+.lvca-toast.lvca-toast-info  .lvca-toast-icon { background: #e0f7f7; color: #0a9396; }
 .lvca-toast.lvca-toast-warn    { border-left-color: #e8870e; }
+.lvca-toast.lvca-toast-warn  .lvca-toast-icon { background: #fff4e0; color: #e8870e; }
 .lvca-toast.lvca-toast-danger  { border-left-color: #c62828; }
+.lvca-toast.lvca-toast-danger .lvca-toast-icon { background: #fce4e4; color: #c62828; }
+.lvca-toast .lvca-toast-body { flex: 1; min-width: 0; }
+.lvca-toast .lvca-toast-title {
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: #1e293b;
+    line-height: 1.3;
+}
+.lvca-toast .lvca-toast-sub {
+    font-size: 0.78rem;
+    color: #64748b;
+    margin-top: 2px;
+}
 @keyframes lvcaToastIn {
     from { transform: translateX(120%); opacity: 0; }
     to   { transform: translateX(0);    opacity: 1; }
 }
+
+/* ── Estado pill (compacto, con icono y dot de color) ──────────────────── */
+.lvca-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border: 1px solid transparent;
+    line-height: 1;
+}
+.lvca-pill .lvca-pill-dot {
+    width: 7px; height: 7px; border-radius: 999px;
+    background: currentColor;
+    display: inline-block;
+}
+.lvca-pill svg { width: 14px; height: 14px; }
+.lvca-pill-planificada  { background:#f1f5f9; color:#475569; border-color:#e2e8f0; }
+.lvca-pill-en_campo     { background:#e0f2fe; color:#0369a1; border-color:#bae6fd; }
+.lvca-pill-en_lab       { background:#fff4e0; color:#a85d00; border-color:#fed7aa; }
+.lvca-pill-validada     { background:#dcfce7; color:#166534; border-color:#bbf7d0; }
+.lvca-pill-completada   { background:#dcfce7; color:#166534; border-color:#bbf7d0; }
+.lvca-pill-anulada      { background:#fce4e4; color:#a31f1f; border-color:#fecaca; }
+.lvca-pill-archivada    { background:#f8fafc; color:#64748b; border-color:#e2e8f0; }
+.lvca-pill-excede       { background:#fce4e4; color:#a31f1f; border-color:#fecaca; }
+.lvca-pill-cumple       { background:#dcfce7; color:#166534; border-color:#bbf7d0; }
+.lvca-pill-sin_dato     { background:#f8fafc; color:#94a3b8; border-color:#e2e8f0; }
+
+/* ── Estado card (descriptiva — para docs y estados extendidos) ────────── */
+.lvca-estado-card {
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-top: 3px solid #94a3b8;
+    border-radius: 10px;
+    padding: 14px 16px;
+    height: 100%;
+    transition: all 0.15s ease;
+}
+.lvca-estado-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.06); }
+.lvca-estado-card-icon {
+    width: 36px; height: 36px; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    background: #f8fafc; color: #64748b;
+    margin-bottom: 10px;
+}
+.lvca-estado-card-title {
+    font-size: 0.95rem; font-weight: 700; color: #1e293b;
+    margin-bottom: 6px;
+}
+.lvca-estado-card-desc {
+    font-size: 0.8rem; color: #475569; line-height: 1.45;
+    margin-bottom: 12px;
+}
+.lvca-estado-card-foot {
+    border-top: 1px dashed #e2e8f0;
+    padding-top: 8px;
+    font-size: 0.65rem; color: #94a3b8;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    display: flex; justify-content: space-between; align-items: center;
+}
+.lvca-card-planificada { border-top-color: #64748b; }
+.lvca-card-planificada .lvca-estado-card-icon { background:#f1f5f9; color:#475569; }
+.lvca-card-en_campo    { border-top-color: #0369a1; }
+.lvca-card-en_campo    .lvca-estado-card-icon { background:#e0f2fe; color:#0369a1; }
+.lvca-card-en_lab      { border-top-color: #a85d00; }
+.lvca-card-en_lab      .lvca-estado-card-icon { background:#fff4e0; color:#a85d00; }
+.lvca-card-validada    { border-top-color: #166534; }
+.lvca-card-validada    .lvca-estado-card-icon { background:#dcfce7; color:#166534; }
+.lvca-card-anulada     { border-top-color: #a31f1f; }
+.lvca-card-anulada     .lvca-estado-card-icon { background:#fce4e4; color:#a31f1f; }
+
+/* ── Timeline (ciclo de vida) ──────────────────────────────────────────── */
+.lvca-timeline {
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 18px 24px;
+    margin: 8px 0;
+}
+.lvca-timeline-row {
+    display: flex; align-items: center; justify-content: space-between;
+    position: relative;
+}
+.lvca-timeline-step {
+    display: flex; flex-direction: column; align-items: center;
+    flex: 1; position: relative; z-index: 1;
+    text-align: center;
+}
+.lvca-timeline-circle {
+    width: 36px; height: 36px; border-radius: 999px;
+    background: #f1f5f9; color: #94a3b8;
+    border: 2px solid #e2e8f0;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 0.85rem;
+}
+.lvca-timeline-step.done .lvca-timeline-circle {
+    background: #1b6b35; color: white; border-color: #1b6b35;
+}
+.lvca-timeline-step.active .lvca-timeline-circle {
+    background: #fff4e0; color: #a85d00; border-color: #e8870e;
+    box-shadow: 0 0 0 4px rgba(232, 135, 14, 0.15);
+}
+.lvca-timeline-line {
+    position: absolute; top: 17px; left: 0; right: 0; height: 2px;
+    background: linear-gradient(to right,
+        #1b6b35 var(--progress, 0%),
+        #e2e8f0 var(--progress, 0%));
+    z-index: 0;
+}
+.lvca-timeline-label {
+    margin-top: 8px; font-size: 0.85rem; font-weight: 600; color: #1e293b;
+}
+.lvca-timeline-step.pending .lvca-timeline-label { color: #94a3b8; }
+.lvca-timeline-sub {
+    font-size: 0.7rem; color: #64748b; margin-top: 2px;
+}
+
+/* ── Inline note (con barra de color izquierda, sin fondo) ────────────── */
+.lvca-inline-note {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 10px 14px;
+    margin: 6px 0;
+    border-radius: 8px;
+    background: #f8fafc;
+    border-left: 3px solid #0a9396;
+    font-size: 0.85rem;
+    color: #1e293b;
+}
+.lvca-inline-note.warn   { border-left-color: #e8870e; background:#fffaf0; }
+.lvca-inline-note.danger { border-left-color: #c62828; background:#fef5f5; }
+.lvca-inline-note.success{ border-left-color: #2e7d32; background:#f0faf2; }
+.lvca-inline-note .lvca-inline-icon { flex: 0 0 auto; margin-top: 1px; opacity: 0.85; }
 
 html { scroll-behavior: smooth; }
 </style>
@@ -640,10 +814,17 @@ def success_check_overlay(mensaje: str = "Guardado correctamente") -> None:
     st.markdown(overlay_html, unsafe_allow_html=True)
 
 
-def toast(mensaje: str, tipo: str = "success", icono: str | None = None) -> None:
+def toast(
+    mensaje: str,
+    tipo: str = "success",
+    sub: str | None = None,
+    icono: str | None = None,
+) -> None:
     """
-    Notificación flotante en esquina superior derecha (~3s).
-    tipo: "success" | "info" | "warn" | "danger".
+    Notificación flotante con ícono prominente (esquina superior derecha, ~3s).
+
+    tipo: "success" | "info" | "warn" | "danger"
+    sub:  línea secundaria opcional (caption pequeño debajo del título)
     """
     cls_map = {
         "success": "",
@@ -655,24 +836,20 @@ def toast(mensaje: str, tipo: str = "success", icono: str | None = None) -> None
         "success": "check",
         "info":    "info",
         "warn":    "alert",
-        "danger":  "alert",
+        "danger":  "trash",
     }
     cls = cls_map.get(tipo, "")
-    color_map = {
-        "success": COLORS["primary"],
-        "info":    COLORS["secondary"],
-        "warn":    COLORS["warning"],
-        "danger":  COLORS["danger"],
-    }
     icon_name = icono or icon_map.get(tipo, "info")
-    color = color_map.get(tipo, COLORS["primary"])
-    icon_svg = icon(icon_name, size=18, color=color)
+    icon_svg = icon(icon_name, size=18, color="currentColor")
+    sub_html = f'<div class="lvca-toast-sub">{sub}</div>' if sub else ''
     toast_html = f"""
     <div class="lvca-toast-wrap" id="lvca-toast-wrap">
         <div class="lvca-toast {cls}">
-            <span style="display:inline-flex; align-items:center; gap:10px;">
-                {icon_svg}<span>{mensaje}</span>
-            </span>
+            <div class="lvca-toast-icon">{icon_svg}</div>
+            <div class="lvca-toast-body">
+                <div class="lvca-toast-title">{mensaje}</div>
+                {sub_html}
+            </div>
         </div>
     </div>
     <script>
@@ -685,3 +862,135 @@ def toast(mensaje: str, tipo: str = "success", icono: str | None = None) -> None
     </script>
     """
     st.markdown(toast_html, unsafe_allow_html=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Pills de estado (compactos, con ícono — para tablas y listados)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Mapeo estado → (clase CSS, ícono Lucide, label legible)
+_ESTADO_CAMPANA = {
+    "planificada":      ("planificada", "calendar",   "Planificada"),
+    "en_campo":         ("en_campo",    "map_pin",    "En campo"),
+    "en_laboratorio":   ("en_lab",      "test_tube",  "En laboratorio"),
+    "validada":         ("validada",    "shield",     "Validada"),
+    "completada":       ("completada",  "check",      "Completada"),
+    "anulada":          ("anulada",     "ban",        "Anulada"),
+    "archivada":        ("archivada",   "archive",    "Archivada"),
+}
+_ESTADO_RESULTADO = {
+    "excede":   ("excede",   None, "Excede"),
+    "cumple":   ("cumple",   None, "Cumple"),
+    "sin_dato": ("sin_dato", None, "Sin dato"),
+    "sin_eca":  ("sin_dato", None, "Sin ECA"),
+}
+
+
+def estado_pill(estado: str, dominio: str = "campana", extra: str = "") -> str:
+    """
+    Devuelve el HTML de un pill compacto con ícono y color por estado.
+
+    dominio: "campana" (estados de campaña) o "resultado" (cumple/excede).
+    extra: texto adicional al final del label, ej. " +320%" para excedencias.
+    """
+    mapping = _ESTADO_CAMPANA if dominio == "campana" else _ESTADO_RESULTADO
+    cls, icono_name, label = mapping.get(estado, ("planificada", "info", estado.capitalize()))
+    icon_html = icon(icono_name, size=14) if icono_name else '<span class="lvca-pill-dot"></span>'
+    return (
+        f'<span class="lvca-pill lvca-pill-{cls}">'
+        f'{icon_html}<span>{label}{extra}</span>'
+        f'</span>'
+    )
+
+
+def excede_pill(pct_exceso: float | None = None) -> str:
+    """Pill 'Excede +X%' / 'Cumple' para tablas de resultados ECA."""
+    if pct_exceso is None:
+        return estado_pill("cumple", dominio="resultado")
+    return estado_pill("excede", dominio="resultado", extra=f"  +{pct_exceso:.0f}%")
+
+
+def estado_card(
+    estado: str,
+    descripcion: str,
+    foot_label: str = "",
+    foot_meta: str = "",
+) -> str:
+    """
+    Tarjeta descriptiva del estado (para docs / paneles informativos).
+
+    estado: clave del estado (ver _ESTADO_CAMPANA).
+    descripcion: 1-2 líneas explicativas de qué significa el estado.
+    foot_label: texto del pie (ej. "ESPERANDO INICIO").
+    foot_meta:  metadato del pie (ej. "#5A6B5..."), normalmente código corto.
+    """
+    cls, icono_name, label = _ESTADO_CAMPANA.get(estado, ("planificada", "info", estado.capitalize()))
+    return (
+        f'<div class="lvca-estado-card lvca-card-{cls}">'
+        f'<div class="lvca-estado-card-icon">{icon(icono_name, size=20)}</div>'
+        f'<div class="lvca-estado-card-title">{label}</div>'
+        f'<div class="lvca-estado-card-desc">{descripcion}</div>'
+        f'<div class="lvca-estado-card-foot">'
+        f'<span>{foot_label}</span><span>{foot_meta}</span>'
+        f'</div>'
+        f'</div>'
+    )
+
+
+def timeline(steps: list[dict], current: int = 0) -> None:
+    """
+    Renderiza un timeline horizontal de pasos para el ciclo de vida.
+
+    steps: lista de {"label": str, "sub": str (opcional)}.
+    current: índice del paso activo (los anteriores quedan como completados).
+    """
+    n = len(steps)
+    progress = round(100 * current / max(n - 1, 1)) if n > 1 else 0
+    html_steps = []
+    for i, step in enumerate(steps):
+        if i < current:
+            cls = "done"
+            inner = icon("check", size=18, color="#ffffff")
+        elif i == current:
+            cls = "active"
+            inner = str(i + 1)
+        else:
+            cls = "pending"
+            inner = str(i + 1)
+        sub = step.get("sub", "")
+        html_steps.append(
+            f'<div class="lvca-timeline-step {cls}">'
+            f'<div class="lvca-timeline-circle">{inner}</div>'
+            f'<div class="lvca-timeline-label">{step["label"]}</div>'
+            f'<div class="lvca-timeline-sub">{sub}</div>'
+            f'</div>'
+        )
+    html = (
+        f'<div class="lvca-timeline">'
+        f'<div class="lvca-timeline-row">'
+        f'<div class="lvca-timeline-line" style="--progress:{progress}%;"></div>'
+        f'{"".join(html_steps)}'
+        f'</div></div>'
+    )
+    st.markdown(html, unsafe_allow_html=True)
+
+
+def inline_note(texto: str, tipo: str = "info", icono: str | None = None) -> None:
+    """
+    Nota inline con barra lateral de color (sin halo de fondo).
+    tipo: "info" | "warn" | "danger" | "success".
+    """
+    icon_map = {"info": "info", "warn": "alert", "danger": "alert", "success": "check"}
+    color_map = {
+        "info": COLORS["secondary"], "warn": COLORS["warning"],
+        "danger": COLORS["danger"],  "success": COLORS["success"],
+    }
+    cls = "" if tipo == "info" else tipo
+    icon_name = icono or icon_map.get(tipo, "info")
+    icon_svg = icon(icon_name, size=16, color=color_map.get(tipo, COLORS["secondary"]))
+    st.markdown(
+        f'<div class="lvca-inline-note {cls}">'
+        f'<span class="lvca-inline-icon">{icon_svg}</span>'
+        f'<span>{texto}</span></div>',
+        unsafe_allow_html=True,
+    )

@@ -292,13 +292,35 @@ def _render_detalle(campana_id: str) -> None:
     avance = detalle["avance"]
 
     # ── Cabecera ─────────────────────────────────────────────────────────────
-    st.markdown(f"### {camp['codigo']} — {camp['nombre']}")
+    from components.ui_styles import estado_pill, timeline as _timeline
 
-    hc1, hc2, hc3, hc4 = st.columns(4)
-    hc1.metric("Estado",     _badge_estado(camp["estado"]))
+    head_l, head_r = st.columns([4, 1])
+    with head_l:
+        st.markdown(f"### {camp['codigo']} — {camp['nombre']}")
+    with head_r:
+        st.markdown(estado_pill(camp["estado"]), unsafe_allow_html=True)
+
+    hc2, hc3, hc4 = st.columns(3)
     hc2.metric("Frecuencia", (camp.get("frecuencia") or "—").capitalize())
     hc3.metric("Inicio",     str(camp.get("fecha_inicio", "—"))[:10])
     hc4.metric("Fin",        str(camp.get("fecha_fin", "—"))[:10])
+
+    # Timeline visual del ciclo de vida de la campaña
+    _ciclo = ["planificada", "en_campo", "en_laboratorio", "completada"]
+    _labels_ciclo = ["Planificada", "En campo", "En laboratorio", "Completada"]
+    _estado = camp["estado"]
+    if _estado in _ciclo:
+        _idx_actual = _ciclo.index(_estado)
+    elif _estado == "anulada":
+        _idx_actual = 0  # anulada se renderiza desde el inicio
+    elif _estado == "archivada":
+        _idx_actual = len(_ciclo) - 1
+    else:
+        _idx_actual = 0
+    _timeline(
+        [{"label": lbl, "sub": ""} for lbl in _labels_ciclo],
+        current=_idx_actual,
+    )
 
     rc1, rc2 = st.columns(2)
     rc1.markdown(f"**Responsable campo:** {camp.get('responsable_campo') or '—'}")
