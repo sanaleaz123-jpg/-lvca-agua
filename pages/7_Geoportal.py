@@ -99,16 +99,21 @@ def _clasificar_cat(param: dict) -> str:
 # 1. DASHBOARD RESUMEN
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _render_kpi_card(valor, label: str, color: str, icono: str) -> str:
-    """Genera HTML para una tarjeta KPI — estilo limpio con acento de color."""
+def _render_kpi_card(valor, label: str, color: str, icono_name: str) -> str:
+    """Tarjeta KPI minimalista — ícono SVG sutil, valor prominente, label uppercase."""
+    from components.ui_styles import icon as _icon
+    icono_svg = _icon(icono_name, size=18, color="#94a3b8")
     return f"""
-    <div style="background:#ffffff; border-radius:10px; padding:16px 20px;
-         text-align:center; border:1px solid #e2e8f0;
-         box-shadow:0 1px 3px rgba(0,0,0,0.04); transition: all 0.15s ease;">
-        <div style="font-size:1.4rem; margin-bottom:4px;">{icono}</div>
-        <div style="font-size:2rem; font-weight:800; line-height:1.1; color:{color};">{valor}</div>
-        <div style="font-size:0.72rem; color:#64748b; margin-top:4px; text-transform:uppercase;
-             letter-spacing:0.5px; font-weight:600;">{label}</div>
+    <div style="background:#ffffff; border-radius:12px; padding:18px 22px;
+         text-align:left; border:1px solid #f1f5f9; transition: all 0.18s ease;
+         min-height: 110px; display: flex; flex-direction: column; justify-content: space-between;">
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+            <span style="font-size:0.7rem; color:#94a3b8; text-transform:uppercase;
+                 letter-spacing:0.05em; font-weight:600;">{label}</span>
+            <span>{icono_svg}</span>
+        </div>
+        <div style="font-size:1.85rem; font-weight:600; line-height:1.1; color:{color};
+             letter-spacing:-0.02em; margin-top:8px;">{valor}</div>
     </div>"""
 
 
@@ -122,19 +127,19 @@ def _render_dashboard(puntos: list[dict]) -> None:
     indices = [p["indice_cumplimiento"] for p in puntos if p.get("indice_cumplimiento") is not None]
     ic_general = round(sum(indices) / len(indices) * 100, 1) if indices else 0
 
-    # ── KPIs estilo ANA con colores fuertes ──────────────────────────────
+    # ── KPIs minimalistas: íconos SVG Lucide, sin colores fuertes salvo el valor ──
     k1, k2, k3, k4, k5 = st.columns(5)
     with k1:
-        st.markdown(_render_kpi_card(n_total, "Puntos Monitoreados", "#1b6b35", "📍"), unsafe_allow_html=True)
+        st.markdown(_render_kpi_card(n_total, "Puntos monitoreados", "#0f172a", "map_pin"), unsafe_allow_html=True)
     with k2:
-        st.markdown(_render_kpi_card(n_ok, "Cumplen ECA", "#2e7d32", "✅"), unsafe_allow_html=True)
+        st.markdown(_render_kpi_card(n_ok, "Cumplen ECA", "#1b6b35", "check"), unsafe_allow_html=True)
     with k3:
-        st.markdown(_render_kpi_card(n_exc, "Con Excedencias", "#c62828", "⚠️"), unsafe_allow_html=True)
+        st.markdown(_render_kpi_card(n_exc, "Con excedencias", "#c62828", "alert"), unsafe_allow_html=True)
     with k4:
-        st.markdown(_render_kpi_card(n_sin, "Sin Datos", "#616161", "—"), unsafe_allow_html=True)
+        st.markdown(_render_kpi_card(n_sin, "Sin datos", "#94a3b8", "info"), unsafe_allow_html=True)
     with k5:
-        color_ic = "#2e7d32" if ic_general >= 80 else "#e8870e" if ic_general >= 50 else "#c62828"
-        st.markdown(_render_kpi_card(f"{ic_general}%", "Cumplimiento ECA", color_ic, "📊"), unsafe_allow_html=True)
+        color_ic = "#1b6b35" if ic_general >= 80 else "#e8870e" if ic_general >= 50 else "#c62828"
+        st.markdown(_render_kpi_card(f"{ic_general}%", "Cumplimiento ECA", color_ic, "shield"), unsafe_allow_html=True)
 
     st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
 
@@ -142,21 +147,21 @@ def _render_dashboard(puntos: list[dict]) -> None:
     col_barra, col_torta = st.columns([3, 2])
 
     with col_barra:
-        color_barra = "#2e7d32" if ic_general >= 80 else "#e8870e" if ic_general >= 50 else "#c62828"
+        color_barra = "#1b6b35" if ic_general >= 80 else "#e8870e" if ic_general >= 50 else "#c62828"
         st.markdown(
-            f"""<div style="background:#ffffff; border-radius:10px; padding:16px 20px;
-                 border:1px solid #e2e8f0; margin-top:4px;">
-            <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:6px;">
-                <span style="font-weight:600; color:#1e293b;">Indice de Cumplimiento General ECA</span>
-                <span style="color:{color_barra}; font-weight:bold; font-size:1.1rem;">{ic_general}%</span>
+            f"""<div style="background:#ffffff; border-radius:12px; padding:18px 22px;
+                 border:1px solid #f1f5f9; margin-top:4px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                <span style="font-size:0.7rem; color:#94a3b8; text-transform:uppercase;
+                     letter-spacing:0.05em; font-weight:600;">Índice de cumplimiento general ECA</span>
+                <span style="color:{color_barra}; font-weight:600; font-size:1.05rem; letter-spacing:-0.01em;">{ic_general}%</span>
             </div>
-            <div style="background:#f1f5f9; border-radius:8px; height:24px; overflow:hidden;">
-                <div style="background:linear-gradient(90deg, {color_barra}, {color_barra}dd);
-                     width:{ic_general}%; height:100%; border-radius:8px;
-                     transition: width 0.5s;"></div>
+            <div style="background:#f1f5f9; border-radius:6px; height:8px; overflow:hidden;">
+                <div style="background:{color_barra}; width:{ic_general}%; height:100%;
+                     border-radius:6px; transition: width 0.5s;"></div>
             </div>
-            <div style="font-size:11px; color:#64748b; margin-top:6px;">
-                D.S. N° 004-2017-MINAM — Estandares Nacionales de Calidad Ambiental para Agua
+            <div style="font-size:0.72rem; color:#94a3b8; margin-top:10px;">
+                D.S. N° 004-2017-MINAM
             </div>
             </div>""",
             unsafe_allow_html=True,
@@ -169,7 +174,9 @@ def _render_dashboard(puntos: list[dict]) -> None:
             reverse=True,
         )
         if criticos:
-            with st.expander(f"⚠️ {len(criticos)} punto(s) con excedencia", expanded=False):
+            from components.ui_styles import icon as _icon
+            label_exp = f"{len(criticos)} punto(s) con excedencia"
+            with st.expander(label_exp, expanded=False):
                 for p in criticos[:5]:
                     exc_list = p.get("excedencias", [])
                     params_exc = ", ".join(
@@ -178,13 +185,14 @@ def _render_dashboard(puntos: list[dict]) -> None:
                     if len(exc_list) > 4:
                         params_exc += f" (+{len(exc_list)-4})"
                     st.markdown(
-                        f"""<div style="display:flex; align-items:center; padding:6px 10px; margin:2px 0;
-                            background:#fef5f5; border-left:3px solid #c62828; border-radius:4px; font-size:12px;">
+                        f"""<div style="display:flex; align-items:center; padding:10px 14px; margin:4px 0;
+                            background:#fef5f5; border-left:3px solid #c62828; border-radius:8px; font-size:0.82rem;">
                             <div style="flex:1;">
-                                <b>{p['codigo']}</b> — {p['nombre']}
-                                <span style="color:#888; margin-left:6px; font-size:11px;">{params_exc}</span>
+                                <b style="color:#0f172a;">{p['codigo']}</b>
+                                <span style="color:#475569;"> — {p['nombre']}</span>
+                                <span style="color:#94a3b8; margin-left:8px; font-size:0.76rem;">{params_exc}</span>
                             </div>
-                            <span style="color:#c62828; font-weight:bold; font-size:11px;">{len(exc_list)}</span>
+                            <span style="color:#c62828; font-weight:600; font-size:0.78rem;">{len(exc_list)}</span>
                         </div>""",
                         unsafe_allow_html=True,
                     )
@@ -924,23 +932,19 @@ def main() -> None:
         unsafe_allow_html=True,
     )
 
-    # Tres tarjetas de contexto a ancho completo
+    # Tres tarjetas de contexto — minimalistas (sin fondos saturados)
     i1, i2, i3 = st.columns(3)
-    i1.markdown(
-        f"""<div style="background:#e8f5e9; border-radius:8px; padding:12px 16px; text-align:center;">
-        <div style="font-size:0.7rem; color:#64748b; text-transform:uppercase; letter-spacing:0.5px;">Sistema Hídrico</div>
-        <div style="font-weight:700; color:#1b6b35; margin-top:4px;">{punto_sel.get('sistema_hidrico', '—')}</div>
-        </div>""", unsafe_allow_html=True)
-    i2.markdown(
-        f"""<div style="background:#e0f7f7; border-radius:8px; padding:12px 16px; text-align:center;">
-        <div style="font-size:0.7rem; color:#64748b; text-transform:uppercase; letter-spacing:0.5px;">ECA Aplicable</div>
-        <div style="font-weight:700; color:#0a9396; margin-top:4px;">{eca_info.get('codigo', '—')}</div>
-        </div>""", unsafe_allow_html=True)
-    i3.markdown(
-        f"""<div style="background:#fef3e2; border-radius:8px; padding:12px 16px; text-align:center;">
-        <div style="font-size:0.7rem; color:#64748b; text-transform:uppercase; letter-spacing:0.5px;">Último dato</div>
-        <div style="font-weight:700; color:#c56d00; margin-top:4px;">{punto_sel.get('ultima_fecha', '—')}</div>
-        </div>""", unsafe_allow_html=True)
+    _ctx_card = lambda label, valor, color: (
+        f'<div style="background:#ffffff; border:1px solid #f1f5f9; border-radius:10px; '
+        f'padding:14px 18px; text-align:left;">'
+        f'<div style="font-size:0.7rem; color:#94a3b8; text-transform:uppercase; '
+        f'letter-spacing:0.05em; font-weight:600;">{label}</div>'
+        f'<div style="font-weight:600; color:{color}; margin-top:6px; font-size:0.95rem;">{valor}</div>'
+        f'</div>'
+    )
+    i1.markdown(_ctx_card("Sistema hídrico", punto_sel.get('sistema_hidrico', '—'), '#0f172a'), unsafe_allow_html=True)
+    i2.markdown(_ctx_card("ECA aplicable",   eca_info.get('codigo', '—'),               '#0f172a'), unsafe_allow_html=True)
+    i3.markdown(_ctx_card("Último dato",     punto_sel.get('ultima_fecha', '—'),        '#0f172a'), unsafe_allow_html=True)
 
     st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
 
