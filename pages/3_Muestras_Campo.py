@@ -738,11 +738,20 @@ def _render_insitu_single(
         cols = st.columns([2, 2, 1, 1, 1])
         cols[0].markdown(f"**{p['nombre']}**")
 
+        # Castear todo a float para evitar StreamlitMixedNumericTypesError
+        # (los rangos vienen de NUMERIC en BD y pueden interpretarse como int)
+        _val_in   = existente.get("valor")
+        _val_in   = float(_val_in)   if _val_in   is not None else None
+        _min_in   = p.get("valor_minimo")
+        _min_in   = float(_min_in)   if _min_in   is not None else None
+        _max_in   = p.get("valor_maximo")
+        _max_in   = float(_max_in)   if _max_in   is not None else None
         val = cols[1].number_input(
             p["nombre"],
-            value=existente.get("valor"),
-            min_value=p.get("valor_minimo"),
-            max_value=p.get("valor_maximo"),
+            value=_val_in,
+            min_value=_min_in,
+            max_value=_max_in,
+            step=0.01,
             format="%.4g",
             label_visibility="collapsed",
             placeholder="No medido",
@@ -851,14 +860,22 @@ def _render_insitu_columna(
         cols = st.columns(col_widths)
         cols[0].markdown(f"**{p['nombre']}**")
 
-        # Un input por profundidad
+        # Un input por profundidad — todos los argumentos numéricos en float
+        # para evitar StreamlitMixedNumericTypesError
+        _min_p = p.get("valor_minimo")
+        _min_p = float(_min_p) if _min_p is not None else None
+        _max_p = p.get("valor_maximo")
+        _max_p = float(_max_p) if _max_p is not None else None
         for j, (m, existentes_m, tp) in enumerate(datos_por_prof):
             existente = existentes_m.get(clave, {})
+            _val_e = existente.get("valor")
+            _val_e = float(_val_e) if _val_e is not None else None
             val = cols[1 + j].number_input(
                 f"{p['nombre']} ({tp})",
-                value=existente.get("valor"),
-                min_value=p.get("valor_minimo"),
-                max_value=p.get("valor_maximo"),
+                value=_val_e,
+                min_value=_min_p,
+                max_value=_max_p,
+                step=0.01,
                 format="%.4g",
                 label_visibility="collapsed",
                 placeholder="—",
