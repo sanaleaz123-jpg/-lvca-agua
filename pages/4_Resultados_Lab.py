@@ -20,7 +20,7 @@ import pandas as pd
 import streamlit as st
 
 from components.auth_guard import require_rol
-from components.ui_styles import aplicar_estilos, page_header
+from components.ui_styles import aplicar_estilos, page_header, success_check_overlay, toast
 from services.parametro_registry import clasificar_categoria
 from services.resultado_service import (
     get_campanas,
@@ -445,8 +445,9 @@ def main() -> None:
                 # Marcar parámetros como guardados (persiste hasta navegar fuera)
                 st.session_state[saved_key] = {c["parametro_id"] for c in cambios}
                 st.session_state[msg_key] = (
-                    f"✅ {ok} resultado(s) guardado(s) correctamente."
+                    f"{ok} resultado(s) guardado(s) correctamente."
                 )
+                success_check_overlay(f"{ok} resultado(s) guardado(s)")
                 # Invalidar caché para carga fresca en el siguiente render
                 get_datos_muestra.clear()
                 st.rerun()
@@ -478,7 +479,7 @@ def main() -> None:
                 ):
                     validador_id = _get_usuario_interno_id(sesion.uid)
                     n = validar_resultados(muestra_id, pendientes_ids, validador_id)
-                    st.success(f"{n} resultado(s) validado(s).")
+                    success_check_overlay(f"{n} resultado(s) validado(s)")
                     get_datos_muestra.clear()
                     st.rerun()
             with col_d:
@@ -487,7 +488,7 @@ def main() -> None:
                     key="btn_desvalidar_todos",
                 ):
                     n = desvalidar_resultados(muestra_id, validados_ids)
-                    st.warning(f"{n} resultado(s) desvalidado(s) — ahora son editables.")
+                    toast(f"{n} resultado(s) desvalidado(s) — ahora son editables", tipo="warn")
                     get_datos_muestra.clear()
                     st.rerun()
 
@@ -576,8 +577,9 @@ def main() -> None:
                         )
 
                     if cargas and st.button(
-                        f"💾 Cargar {len(cargas)} resultado(s)",
+                        f"Cargar {len(cargas)} resultado(s)",
                         key="btn_bulk_upload", type="primary",
+                        icon=":material/upload:",
                     ):
                         analista_id = _get_usuario_interno_id(sesion.uid)
                         ok, errs, blocs = guardar_resultados_lote(
@@ -586,31 +588,38 @@ def main() -> None:
                             analista_id=analista_id,
                         )
                         if blocs:
-                            st.warning(f"🔒 {len(blocs)} validado(s) no sobreescritos.")
+                            toast(f"{len(blocs)} validado(s) no sobreescritos", tipo="warn")
                         if errs:
                             st.error(f"Cargados {ok}/{len(cargas)}. Errores:")
                             for e in errs:
                                 st.caption(f"• {e}")
                         else:
-                            st.success(f"✅ {ok} resultado(s) cargado(s) correctamente.")
+                            success_check_overlay(f"{ok} resultado(s) cargados")
                         get_datos_muestra.clear()
                         st.rerun()
             except Exception as exc:
                 st.error(f"Error procesando el archivo: {exc}")
 
     if sesion_rol == "administrador" and con_valor > 0:
-        with st.expander("🗑️ Eliminar todos los resultados de esta muestra", expanded=False):
+        with st.expander("Vaciar resultados de esta muestra", expanded=False):
             st.warning(
                 f"Se eliminarán **{con_valor} resultado(s)** de laboratorio para esta muestra. "
                 "Esta acción no se puede deshacer."
             )
-            if st.button("Eliminar todos los resultados", key="btn_eliminar_resultados", type="primary"):
+            st.markdown('<div class="lvca-danger">', unsafe_allow_html=True)
+            del_btn = st.button(
+                "Eliminar todos los resultados",
+                key="btn_eliminar_resultados", type="primary",
+                icon=":material/delete:",
+            )
+            st.markdown('</div>', unsafe_allow_html=True)
+            if del_btn:
                 try:
                     n = eliminar_resultados_muestra(muestra_id)
                     st.session_state.pop(saved_key, None)
                     st.session_state.pop(msg_key, None)
                     get_datos_muestra.clear()
-                    st.success(f"{n} resultado(s) eliminado(s).")
+                    toast(f"{n} resultado(s) eliminado(s)", tipo="danger")
                     st.rerun()
                 except Exception as exc:
                     st.error(f"Error: {exc}")

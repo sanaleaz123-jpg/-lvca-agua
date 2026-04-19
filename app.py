@@ -206,7 +206,7 @@ def _sidebar(sesion: SesionUsuario) -> None:
 
         st.divider()
 
-        if st.button("Cerrar sesion", use_container_width=True, icon="🚪"):
+        if st.button("Cerrar sesion", use_container_width=True, icon=":material/logout:"):
             _cerrar_sesion()
             st.rerun()
 

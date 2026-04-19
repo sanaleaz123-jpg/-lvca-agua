@@ -21,7 +21,7 @@ import pandas as pd
 import streamlit as st
 
 from components.auth_guard import require_rol
-from components.ui_styles import aplicar_estilos, page_header
+from components.ui_styles import aplicar_estilos, page_header, success_check_overlay, toast
 from database.client import get_admin_client
 from services.muestra_service import (
     ESTADOS_MUESTRA,
@@ -498,6 +498,7 @@ def _render_registro() -> None:
                 except Exception as exc:
                     st.error(f"Error al actualizar: {exc}")
                     return
+            success_check_overlay(f"Muestra {existente['codigo']} actualizada")
             st.success(f"Muestra **{existente['codigo']}** actualizada correctamente.")
             muestra_id_fotos = existente["id"]
             muestra_codigo = existente["codigo"]
@@ -510,8 +511,10 @@ def _render_registro() -> None:
                     st.error(f"Error al crear la muestra: {exc}")
                     return
             if modo_muestreo == "columna":
+                success_check_overlay(f"3 muestras registradas — {creada['codigo']}")
                 st.success(f"3 muestras de columna registradas. Primera: **{creada['codigo']}**")
             else:
+                success_check_overlay(f"Muestra {creada['codigo']} registrada")
                 st.success(f"Muestra **{creada['codigo']}** registrada exitosamente.")
             muestra_id_fotos = creada["id"]
             muestra_codigo = creada["codigo"]
@@ -763,7 +766,7 @@ def _render_insitu_single(
 
     st.divider()
 
-    if st.button("💾 Guardar mediciones in situ", type="primary", key=f"btn_insitu{key_suffix}"):
+    if st.button("Guardar mediciones in situ", type="primary", icon=":material/save:", key=f"btn_insitu{key_suffix}"):
         mediciones = [
             {
                 "parametro": p["clave"],
@@ -783,7 +786,7 @@ def _render_insitu_single(
                 for e in errores:
                     st.caption(f"• {e}")
             else:
-                st.success(f"{ok} medición(es) guardada(s) correctamente.")
+                success_check_overlay(f"{ok} medición(es) guardadas")
                 st.rerun()
 
 
@@ -878,7 +881,7 @@ def _render_insitu_columna(
 
     st.divider()
 
-    if st.button("💾 Guardar mediciones in situ (3 profundidades)", type="primary", key="btn_insitu_col"):
+    if st.button("Guardar mediciones in situ (3 profundidades)", type="primary", icon=":material/save:", key="btn_insitu_col"):
         total_ok = 0
         total_err: list[str] = []
         for j, (m, _, tp) in enumerate(datos_por_prof):
@@ -901,7 +904,7 @@ def _render_insitu_columna(
             for e in total_err:
                 st.caption(f"• {e}")
         elif total_ok > 0:
-            st.success(f"{total_ok} medición(es) guardada(s) en {n_prof} profundidades.")
+            success_check_overlay(f"{total_ok} medición(es) guardadas en {n_prof} profundidades")
             st.rerun()
         else:
             st.warning("Ingresa al menos un valor.")
@@ -1092,7 +1095,7 @@ def _render_listado() -> None:
     sel_qr = st.selectbox("Generar etiqueta QR para", list(opciones_qr.keys()), key="list_qr")
     muestra_id_qr = opciones_qr[sel_qr]
 
-    if st.button("📥 Generar etiqueta QR", key="btn_qr_listado"):
+    if st.button("Generar etiqueta QR", key="btn_qr_listado", icon=":material/qr_code:"):
         try:
             pdf_bytes = generar_qr_pdf(muestra_id_qr)
             st.download_button(
@@ -1394,11 +1397,12 @@ def _render_cadena_custodia() -> None:
     sesion = st.session_state.get("sesion")
     col_save, _ = st.columns([1, 3])
     with col_save:
-        if st.button("💾 Guardar configuración para esta campaña",
-                     key="btn_cc_save_cfg", use_container_width=True):
+        if st.button("Guardar configuración para esta campaña",
+                     key="btn_cc_save_cfg", icon=":material/save:", use_container_width=True):
             uid = sesion.uid if sesion else None
             if guardar_config_persistida(campana_id, cfg, usuario_id=uid):
-                st.success("Configuración guardada — se cargará automáticamente la próxima vez.")
+                success_check_overlay("Configuración guardada")
+                st.caption("Se cargará automáticamente la próxima vez.")
             else:
                 st.warning(
                     "No se pudo guardar (¿migración 006 aplicada?). "

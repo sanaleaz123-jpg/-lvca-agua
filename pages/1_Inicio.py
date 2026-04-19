@@ -367,22 +367,116 @@ def main() -> None:
     # ── 4. Mapa de puntos ───────────────────────────────────────────────────
     _render_mapa(puntos)
 
-    # ── Acceso rápido (cards) ────────────────────────────────────────────────
+    # ── Tareas pendientes accionables ───────────────────────────────────────
     st.divider()
-    st.subheader("Acceso rápido")
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        if st.button("Campañas", use_container_width=True):
-            st.switch_page("pages/2_Campanas.py")
-    with c2:
-        if st.button("Resultados Lab", use_container_width=True):
-            st.switch_page("pages/4_Resultados_Lab.py")
-    with c3:
-        if st.button("Informes", use_container_width=True):
-            st.switch_page("pages/8_Informes.py")
-    with c4:
-        if st.button("Geoportal", use_container_width=True):
-            st.switch_page("pages/7_Geoportal.py")
+    _render_tareas_pendientes()
+
+
+def _render_tareas_pendientes() -> None:
+    """
+    Lista de tareas operacionales que el usuario debería atender ahora,
+    en lugar de los genéricos botones de 'Acceso rápido'. Cada item lleva
+    a la página exacta donde se resuelve.
+    """
+    from database.client import get_admin_client
+    from components.ui_styles import section_header, icon, COLORS
+    db = get_admin_client()
+
+    section_header("Tareas pendientes", "list")
+
+    items: list[dict] = []
+
+    # 1. Campañas en curso (en_campo o en_laboratorio)
+    try:
+        camp_curso = (
+            db.table("campanas")
+            .select("codigo, nombre, estado")
+            .in_("estado", ["en_campo", "en_laboratorio"])
+            .order("fecha_inicio", desc=True)
+            .limit(50)
+            .execute()
+            .data or []
+        )
+        if camp_curso:
+            items.append({
+                "icon": "play",
+                "color": COLORS["primary"],
+                "title": f"{len(camp_curso)} campaña(s) activa(s)",
+                "detail": ", ".join(c["codigo"] for c in camp_curso[:3])
+                          + (f" y {len(camp_curso)-3} más" if len(camp_curso) > 3 else ""),
+                "page": "pages/2_Campanas.py",
+                "cta": "Ver campañas",
+            })
+    except Exception:
+        pass
+
+    # 2. Muestras analizadas/recibidas sin resultados completos
+    try:
+        muestras_lab = (
+            db.table("muestras")
+            .select("id, codigo, estado")
+            .in_("estado", ["en_laboratorio", "analizada"])
+            .limit(200)
+            .execute()
+            .data or []
+        )
+        if muestras_lab:
+            items.append({
+                "icon": "beaker",
+                "color": COLORS["secondary"],
+                "title": f"{len(muestras_lab)} muestra(s) en laboratorio",
+                "detail": "Muestras recibidas o en análisis pendientes de cierre.",
+                "page": "pages/4_Resultados_Lab.py",
+                "cta": "Cargar resultados",
+            })
+    except Exception:
+        pass
+
+    # 3. Resultados sin validar (si la migración 006 está aplicada)
+    try:
+        sin_validar = (
+            db.table("resultados_laboratorio")
+            .select("id", count="exact")
+            .eq("validado", False)
+            .not_.is_("valor_numerico", "null")
+            .limit(1)
+            .execute()
+        )
+        n_sin_val = sin_validar.count or 0
+        if n_sin_val > 0:
+            items.append({
+                "icon": "shield",
+                "color": COLORS["warning"],
+                "title": f"{n_sin_val} resultado(s) sin validar",
+                "detail": "Resultados ingresados pero no firmados por supervisor.",
+                "page": "pages/4_Resultados_Lab.py",
+                "cta": "Validar resultados",
+            })
+    except Exception:
+        pass
+
+    if not items:
+        st.info("No hay tareas pendientes — la operación está al día.")
+        return
+
+    cols = st.columns(min(3, len(items)))
+    for i, item in enumerate(items):
+        with cols[i % len(cols)]:
+            st.markdown(
+                f"""<div class="lvca-card" style="text-align:left;">
+                    <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+                        <span style="color:{item['color']};">{icon(item['icon'], 22, item['color'])}</span>
+                        <span style="font-weight:700; color:#1e293b; font-size:0.95rem;">
+                            {item['title']}
+                        </span>
+                    </div>
+                    <div style="font-size:0.82rem; color:#64748b; margin-bottom:14px; min-height:2.6em;">
+                        {item['detail']}
+                    </div>
+                </div>""",
+                unsafe_allow_html=True,
+            )
+            st.page_link(item["page"], label=f"→ {item['cta']}")
 
 
 main()

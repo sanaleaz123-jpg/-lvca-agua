@@ -278,12 +278,16 @@ def _render_editar(parametro_id: str) -> None:
 
     # ── Eliminar parámetro ───────────────────────────────────────────────
     with bc2:
-        with st.expander("🗑️ Eliminar parámetro", expanded=False):
+        with st.expander("Eliminar parámetro", expanded=False):
             st.warning(
                 "Si el parámetro tiene resultados de laboratorio vinculados, "
                 "se marcará como inactivo en lugar de eliminarse."
             )
-            if st.button("Eliminar parámetro", key="btn_eliminar_param", type="primary"):
+            st.markdown('<div class="lvca-danger">', unsafe_allow_html=True)
+            _del_param = st.button("Eliminar parámetro", key="btn_eliminar_param",
+                                   type="primary", icon=":material/delete:")
+            st.markdown('</div>', unsafe_allow_html=True)
+            if _del_param:
                 try:
                     resultado = eliminar_parametro(parametro_id)
                     if resultado == "desactivado":

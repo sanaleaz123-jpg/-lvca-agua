@@ -45,26 +45,31 @@ def _render_informe_campana() -> None:
         f"{c['codigo']} — {c['nombre']} ({c['estado']})": c["id"]
         for c in campanas
     }
-    sel = st.selectbox("Seleccionar campaña", list(opciones.keys()), key="inf_campana")
-    campana_id = opciones[sel]
+    col_sel, col_refresh = st.columns([4, 1])
+    with col_sel:
+        sel = st.selectbox("Seleccionar campaña", list(opciones.keys()), key="inf_campana")
+        campana_id = opciones[sel]
+    with col_refresh:
+        st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+        refresh = st.button(
+            "Actualizar", key="btn_refresh_informe",
+            icon=":material/refresh:", use_container_width=True,
+        )
 
-    if st.button("Generar informe", key="btn_gen_campana", type="primary"):
-        with st.spinner("Generando informe..."):
+    # Auto-cargar el informe si cambió la campaña o se presiona Actualizar
+    cached_id = st.session_state.get("informe_campana_id")
+    cached = st.session_state.get("informe_campana")
+    if refresh or cached is None or cached_id != campana_id:
+        with st.spinner("Cargando informe..."):
             try:
                 resumen = get_resumen_campana(campana_id)
+                st.session_state["informe_campana"] = resumen
+                st.session_state["informe_campana_id"] = campana_id
             except Exception as exc:
-                st.error(f"Error al generar informe: {exc}")
+                st.error(f"Error al cargar informe: {exc}")
                 return
-
-        campana = resumen["campana"]
-        st.session_state["informe_campana"] = resumen
-        st.session_state["informe_campana_id"] = campana_id
-
-    # Mostrar informe si ya se generó
-    resumen = st.session_state.get("informe_campana")
-    if not resumen or st.session_state.get("informe_campana_id") != campana_id:
-        st.caption("Presiona 'Generar informe' para ver el resumen.")
-        return
+    else:
+        resumen = cached
 
     campana = resumen["campana"]
 
@@ -191,23 +196,29 @@ def _render_informe_punto() -> None:
             key="inf_pt_hasta",
         )
 
-    if st.button("Consultar", key="btn_gen_punto", type="primary"):
+    refresh_punto = st.button(
+        "Actualizar consulta", key="btn_gen_punto",
+        icon=":material/refresh:",
+    )
+
+    cached_p_id = st.session_state.get("informe_punto_id")
+    cached_p = st.session_state.get("informe_punto")
+    cache_key = f"{punto_id}|{fecha_desde}|{fecha_hasta}"
+    last_key = st.session_state.get("informe_punto_key")
+    if refresh_punto or cached_p is None or last_key != cache_key:
         with st.spinner("Consultando datos..."):
             try:
                 resumen = get_resumen_punto(
                     punto_id, str(fecha_desde), str(fecha_hasta),
                 )
+                st.session_state["informe_punto"] = resumen
+                st.session_state["informe_punto_id"] = punto_id
+                st.session_state["informe_punto_key"] = cache_key
             except Exception as exc:
                 st.error(f"Error: {exc}")
                 return
-
-        st.session_state["informe_punto"] = resumen
-        st.session_state["informe_punto_id"] = punto_id
-
-    resumen = st.session_state.get("informe_punto")
-    if not resumen or st.session_state.get("informe_punto_id") != punto_id:
-        st.caption("Presiona 'Consultar' para ver los resultados.")
-        return
+    else:
+        resumen = cached_p
 
     punto = resumen["punto"]
     resultados = resumen["resultados"]
