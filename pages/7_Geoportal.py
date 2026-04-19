@@ -798,25 +798,31 @@ def main() -> None:
         st.error("Instala: `pip install folium streamlit-folium`")
         st.stop()
 
-    # ── Sidebar: filtros ────────────────────────────────────────────────
-    with st.sidebar:
-        st.subheader("Filtros")
-
-        fecha_inicio = st.date_input("Desde", value=date.today() - timedelta(days=90), key="geo_desde")
-        fecha_fin = st.date_input("Hasta", value=date.today(), key="geo_hasta")
-
+    # ── Barra de filtros (en el área principal, no en sidebar) ──────────
+    from components.ui_styles import filter_bar_open, filter_bar_close
+    filter_bar_open()
+    fc1, fc2, fc3, fc4 = st.columns([1, 1, 2, 2])
+    with fc1:
+        fecha_inicio = st.date_input(
+            "Desde", value=date.today() - timedelta(days=90), key="geo_desde",
+        )
+    with fc2:
+        fecha_fin = st.date_input(
+            "Hasta", value=date.today(), key="geo_hasta",
+        )
+    with fc3:
         campanas = get_campanas()
         opciones_camp = {"Todas": None}
         opciones_camp.update({f"{c['codigo']} — {c['nombre']}": c["id"] for c in campanas})
         sel_camp = st.selectbox("Campaña", list(opciones_camp.keys()), key="geo_camp")
         campana_id = opciones_camp[sel_camp]
-
-        st.divider()
-        solo_exc = st.checkbox("Solo excedencias", key="geo_solo_exc")
-        mostrar_heatmap = st.checkbox("Mapa de calor", value=True, key="geo_heatmap")
-
-        st.divider()
-        st.subheader("Detalle de punto")
+    with fc4:
+        opt_c1, opt_c2 = st.columns(2)
+        with opt_c1:
+            solo_exc = st.checkbox("Solo excedencias", key="geo_solo_exc")
+        with opt_c2:
+            mostrar_heatmap = st.checkbox("Mapa de calor", value=True, key="geo_heatmap")
+    filter_bar_close()
 
     # ── Cargar datos ────────────────────────────────────────────────────
     with st.spinner("Cargando datos..."):
@@ -832,18 +838,13 @@ def main() -> None:
         st.warning("No hay puntos con coordenadas disponibles para la campaña seleccionada.")
         st.stop()
 
-    # ── Selector de punto y parámetro (sidebar) ─────────────────────────
-    with st.sidebar:
-        # Fix 3: only show points that are in the campaign
-        opciones_punto = {f"{p['codigo']} — {p['nombre']}": p for p in puntos_con_coords}
-        sel_punto_label = st.selectbox("Punto de muestreo", list(opciones_punto.keys()), key="geo_punto")
-        punto_sel = opciones_punto[sel_punto_label]
-
-        # Fix 6: parameter selector with category tabs logic
-        parametros = get_parametros_selector()
-        opciones_param = {f"{pr['codigo']} — {pr['nombre']}": pr for pr in parametros}
-        sel_param_label = st.selectbox("Parámetro", list(opciones_param.keys()), key="geo_param")
-        param_sel = opciones_param[sel_param_label]
+    # ── Selectores de punto y parámetro (también en el main area, arriba
+    #     del panel de análisis para que estén siempre visibles) ──────────
+    opciones_punto = {f"{p['codigo']} — {p['nombre']}": p for p in puntos_con_coords}
+    parametros = get_parametros_selector()
+    opciones_param = {f"{pr['codigo']} — {pr['nombre']}": pr for pr in parametros}
+    # Se renderizan más abajo junto al panel de detalle para mantener el flujo:
+    # Dashboard → Mapa → (aquí) Selectores + Detalle + Análisis
 
     # ── 1. Dashboard resumen ────────────────────────────────────────────
     _render_dashboard(puntos_con_coords)
@@ -854,9 +855,7 @@ def main() -> None:
     mapa = _construir_mapa(puntos_con_coords, solo_exc, mostrar_heatmap)
     map_data = st_folium(mapa, use_container_width=True, height=520, returned_objects=["last_object_clicked"])
 
-    # Si el usuario hace click en el mapa, persistir la selección al sidebar
-    # para que sobreviva al siguiente rerun (antes solo cambiaba la variable
-    # local y se perdía con cualquier interacción)
+    # Click en el mapa → actualizar la selección persistente del selectbox
     if map_data and map_data.get("last_object_clicked"):
         clicked = map_data["last_object_clicked"]
         clat, clon = clicked.get("lat"), clicked.get("lng")
@@ -868,12 +867,32 @@ def main() -> None:
                 if dist < min_dist:
                     min_dist = dist
                     closest_label = label
-            if closest_label and min_dist < 0.01 and closest_label != sel_punto_label:
+            current = st.session_state.get("geo_punto")
+            if closest_label and min_dist < 0.01 and closest_label != current:
                 st.session_state["geo_punto"] = closest_label
                 st.rerun()
 
-    # ── 3. Detalle del punto seleccionado ───────────────────────────────
+    # ── 3. Selectores de punto y parámetro ──────────────────────────────
     st.divider()
+    sel_c1, sel_c2 = st.columns(2)
+    with sel_c1:
+        sel_punto_label = st.selectbox(
+            "Punto de muestreo a analizar",
+            list(opciones_punto.keys()),
+            key="geo_punto",
+            help="Click en el mapa también cambia esta selección.",
+        )
+    with sel_c2:
+        sel_param_label = st.selectbox(
+            "Parámetro a graficar",
+            list(opciones_param.keys()),
+            key="geo_param",
+        )
+    punto_sel = opciones_punto[sel_punto_label]
+    param_sel = opciones_param[sel_param_label]
+
+    # ── 4. Detalle del punto seleccionado ───────────────────────────────
+    st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
     eca_info = punto_sel.get("ecas") or {}
     exc_punto = punto_sel.get("excedencias", [])
     n_exc_punto = len(exc_punto)

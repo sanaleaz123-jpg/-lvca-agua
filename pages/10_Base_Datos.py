@@ -80,11 +80,12 @@ def main() -> None:
 
     es_admin = _es_admin()
 
-    # ── Sidebar: filtros ────────────────────────────────────────────────
-    with st.sidebar:
-        st.subheader("Filtros")
+    # ── Filtros (en main area, no sidebar) ──────────────────────────────
+    from components.ui_styles import filter_bar_open, filter_bar_close
+    filter_bar_open()
 
-        # Campaña
+    fc1, fc2, fc3, fc4 = st.columns([1.4, 1.4, 1, 1])
+    with fc1:
         campanas = get_campanas()
         opciones_camp = {"Todas las campañas": None}
         opciones_camp.update({
@@ -92,8 +93,7 @@ def main() -> None:
         })
         sel_camp = st.selectbox("Campaña", list(opciones_camp.keys()), key="bd_camp")
         campana_id = opciones_camp[sel_camp]
-
-        # Punto
+    with fc2:
         puntos = get_puntos(solo_activos=True)
         opciones_punto = {"Todos los puntos": None}
         opciones_punto.update({
@@ -101,26 +101,27 @@ def main() -> None:
         })
         sel_punto = st.selectbox("Punto de muestreo", list(opciones_punto.keys()), key="bd_punto")
         punto_id = opciones_punto[sel_punto]
-
-        # Fechas — por defecto: ultimos 12 meses corridos
-        st.markdown("**Rango de fechas**")
+    with fc3:
         _hoy = date.today()
         _default_desde = _hoy.replace(year=_hoy.year - 1)
         fecha_inicio = st.date_input("Desde", value=_default_desde, key="bd_desde")
+    with fc4:
         fecha_fin = st.date_input("Hasta", value=_hoy, key="bd_hasta")
 
-        st.divider()
-
-        # Opciones de vista
-        st.subheader("Opciones")
-        mostrar_vacios = st.checkbox("Mostrar celdas vacías", value=True, key="bd_vacios")
+    # Segunda fila de opciones (categorías + flag de celdas vacías)
+    fc5, fc6 = st.columns([3, 1])
+    with fc5:
         _categorias_disponibles = list(get_cat_params().keys())
         categoria_filtro = st.multiselect(
-            "Categorías",
+            "Categorías a mostrar",
             _categorias_disponibles,
             default=_categorias_disponibles,
             key="bd_categorias",
         )
+    with fc6:
+        st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+        mostrar_vacios = st.checkbox("Mostrar celdas vacías", value=True, key="bd_vacios")
+    filter_bar_close()
 
     # ── Cargar datos ────────────────────────────────────────────────────
     with st.spinner("Cargando base de datos..."):

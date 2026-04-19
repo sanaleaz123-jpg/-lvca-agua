@@ -121,7 +121,7 @@ def _render_sidebar() -> None:
             st.page_link(ruta, label=label)
 
         st.divider()
-        if st.button("Cerrar sesión", use_container_width=True, key="btn_logout_guard", icon="🚪"):
+        if st.button("Cerrar sesión", use_container_width=True, key="btn_logout_guard", icon=":material/logout:"):
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
             st.rerun()

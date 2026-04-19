@@ -17,7 +17,7 @@ import pandas as pd
 import streamlit as st
 
 from components.auth_guard import require_rol
-from components.ui_styles import aplicar_estilos, page_header
+from components.ui_styles import aplicar_estilos, page_header, success_check_overlay, toast
 from services.campana_service import (
     ESTADOS,
     ETIQUETA_ESTADO,
@@ -198,18 +198,18 @@ def _render_listado() -> None:
         usuario_id = sesion.uid if sesion else None
         with col_a:
             if camp_target["estado"] != "archivada":
-                if st.button("📦 Archivar", key="btn_archivar_camp", type="primary"):
+                if st.button("Archivar", key="btn_archivar_camp", type="primary", icon=":material/archive:"):
                     try:
                         archivar_campana(camp_target["id"], motivo=motivo, usuario_id=usuario_id)
-                        st.success(f"Campaña {camp_target['codigo']} archivada.")
+                        toast(f"Campaña {camp_target['codigo']} archivada", tipo="info")
                         st.rerun()
                     except Exception as exc:
                         st.error(f"Error al archivar: {exc}")
             else:
-                if st.button("↩️ Restaurar", key="btn_restaurar_camp"):
+                if st.button("Restaurar", key="btn_restaurar_camp", icon=":material/restore_from_trash:"):
                     try:
                         restaurar_campana(camp_target["id"])
-                        st.success(f"Campaña {camp_target['codigo']} restaurada.")
+                        toast(f"Campaña {camp_target['codigo']} restaurada", tipo="success")
                         st.rerun()
                     except Exception as exc:
                         st.error(f"Error al restaurar: {exc}")
@@ -239,16 +239,23 @@ def _render_listado() -> None:
                 f"Escribe **{camp_eliminar['codigo']}** para confirmar:",
                 key="confirmar_codigo_elim",
             )
-            if st.button("ELIMINAR PERMANENTEMENTE", key="btn_elim_camp_listado"):
+            st.markdown('<div class="lvca-danger">', unsafe_allow_html=True)
+            confirm_btn = st.button(
+                "Eliminar permanentemente",
+                key="btn_elim_camp_listado", type="primary",
+                icon=":material/delete_forever:",
+            )
+            st.markdown('</div>', unsafe_allow_html=True)
+            if confirm_btn:
                 if confirmar_codigo.strip() != camp_eliminar["codigo"]:
                     st.error("El código no coincide.")
                 else:
                     try:
                         info = eliminar_campana(camp_eliminar["id"], forzar=True)
-                        st.success(
-                            f"Campaña eliminada. {info['muestras']} muestra(s), "
-                            f"{info['resultados']} resultado(s), "
-                            f"{info['mediciones']} medición(es)."
+                        toast(
+                            f"Campaña eliminada — {info['muestras']} muestras, "
+                            f"{info['resultados']} resultados",
+                            tipo="danger",
                         )
                         st.rerun()
                     except Exception as exc:
@@ -328,7 +335,7 @@ def _render_detalle(campana_id: str) -> None:
 
     with bc2:
         if estado_actual not in ("completada", "anulada"):
-            if st.button("❌ Anular campaña", key="btn_anular"):
+            if st.button("Anular campaña", key="btn_anular", icon=":material/cancel:"):
                 try:
                     actualizar_estado(campana_id, "anulada")
                     st.warning("Campaña anulada.")
@@ -649,11 +656,13 @@ def _render_formulario_nueva() -> None:
         with st.spinner("Creando campaña..."):
             try:
                 creada = crear_campana(datos, usuario_id=usuario_id)
-                st.success(
-                    f"Campaña **{creada['codigo']}** creada exitosamente "
-                    f"con {len(puntos_ids)} punto(s) de muestreo."
+                success_check_overlay(
+                    f"Campaña {creada['codigo']} creada"
                 )
-                st.balloons()
+                st.success(
+                    f"Campaña **{creada['codigo']}** creada con "
+                    f"{len(puntos_ids)} punto(s) de muestreo."
+                )
             except Exception as exc:
                 st.error(f"Error al crear la campaña: {exc}")
 
