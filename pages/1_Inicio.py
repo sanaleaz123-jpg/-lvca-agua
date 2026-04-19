@@ -58,11 +58,21 @@ def _render_kpis(metricas: dict) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_tabla_excedencias(excedencias: list[dict]) -> None:
+    from components.ui_styles import inline_note, excede_pill, estado_pill
     st.subheader("Excedencias activas (últimos 30 días)")
 
     if not excedencias:
-        st.success("Sin excedencias ECA en los últimos 30 días.")
+        inline_note(
+            "Sin excedencias ECA en los últimos 30 días — todos los puntos cumplen.",
+            tipo="success",
+        )
         return
+
+    inline_note(
+        f"<b>{len(excedencias)} resultado(s)</b> superan los ECA "
+        f"D.S. N° 004-2017-MINAM en los últimos 30 días.",
+        tipo="warn",
+    )
 
     df = pd.DataFrame(excedencias)
 
@@ -93,7 +103,6 @@ def _render_tabla_excedencias(excedencias: list[dict]) -> None:
             "Límite": st.column_config.NumberColumn(format="%.4g"),
         },
     )
-    st.caption(f"{len(excedencias)} resultado(s) que superan los ECA D.S. N° 004-2017-MINAM.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -234,9 +234,18 @@ def _render_categoria(
         else:
             cols[4].caption("—")
 
-        # Semáforo ECA en tiempo real
+        # Pill ECA: "Excede +X%" / "Cumple" minimalista
+        from components.ui_styles import excede_pill as _ex_pill
+        if val is not None and (lim_max is not None or lim_min is not None):
+            pct = None
+            if lim_max is not None and val > lim_max and lim_max > 0:
+                pct = (val / lim_max - 1) * 100
+            elif lim_min is not None and val < lim_min and lim_min > 0:
+                pct = (1 - val / lim_min) * 100
+            cols[5].markdown(_ex_pill(pct), unsafe_allow_html=True)
+        # Mantener emoji compacto como fallback en otros casos
         emoji, bg = _semaforo_eca(val, lim_min, lim_max)
-        if emoji:
+        if False and emoji:
             cols[5].markdown(
                 f'<div style="background:{bg};padding:2px 8px;border-radius:4px;'
                 f'text-align:center;font-size:1.1em">{emoji}</div>',

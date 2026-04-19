@@ -898,7 +898,10 @@ def main() -> None:
     n_exc_punto = len(exc_punto)
     estado_punto = punto_sel.get("estado", "sin_datos")
     color_estado = {"excedencia": "#c62828", "cumple": "#2e7d32", "sin_datos": "#9e9e9e"}.get(estado_punto, "#9e9e9e")
-    estado_label = {"excedencia": "EXCEDENCIA", "cumple": "CUMPLE ECA", "sin_datos": "SIN DATOS"}.get(estado_punto, "—")
+    # Mapeo al dominio "resultado" del nuevo sistema de pills
+    from components.ui_styles import estado_pill as _pill
+    _pill_key = {"excedencia": "excede", "cumple": "cumple", "sin_datos": "sin_dato"}.get(estado_punto, "sin_dato")
+    estado_html = _pill(_pill_key, dominio="resultado")
 
     # Header del punto con estilo
     st.markdown(
@@ -909,10 +912,7 @@ def main() -> None:
                     <span style="font-size:1.2rem; font-weight:700; color:#1e293b;">
                         {punto_sel['codigo']} — {punto_sel['nombre']}
                     </span>
-                    <span style="background:{color_estado}; color:white; padding:3px 10px; border-radius:20px;
-                         font-size:0.7rem; font-weight:600; margin-left:12px; letter-spacing:0.5px;">
-                        {estado_label}
-                    </span>
+                    <span style="margin-left:12px;">{estado_html}</span>
                 </div>
                 <div style="text-align:right; font-size:0.8rem; color:#64748b;">
                     {(punto_sel.get('tipo') or '—').capitalize()} &middot;
