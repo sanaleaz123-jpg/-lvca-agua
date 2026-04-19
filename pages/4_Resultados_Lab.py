@@ -200,10 +200,13 @@ def _render_categoria(
         else:
             cols[0].markdown(f"**{nombre}**")
 
-        # Input de valor (deshabilitado si validado)
+        # Input de valor (deshabilitado si validado).
+        # Castear a float para evitar StreamlitMixedNumericTypesError.
+        _ev = float(existing_val) if existing_val is not None else None
         val = cols[1].number_input(
             fila["parametro"],
-            value=existing_val,
+            value=_ev,
+            step=0.01,
             format="%.4g",
             label_visibility="collapsed",
             disabled=is_validado,
