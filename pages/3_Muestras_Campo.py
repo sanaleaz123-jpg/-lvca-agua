@@ -21,7 +21,7 @@ import pandas as pd
 import streamlit as st
 
 from components.auth_guard import require_rol
-from components.ui_styles import aplicar_estilos, page_header, success_check_overlay, toast
+from components.ui_styles import aplicar_estilos, page_header, success_check_overlay, toast, inline_note
 from database.client import get_admin_client
 from services.muestra_service import (
     ESTADOS_MUESTRA,
@@ -474,9 +474,13 @@ def _render_registro() -> None:
         )
 
         # ── Fotos de campo ───────────────────────────────────────────────
-        st.markdown("**Fotos de campo** (máx. 5, JPG o PNG)")
+        st.markdown("**Fotos iniciales** (opcional, máx. 5)")
+        st.caption(
+            "Sube hasta 5 fotos al registrar. Para agregar más después o usar "
+            "la cámara del celular, ve al tab **Fotos de Campo**."
+        )
         fotos_subidas = st.file_uploader(
-            "Seleccionar fotos",
+            "Seleccionar fotos JPG/PNG",
             type=["jpg", "jpeg", "png"],
             accept_multiple_files=True,
             key="reg_fotos_upload",
@@ -1028,7 +1032,12 @@ def _render_insitu_columna(
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_custodia() -> None:
-    st.markdown("#### Cadena de custodia")
+    st.markdown("#### Recepción en laboratorio")
+    st.caption(
+        "Avanza el estado de cada muestra individual: registra recepción "
+        "en lab, cambia a 'analizada', etc. Para generar el documento oficial "
+        "PDF/Excel ve al tab **Documento CC**."
+    )
 
     campana_id = _selector_campana_todas("custodia")
     if not campana_id:
@@ -1129,12 +1138,49 @@ def _render_custodia() -> None:
                         estado_frasco,
                         obs_recepcion,
                     )
-                    st.success("Muestra recibida en laboratorio.")
+                    success_check_overlay("Muestra recibida en laboratorio")
+                    # Marcar para mostrar el banner de "ir al documento CC"
+                    st.session_state["_recepcion_recien_hecha"] = campana_id
                     st.rerun()
                 except TransicionMuestraError as exc:
                     st.error(str(exc))
                 except ValueError as exc:
                     st.error(str(exc))
+
+    # ── Puente al Documento CC ───────────────────────────────────────────
+    # Cuento muestras listas para cadena (estado >= en_laboratorio)
+    n_listas = sum(
+        1 for m in muestras
+        if m.get("estado") in ("en_laboratorio", "analizada")
+    )
+    if n_listas > 0:
+        st.divider()
+        col_resumen, col_cta = st.columns([3, 2])
+        with col_resumen:
+            inline_note(
+                f"<b>{n_listas} muestra(s)</b> ya están en laboratorio o analizadas — "
+                "puedes generar el documento de cadena de custodia oficial.",
+                tipo="info",
+            )
+        with col_cta:
+            if st.button(
+                "Generar Documento CC para esta campaña",
+                key="btn_goto_cadena_cc",
+                type="primary",
+                icon=":material/description:",
+                use_container_width=True,
+            ):
+                # Pre-seleccionar la misma campaña en el tab Documento CC
+                opt_label = next(
+                    (k for k, v in {f"{c['codigo']} — {c['nombre']} ({c.get('estado','')})":
+                                    c["id"] for c in get_campanas()}.items()
+                     if v == campana_id),
+                    None,
+                )
+                if opt_label:
+                    st.session_state["cadena_camp"] = opt_label
+                st.session_state["_jump_to_cadena"] = True
+                st.rerun()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1330,8 +1376,21 @@ def _opciones_supervisor_cadena() -> list[str]:
 
 
 def _render_cadena_custodia() -> None:
-    st.markdown("#### Cadena de Custodia — Formato AUTODEMA")
-    st.caption("Formato oficial CC-MON-01 del Laboratorio de Vigilancia y Calidad de Agua")
+    st.markdown("#### Documento de Cadena de Custodia — Formato AUTODEMA")
+    st.caption(
+        "Genera el documento oficial CC-MON-01 (Excel y PDF) a partir de las "
+        "muestras recibidas en laboratorio. Para cambiar el estado de una "
+        "muestra usa el tab **Recepción en Lab**."
+    )
+
+    # Si el usuario llegó desde el botón "Generar Documento CC" del tab
+    # Recepción, mostrar acuse contextual
+    if st.session_state.pop("_jump_to_cadena", False):
+        inline_note(
+            "Llegaste desde el tab Recepción en Lab. La campaña ya está "
+            "pre-seleccionada — completa los datos y genera el documento.",
+            tipo="success",
+        )
 
     campana_id = _selector_campana_todas("cadena")
     if not campana_id:
@@ -1623,7 +1682,12 @@ def _render_cadena_custodia() -> None:
 
 def _render_fotos_campo() -> None:
     st.markdown("#### Fotos de campo")
-    st.caption("Sube fotos desde archivo o toma fotos con la cámara del celular")
+    st.caption(
+        "Galería completa: agrega más fotos a una muestra existente, captura "
+        "directamente con la cámara o elimina archivos individuales. "
+        "Las fotos iniciales se pueden subir al momento del registro en el tab "
+        "**Registro**."
+    )
 
     campana_id = _selector_campana_todas("fotos")
     if not campana_id:
@@ -1796,14 +1860,18 @@ def main() -> None:
     st.session_state.pop("_muestras_cache", None)
     page_header("Muestras de Campo", "Registro, mediciones in situ, cadena de custodia y etiquetas QR")
 
-    tab_reg, tab_insitu, tab_custodia, tab_lista, tab_cadena, tab_fotos, tab_ficha = st.tabs([
+    # Orden lógico del flujo operativo:
+    #   campo (Registro → In situ → Fotos)
+    #   transición a lab (Recepción en Lab)
+    #   reportes (Documento CC, Ficha, Listado)
+    tab_reg, tab_insitu, tab_fotos, tab_custodia, tab_cadena, tab_ficha, tab_lista = st.tabs([
         "Registro",
         "In situ",
-        "Custodia",
-        "Listado",
-        "Cadena de Custodia",
         "Fotos de Campo",
+        "Recepción en Lab",
+        "Documento CC",
         "Ficha de Campo",
+        "Listado",
     ])
 
     with tab_reg:
