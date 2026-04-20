@@ -89,51 +89,103 @@ def _semaforo_insitu(valor, lim_min, lim_max) -> str:
     return "🔴" if excede else "🟢"
 
 
-def _selector_campana_campo(key_prefix: str) -> str | None:
-    """Selector de campaña en estado 'en_campo'. Retorna campana_id o None."""
-    campanas = get_campanas_en_campo()
-    if not campanas:
-        # Diagnóstico: hay otras campañas? en qué estado están?
-        todas = get_campanas()
-        if not todas:
-            st.warning("No hay campañas registradas todavía.")
-            st.info(
-                "👉 Crea una campaña en la página **Campañas** y márcala como "
-                "**'en_campo'** para empezar a registrar muestras."
-            )
-        else:
-            estados = {}
-            for c in todas:
-                estados.setdefault(c.get("estado", "desconocido"), []).append(c["codigo"])
-            st.warning(
-                "No hay campañas en estado **'en_campo'**, por eso no se pueden registrar muestras."
-            )
-            with st.expander("Ver campañas existentes y cómo activarlas", expanded=True):
-                for est, codigos in estados.items():
-                    st.markdown(f"- **{est}** ({len(codigos)}): {', '.join(codigos[:5])}"
-                                + (f" (+{len(codigos)-5})" if len(codigos) > 5 else ""))
-                st.info(
-                    "Ve a la página **Campañas**, abre una de estas campañas "
-                    "y cambia su estado a **'en_campo'**."
-                )
+def _muestras_por_campana_cached(campana_id: str, *, force: bool = False) -> list[dict]:
+    """
+    Cache de muestras por campaña a nivel sesión, válido por todo el ciclo de
+    render. Antes get_muestras_por_campana se llamaba 5-6 veces por cada
+    interacción (tabs múltiples). Ahora una sola query por (run, campana_id).
+
+    Invalidar manualmente con `force=True` o `_invalidar_muestras_cache(id)`
+    tras crear/editar/eliminar muestras.
+    """
+    cache: dict[str, list[dict]] = st.session_state.setdefault("_muestras_cache", {})
+    if force or campana_id not in cache:
+        cache[campana_id] = get_muestras_por_campana(campana_id)
+    return cache[campana_id]
+
+
+def _invalidar_muestras_cache(campana_id: str | None = None) -> None:
+    """Invalida el cache. Si no se pasa campana_id, limpia todo el cache."""
+    cache = st.session_state.get("_muestras_cache", {})
+    if campana_id is None:
+        cache.clear()
+    else:
+        cache.pop(campana_id, None)
+
+
+def _selector_campana(
+    key_prefix: str,
+    estados: tuple[str, ...] | None = None,
+    label: str = "Campaña",
+    mostrar_estado_en_label: bool = False,
+) -> str | None:
+    """
+    Selector unificado de campaña.
+
+    Args:
+        key_prefix: prefijo único para el widget key (evita colisiones entre tabs).
+        estados: tupla de estados permitidos. Si es None, todas las campañas.
+                 Ej. ("en_campo",) o ("en_campo", "en_laboratorio").
+        label: etiqueta del selectbox.
+        mostrar_estado_en_label: si True, agrega el estado entre paréntesis.
+
+    Sustituye a las 3 variantes anteriores (_selector_campana_campo,
+    _selector_campana_todas, y la lógica manual del tab in-situ).
+    """
+    todas = get_campanas()
+    if not todas:
+        st.warning("No hay campañas registradas todavía.")
+        st.info(
+            "Crea una campaña en la página **Campañas** y márcala como "
+            "**'en_campo'** para empezar a registrar muestras."
+        )
         return None
-    opciones = {f"{c['codigo']} — {c['nombre']}": c["id"] for c in campanas}
-    label = st.selectbox("Campaña activa", list(opciones.keys()), key=f"{key_prefix}_camp")
-    return opciones[label]
+
+    if estados is None:
+        candidatas = todas
+    else:
+        candidatas = [c for c in todas if c.get("estado") in estados]
+
+    if not candidatas:
+        # Diagnóstico: agrupar campañas existentes por estado
+        agrupadas: dict[str, list[str]] = {}
+        for c in todas:
+            agrupadas.setdefault(c.get("estado", "desconocido"), []).append(c["codigo"])
+        ed_str = " / ".join(estados or ())
+        st.warning(
+            f"No hay campañas en estado **{ed_str or 'requerido'}**."
+        )
+        with st.expander("Ver campañas existentes y cómo activarlas", expanded=True):
+            for est, codigos in agrupadas.items():
+                st.markdown(
+                    f"- **{est}** ({len(codigos)}): {', '.join(codigos[:5])}"
+                    + (f" (+{len(codigos) - 5})" if len(codigos) > 5 else "")
+                )
+            st.info(
+                "Ve a la página **Campañas**, abre una y cambia su estado al requerido."
+            )
+        return None
+
+    if mostrar_estado_en_label:
+        opciones = {
+            f"{c['codigo']} — {c['nombre']} ({c.get('estado', '')})": c["id"]
+            for c in candidatas
+        }
+    else:
+        opciones = {f"{c['codigo']} — {c['nombre']}": c["id"] for c in candidatas}
+
+    label_sel = st.selectbox(label, list(opciones.keys()), key=f"{key_prefix}_camp")
+    return opciones[label_sel]
+
+
+# Wrappers de compatibilidad — mantienen la API antigua para no romper callers
+def _selector_campana_campo(key_prefix: str) -> str | None:
+    return _selector_campana(key_prefix, estados=("en_campo",), label="Campaña activa")
 
 
 def _selector_campana_todas(key_prefix: str) -> str | None:
-    """Selector de cualquier campaña. Retorna campana_id o None."""
-    campanas = get_campanas()
-    if not campanas:
-        st.warning("No hay campañas registradas.")
-        return None
-    opciones = {
-        f"{c['codigo']} — {c['nombre']} ({c.get('estado', '')})": c["id"]
-        for c in campanas
-    }
-    label = st.selectbox("Campaña", list(opciones.keys()), key=f"{key_prefix}_camp")
-    return opciones[label]
+    return _selector_campana(key_prefix, estados=None, label="Campaña",
+                             mostrar_estado_en_label=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -428,6 +480,14 @@ def _render_registro() -> None:
             accept_multiple_files=True,
             key="reg_fotos_upload",
         )
+        # Feedback inmediato del conteo de fotos para evitar errores tardíos
+        if fotos_subidas:
+            n_f = len(fotos_subidas)
+            if n_f > 5:
+                st.error(f"Has seleccionado {n_f} fotos. Máximo permitido: 5. "
+                         "Quita las extra antes de continuar.")
+            else:
+                st.caption(f"{n_f} foto(s) seleccionada(s).")
 
         btn_label = "Actualizar muestra" if es_edicion else "Registrar muestra"
         if modo_muestreo == "columna" and not es_edicion:
@@ -439,18 +499,24 @@ def _render_registro() -> None:
         )
 
     if submitted:
-        # Validar fotos
+        # Validar fotos (segunda barrera por si subió 6+ y aún así presionó)
         if fotos_subidas and len(fotos_subidas) > 5:
-            st.error("Máximo 5 fotos por muestra.")
+            st.error("Máximo 5 fotos por muestra. Quita las extra y reintenta.")
             return
 
-        # Validar profundidades si columna
+        # Validar profundidades si columna — mensaje específico apuntando al campo
         if modo_muestreo == "columna":
+            faltantes = []
             if not prof_total_val or prof_total_val <= 0:
-                st.error("Ingrese la profundidad total (ecosonda).")
-                return
+                faltantes.append("**Profundidad total** (ecosonda)")
             if not prof_f_val or prof_f_val <= 0:
-                st.error("Ingrese la profundidad de fondo.")
+                faltantes.append("**Profundidad de fondo**")
+            if faltantes:
+                st.error(
+                    "Para muestreo de columna debes ingresar: "
+                    + " y ".join(faltantes)
+                    + ". Tus otros datos NO se han perdido — corrige y vuelve a presionar."
+                )
                 return
 
         tecnico_id = opciones_tecnicos[tecnico_label] if tecnico_label else None
@@ -551,8 +617,39 @@ def _render_registro() -> None:
             except Exception as exc:
                 st.warning(f"No se pudo generar la etiqueta QR: {exc}")
 
-        # Refrescar para mostrar datos actualizados
-        st.rerun()
+        # Puente al tab "In situ" — evita que el técnico tenga que cambiar
+        # de tab y re-seleccionar la misma campaña/punto manualmente.
+        if not es_edicion:
+            st.divider()
+            cta_a, cta_b = st.columns(2)
+            with cta_a:
+                if st.button(
+                    "Registrar mediciones in-situ ahora",
+                    key=f"btn_goto_insitu_{muestra_id_fotos}",
+                    type="primary",
+                    icon=":material/arrow_forward:",
+                    use_container_width=True,
+                ):
+                    st.session_state["insitu_prefill_muestra_id"] = muestra_id_fotos
+                    # Pre-seleccionamos también la campaña en el tab in-situ
+                    st.session_state["insitu_camp"] = next(
+                        (k for k, v in {f"{c['codigo']} — {c['nombre']}": c["id"]
+                                        for c in get_campanas()}.items()
+                         if v == campana_id),
+                        None,
+                    )
+                    st.rerun()
+            with cta_b:
+                if st.button(
+                    "Registrar otra muestra",
+                    key=f"btn_otra_muestra_{muestra_id_fotos}",
+                    icon=":material/add:",
+                    use_container_width=True,
+                ):
+                    st.rerun()
+        else:
+            # Refrescar para mostrar datos actualizados (modo edición)
+            st.rerun()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -562,31 +659,21 @@ def _render_registro() -> None:
 def _render_insitu() -> None:
     st.markdown("#### Parámetros medidos en campo")
 
-    # Selector de campaña — incluye TODAS las campañas con muestras, no solo 'en_campo'
-    # Esto permite registrar mediciones in situ en cualquier campaña activa
-    campanas_campo = get_campanas_en_campo()
-    # También incluir campañas en_laboratorio (ya tienen muestras que pueden necesitar insitu)
-    todas = get_campanas()
-    # Combinar: primero en_campo, luego en_laboratorio (sin duplicados)
-    ids_campo = {c["id"] for c in campanas_campo}
-    campanas_insitu = list(campanas_campo)
-    for c in todas:
-        if c["id"] not in ids_campo and c.get("estado") in ("en_laboratorio", "en_campo"):
-            campanas_insitu.append(c)
-
-    if not campanas_insitu:
-        st.warning("No hay campañas activas. Crea o activa una campaña primero.")
+    # Selector unificado: campañas en campo o ya recibidas en lab pueden tener
+    # mediciones in-situ aún por registrar
+    campana_id = _selector_campana(
+        key_prefix="insitu",
+        estados=("en_campo", "en_laboratorio"),
+        label="Campaña activa",
+    )
+    if not campana_id:
         return
 
-    opciones_camp = {
-        f"{c['codigo']} — {c['nombre']}": c["id"]
-        for c in campanas_insitu
-    }
-    label_camp = st.selectbox("Campaña activa", list(opciones_camp.keys()), key="insitu_camp")
-    campana_id = opciones_camp[label_camp]
+    # Si el usuario llegó aquí desde "Registrar mediciones in-situ ahora →"
+    # del tab Registro, pre-seleccionamos la muestra recién creada
+    muestra_prefill = st.session_state.pop("insitu_prefill_muestra_id", None)
 
-    # Seleccionar muestra
-    muestras = get_muestras_por_campana(campana_id)
+    muestras = _muestras_por_campana_cached(campana_id)
     if not muestras:
         st.info("No hay muestras registradas en esta campaña.")
         return
@@ -611,6 +698,14 @@ def _render_insitu() -> None:
         else:
             label = f"{ms[0]['codigo']} — {pt_name}"
         opciones_punto_insitu[label] = pt_id
+
+    # Si veníamos del flujo "Registrar mediciones in-situ ahora", pre-seleccionar
+    # el punto cuya muestra acaba de crearse (solo en el primer render tras el puente)
+    if muestra_prefill and "insitu_punto" not in st.session_state:
+        for _label, _pid in opciones_punto_insitu.items():
+            if any(m["id"] == muestra_prefill for m in muestras_por_punto[_pid]):
+                st.session_state["insitu_punto"] = _label
+                break
 
     label_punto = st.selectbox("Punto de muestreo", list(opciones_punto_insitu.keys()), key="insitu_punto")
     punto_id_sel = opciones_punto_insitu[label_punto]
@@ -938,7 +1033,7 @@ def _render_custodia() -> None:
     if not campana_id:
         return
 
-    muestras = get_muestras_por_campana(campana_id)
+    muestras = _muestras_por_campana_cached(campana_id)
     if not muestras:
         st.info("No hay muestras en esta campaña.")
         return
@@ -1210,7 +1305,7 @@ def _render_cadena_custodia() -> None:
     muestreador_auto = ", ".join(muestreadores)
 
     # Auto-copiar clima y nivel desde muestras de la campaña
-    muestras_camp = get_muestras_por_campana(campana_id)
+    muestras_camp = _muestras_por_campana_cached(campana_id)
     obs_auto_parts = []
     temp_transporte_vals = []
     for m in muestras_camp:
@@ -1481,7 +1576,7 @@ def _render_fotos_campo() -> None:
     if not campana_id:
         return
 
-    muestras = get_muestras_por_campana(campana_id)
+    muestras = _muestras_por_campana_cached(campana_id)
     if not muestras:
         st.info("No hay muestras en esta campaña.")
         return
@@ -1567,7 +1662,7 @@ def _render_ficha_campo() -> None:
     if not campana_id:
         return
 
-    muestras = get_muestras_por_campana(campana_id)
+    muestras = _muestras_por_campana_cached(campana_id)
     if not muestras:
         st.info("No hay muestras en esta campaña.")
         return
@@ -1642,6 +1737,10 @@ def _render_ficha_campo() -> None:
 @require_rol("administrador")
 def main() -> None:
     aplicar_estilos()
+    # El cache de muestras vive solo dentro de un mismo render — al inicio
+    # se limpia para que cualquier rerun (después de crear/editar/eliminar)
+    # vea datos frescos. Dentro del render los 5 tabs comparten la query.
+    st.session_state.pop("_muestras_cache", None)
     page_header("Muestras de Campo", "Registro, mediciones in situ, cadena de custodia y etiquetas QR")
 
     tab_reg, tab_insitu, tab_custodia, tab_lista, tab_cadena, tab_fotos, tab_ficha = st.tabs([
