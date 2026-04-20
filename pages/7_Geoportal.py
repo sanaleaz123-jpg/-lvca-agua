@@ -320,17 +320,23 @@ def _construir_mapa(puntos: list[dict], solo_excedencias: bool, mostrar_heatmap:
         name="Calles",
         max_native_zoom=19, max_zoom=22,
     ).add_to(m)
+    # Esri World Imagery: cobertura limitada en zonas altiplánicas remotas.
+    # En la cuenca Chili-Quilca (Aguada Blanca, Pampa de Arrieros, etc.) no
+    # hay imagen satelital de alta resolución más allá de zoom 17. Limitamos
+    # max_native_zoom y max_zoom para que Leaflet repita el último tile válido
+    # en lugar de pedir tiles inexistentes (que vienen como "Map data not yet
+    # available").
     folium.TileLayer(
         tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
         attr="Esri",
         name="Satélite",
-        max_native_zoom=18, max_zoom=22,
+        max_native_zoom=17, max_zoom=19,
     ).add_to(m)
     folium.TileLayer(
         tiles="https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
         attr="OpenTopoMap",
         name="Topográfico",
-        max_native_zoom=17, max_zoom=22,
+        max_native_zoom=17, max_zoom=19,
     ).add_to(m)
 
     MiniMap(toggle_display=True, position="bottomright", zoom_level_offset=-5).add_to(m)
@@ -862,6 +868,11 @@ def main() -> None:
     # ── 2. Mapa ─────────────────────────────────────────────────────────
     mapa = _construir_mapa(puntos_con_coords, solo_exc, mostrar_heatmap)
     map_data = st_folium(mapa, use_container_width=True, height=520, returned_objects=["last_object_clicked"])
+    st.caption(
+        "Para zoom muy cerrado se recomienda la capa **Calles** — el satélite "
+        "Esri y el topográfico no tienen imágenes de alta resolución en zonas "
+        "altiplánicas remotas (cuenca alta del Chili)."
+    )
 
     # Click en el mapa → actualizar la selección persistente del selectbox
     if map_data and map_data.get("last_object_clicked"):
