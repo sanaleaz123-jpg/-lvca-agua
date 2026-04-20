@@ -46,6 +46,7 @@ from services.muestra_service import (
     get_muestras_por_campana,
     get_muestra_por_campana_punto,
     get_puntos_de_campana_activa,
+    get_responsables_lab,
     get_usuarios_campo,
     recibir_en_laboratorio,
     registrar_insitu,
@@ -1285,8 +1286,47 @@ def _render_listado() -> None:
 # Tab 5 — Cadena de custodia oficial (Excel/PDF)
 # ─────────────────────────────────────────────────────────────────────────────
 
-_RECEPTORES_CADENA = ["Alfonso Torres E.", "Jean Pierre Madariaga"]
-_SUPERVISOR_CADENA = "Ing. Ana Lucía Paz Alcázar"
+# Fallback usado solo si la tabla `usuarios` está vacía (primera instalación)
+# o si la query falla. En operación normal estos nombres salen de la BD vía
+# get_responsables_lab() (rol administrador o analista_lab, activos).
+_RECEPTORES_CADENA_FALLBACK = ["Alfonso Torres E.", "Jean Pierre Madariaga"]
+_SUPERVISOR_CADENA_FALLBACK = "Ing. Ana Lucía Paz Alcázar"
+
+
+def _opciones_receptores_cadena() -> list[str]:
+    """Lista de nombres elegibles como receptor de cadena de custodia."""
+    try:
+        usuarios = get_responsables_lab()
+        nombres = [
+            f"{u.get('nombre', '').strip()} {u.get('apellido', '').strip()}".strip()
+            for u in usuarios
+        ]
+        nombres = [n for n in nombres if n]
+        if nombres:
+            return nombres
+    except Exception:
+        pass
+    return _RECEPTORES_CADENA_FALLBACK
+
+
+def _opciones_supervisor_cadena() -> list[str]:
+    """Lista de nombres elegibles como supervisor — admin tiene prioridad."""
+    try:
+        usuarios = get_responsables_lab()
+        # Priorizar usuarios con rol administrador
+        admins = [u for u in usuarios if u.get("rol") == "administrador"]
+        analistas = [u for u in usuarios if u.get("rol") == "analista_lab"]
+        ordenados = admins + analistas
+        nombres = [
+            f"{u.get('nombre', '').strip()} {u.get('apellido', '').strip()}".strip()
+            for u in ordenados
+        ]
+        nombres = [n for n in nombres if n]
+        if nombres:
+            return nombres
+    except Exception:
+        pass
+    return [_SUPERVISOR_CADENA_FALLBACK]
 
 
 def _render_cadena_custodia() -> None:
@@ -1358,16 +1398,29 @@ def _render_cadena_custodia() -> None:
                 key="cc_muestreador",
             )
         with nc2:
-            receptor_idx = 0
+            opciones_receptor = _opciones_receptores_cadena()
+            # Si la config persistida tenía un receptor que ya no existe en BD,
+            # lo agregamos al inicio para no perder la selección
+            receptor_actual = cfg.get("nombre_receptor", "")
+            if receptor_actual and receptor_actual not in opciones_receptor:
+                opciones_receptor = [receptor_actual] + opciones_receptor
             cfg["nombre_receptor"] = st.selectbox(
                 "Nombre receptor",
-                _RECEPTORES_CADENA,
-                index=receptor_idx,
+                opciones_receptor,
+                index=0,
                 key="cc_receptor",
             )
         with nc3:
-            st.markdown(f"**Supervisor/Jefe:** {_SUPERVISOR_CADENA}")
-            cfg["nombre_supervisor"] = _SUPERVISOR_CADENA
+            opciones_supervisor = _opciones_supervisor_cadena()
+            supervisor_actual = cfg.get("nombre_supervisor", "")
+            if supervisor_actual and supervisor_actual not in opciones_supervisor:
+                opciones_supervisor = [supervisor_actual] + opciones_supervisor
+            cfg["nombre_supervisor"] = st.selectbox(
+                "Supervisor/Jefe",
+                opciones_supervisor,
+                index=0,
+                key="cc_supervisor",
+            )
 
         # Fecha y hora de recepción
         fr1, fr2 = st.columns(2)
