@@ -21,8 +21,10 @@ import pandas as pd
 import streamlit as st
 
 from components.auth_guard import require_rol
-from components.ui_styles import aplicar_estilos, page_header, success_check_overlay, toast, inline_note
-from database.client import get_admin_client
+from components.ui_styles import aplicar_estilos, page_header, success_check_overlay, inline_note
+# Nota: get_admin_client ya no se importa directamente — todas las queries van
+# vía services/muestra_service (get_campana_detalle reemplazó al helper local
+# que saltaba el patrón de services).
 from services.muestra_service import (
     ESTADOS_MUESTRA,
     ESTADOS_FRASCO,
@@ -39,10 +41,9 @@ from services.muestra_service import (
     crear_muestra,
     eliminar_muestra,
     generar_qr_pdf,
-    get_campanas_en_campo,
+    get_campana_detalle,
     get_limites_insitu,
     get_mediciones_insitu,
-    get_muestras_grupo,
     get_muestras_por_campana,
     get_muestra_por_campana_punto,
     get_puntos_de_campana_activa,
@@ -58,7 +59,6 @@ from services.parametro_registry import (
 from services.resultado_service import get_campanas, _get_usuario_interno_id
 from services.cadena_custodia_service import (
     EQUIPOS_DEFAULT,
-    config_default,
     config_para_campana,
     generar_excel_cadena,
     generar_pdf_cadena,
@@ -189,21 +189,138 @@ def _selector_campana_todas(key_prefix: str) -> str | None:
                              mostrar_estado_en_label=True)
 
 
+def _generate_download_widget(
+    *,
+    label_btn: str,
+    label_dl: str,
+    generate_fn,
+    campana_id: str,
+    state_key: str,
+    file_name: str,
+    mime: str,
+    btn_kwargs: dict | None = None,
+    extra_args: tuple = (),
+) -> None:
+    """
+    Patrón reutilizable: botón "Generar X" + (cuando hay output cacheado para
+    esta campaña) botón "Descargar X". El cache vive en session_state[state_key]
+    junto con session_state[f"{state_key}_campana_id"] para evitar mostrar
+    descargas correspondientes a otra campaña.
+
+    generate_fn debe aceptar (campana_id, *extra_args) y retornar bytes.
+    """
+    btn_kwargs = btn_kwargs or {"use_container_width": True}
+    cid_key = f"{state_key}_campana_id"
+
+    if st.button(label_btn, key=f"btn_{state_key}", **btn_kwargs):
+        with st.spinner(f"{label_btn}..."):
+            try:
+                output = generate_fn(campana_id, *extra_args)
+                st.session_state[state_key] = output
+                st.session_state[cid_key] = campana_id
+            except Exception as exc:
+                st.error(f"Error en '{label_btn}': {exc}")
+
+    if (
+        st.session_state.get(state_key)
+        and st.session_state.get(cid_key) == campana_id
+    ):
+        st.download_button(
+            label=label_dl,
+            data=st.session_state[state_key],
+            file_name=file_name,
+            mime=mime,
+            use_container_width=True,
+            key=f"dl_{state_key}",
+        )
+
+
+def _fila_muestra(m: dict, campos: tuple[str, ...] = ()) -> dict:
+    """
+    Construye un dict de fila para una muestra, incluyendo solo los campos
+    pedidos. Antes esta lógica vivía duplicada en los tabs Recepción y
+    Listado con divergencias sutiles (uno mostraba Técnico, otro Hora, etc.).
+
+    Campos disponibles:
+        codigo, punto, fecha, hora, tipo, estado, tecnico, profundidad
+    """
+    pt = m.get("puntos_muestreo") or {}
+    tec = m.get("tecnico") or {}
+    prof_tipo = m.get("profundidad_tipo")
+    prof_suf = (
+        f" {PROFUNDIDAD_SUFIJOS[prof_tipo]}"
+        if prof_tipo in PROFUNDIDAD_SUFIJOS else ""
+    )
+
+    out: dict = {}
+    if "codigo" in campos:
+        out["Código"] = f"{m['codigo']}{prof_suf}"
+    if "punto" in campos:
+        out["Punto"] = f"{pt.get('codigo','')} — {pt.get('nombre','')}"
+    if "fecha" in campos:
+        out["Fecha"] = str(m.get("fecha_muestreo", ""))[:10]
+    if "hora" in campos:
+        out["Hora"] = m.get("hora_recoleccion", "—")
+    if "tipo" in campos:
+        out["Tipo"] = ETIQUETA_TIPO.get(m.get("tipo_muestra", ""), "")
+    if "estado" in campos:
+        out["Estado"] = ETIQUETA_ESTADO_MUESTRA.get(
+            m.get("estado", ""), m.get("estado", ""),
+        )
+    if "tecnico" in campos:
+        out["Técnico"] = (
+            f"{tec.get('nombre','')} {tec.get('apellido','')}".strip() or "—"
+        )
+    if "profundidad" in campos:
+        modo = m.get("modo_muestreo", "superficial") or "superficial"
+        if modo == "columna" and prof_tipo:
+            prof_val = m.get("profundidad_valor", "")
+            out["Profundidad"] = (
+                f"{PROFUNDIDAD_LABELS.get(prof_tipo, prof_tipo)} ({prof_val} m)"
+                if prof_val else PROFUNDIDAD_LABELS.get(prof_tipo, "")
+            )
+        else:
+            out["Profundidad"] = "Superficial"
+    return out
+
+
+def _widget_nuevo_equipo(key_prefix: str) -> None:
+    """
+    Expander reutilizable para registrar un nuevo equipo de medición.
+    Antes este bloque vivía duplicado en el tab In-situ (~768) y en el tab
+    Documento CC (~1599) palabra por palabra.
+    """
+    with st.expander("Registrar nuevo equipo", expanded=False):
+        ne1, ne2 = st.columns(2)
+        with ne1:
+            cod = st.text_input(
+                "Código del equipo",
+                key=f"{key_prefix}_eq_cod",
+                placeholder="Ej. EQ-001",
+            )
+        with ne2:
+            nom = st.text_input(
+                "Nombre del equipo",
+                key=f"{key_prefix}_eq_nom",
+                placeholder="Ej. Multiparámetro Hanna HI98194",
+            )
+        if st.button("Agregar equipo", key=f"{key_prefix}_eq_btn"):
+            if cod.strip() and nom.strip():
+                registrar_equipo(cod.strip(), nom.strip())
+                success_check_overlay(f"Equipo '{nom.strip()}' registrado")
+                st.rerun()
+            else:
+                st.error("Completa código y nombre del equipo.")
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Tab 1 — Registro de nueva muestra
 # ─────────────────────────────────────────────────────────────────────────────
 
+# _get_campana_info movido a muestra_service.get_campana_detalle.
+# Wrapper local mantenido para no tocar callers existentes.
 def _get_campana_info(campana_id: str) -> dict:
-    """Obtiene info de la campaña (fecha_inicio, fecha_fin, responsable_campo, etc.)."""
-    db = get_admin_client()
-    res = (
-        db.table("campanas")
-        .select("id, codigo, nombre, fecha_inicio, fecha_fin, responsable_campo")
-        .eq("id", campana_id)
-        .single()
-        .execute()
-    )
-    return res.data or {}
+    return get_campana_detalle(campana_id)
 
 
 def _abreviar_nombre(nombre_completo: str) -> str:
@@ -716,14 +833,14 @@ def _render_insitu() -> None:
     punto_id_sel = opciones_punto_insitu[label_punto]
     muestras_punto = muestras_por_punto[punto_id_sel]
 
-    # Determinar si es columna (3+ muestras del mismo punto) o superficial
-    es_columna = len(muestras_punto) >= 3
-    # También detectar por campo modo_muestreo o grupo_profundidad
-    if not es_columna:
-        es_columna = any(
-            m.get("modo_muestreo") == "columna" or m.get("grupo_profundidad")
-            for m in muestras_punto
-        )
+    # Modo columna: la fuente de verdad es el campo modo_muestreo de la BD
+    # (o el grupo_profundidad si la migración 005 no se aplicó).
+    # Antes se usaba `len(muestras_punto) >= 3` como heurística — fallaba si
+    # el técnico solo había cargado 2 profundidades parcialmente.
+    es_columna = any(
+        m.get("modo_muestreo") == "columna" or m.get("grupo_profundidad")
+        for m in muestras_punto
+    )
 
     # Muestra principal (primera del grupo)
     muestra_sel = muestras_punto[0]
@@ -773,19 +890,7 @@ def _render_insitu() -> None:
     )
 
     # Opción para registrar un nuevo equipo
-    with st.expander("Registrar nuevo equipo", expanded=False):
-        ne1, ne2 = st.columns(2)
-        with ne1:
-            nuevo_eq_codigo = st.text_input("Código del equipo", key=f"nuevo_eq_cod_{muestra_id[:8]}")
-        with ne2:
-            nuevo_eq_nombre = st.text_input("Nombre del equipo", key=f"nuevo_eq_nom_{muestra_id[:8]}")
-        if st.button("Agregar equipo", key=f"btn_nuevo_eq_{muestra_id[:8]}"):
-            if nuevo_eq_codigo.strip() and nuevo_eq_nombre.strip():
-                registrar_equipo(nuevo_eq_codigo.strip(), nuevo_eq_nombre.strip())
-                st.success(f"Equipo '{nuevo_eq_nombre.strip()}' registrado.")
-                st.rerun()
-            else:
-                st.error("Completa código y nombre del equipo.")
+    _widget_nuevo_equipo(f"insitu_{muestra_id[:8]}")
 
     # Extraer nombre del equipo para guardar
     equipo_nombre = ", ".join(equipos_sel) if equipos_sel else ""
@@ -828,7 +933,10 @@ def _render_insitu_single(
     valores: dict[str, float | None] = {}
     key_prefix = f"{muestra_id[:8]}{key_suffix}"
 
-    for p in get_parametros_insitu():
+    # Cargar parámetros una sola vez por render (antes se llamaba 2 veces)
+    _parametros_insitu = get_parametros_insitu()
+
+    for p in _parametros_insitu:
         clave = p["clave"]
         existente = existentes.get(clave, {})
         lim = limites.get(clave, {})
@@ -882,7 +990,7 @@ def _render_insitu_single(
                 "valor":     valores[p["clave"]],
                 "unidad":    p["unidad"],
             }
-            for p in get_parametros_insitu()
+            for p in _parametros_insitu
             if valores.get(p["clave"]) is not None
         ]
 
@@ -951,7 +1059,10 @@ def _render_insitu_columna(
     # Almacenar valores por profundidad
     valores_por_prof: list[dict[str, float | None]] = [{} for _ in range(n_prof)]
 
-    for p in get_parametros_insitu():
+    # Una sola query por render (antes se llamaba 2 veces)
+    _parametros_insitu_col = get_parametros_insitu()
+
+    for p in _parametros_insitu_col:
         clave = p["clave"]
         lim = limites.get(clave, {})
         lim_max = lim.get("valor_maximo")
@@ -1008,7 +1119,7 @@ def _render_insitu_columna(
                     "valor":     valores_por_prof[j][p["clave"]],
                     "unidad":    p["unidad"],
                 }
-                for p in get_parametros_insitu()
+                for p in _parametros_insitu_col
                 if valores_por_prof[j].get(p["clave"]) is not None
             ]
             if mediciones:
@@ -1049,21 +1160,10 @@ def _render_custodia() -> None:
         return
 
     # ── Tabla resumen de estados ─────────────────────────────────────────
-    filas = []
-    for m in muestras:
-        pt = m.get("puntos_muestreo") or {}
-        tec = m.get("tecnico") or {}
-        prof_tipo = m.get("profundidad_tipo")
-        prof_suf = f" {PROFUNDIDAD_SUFIJOS[prof_tipo]}" if prof_tipo in PROFUNDIDAD_SUFIJOS else ""
-        filas.append({
-            "Código":  f"{m['codigo']}{prof_suf}",
-            "Punto":   f"{pt.get('codigo','')} — {pt.get('nombre','')}",
-            "Fecha":   str(m.get("fecha_muestreo", ""))[:10],
-            "Tipo":    ETIQUETA_TIPO.get(m.get("tipo_muestra", ""), ""),
-            "Estado":  ETIQUETA_ESTADO_MUESTRA.get(m.get("estado", ""), m.get("estado", "")),
-            "Técnico": f"{tec.get('nombre','')} {tec.get('apellido','')}".strip() or "—",
-        })
-
+    filas = [
+        _fila_muestra(m, campos=("codigo", "punto", "fecha", "tipo", "estado", "tecnico"))
+        for m in muestras
+    ]
     st.dataframe(pd.DataFrame(filas), use_container_width=True, hide_index=True)
 
     st.divider()
@@ -1224,26 +1324,13 @@ def _render_listado() -> None:
 
     st.markdown(f"**{len(muestras)} muestra(s)**")
 
-    filas = []
-    for m in muestras:
-        pt = m.get("puntos_muestreo") or {}
-        prof_tipo = m.get("profundidad_tipo")
-        prof_label = PROFUNDIDAD_SUFIJOS.get(prof_tipo, "") if prof_tipo else ""
-        modo = m.get("modo_muestreo", "superficial") or "superficial"
-        prof_col = ""
-        if modo == "columna" and prof_tipo:
-            prof_val = m.get("profundidad_valor", "")
-            prof_col = f"{PROFUNDIDAD_LABELS.get(prof_tipo, prof_tipo)} ({prof_val} m)" if prof_val else PROFUNDIDAD_LABELS.get(prof_tipo, "")
-        filas.append({
-            "Código":       f"{m['codigo']} {prof_label}".strip(),
-            "Punto":        f"{pt.get('codigo','')} — {pt.get('nombre','')}",
-            "Profundidad":  prof_col or "Superficial",
-            "Fecha":        str(m.get("fecha_muestreo", ""))[:10],
-            "Hora":         m.get("hora_recoleccion", "—"),
-            "Tipo":         ETIQUETA_TIPO.get(m.get("tipo_muestra", ""), ""),
-            "Estado":       ETIQUETA_ESTADO_MUESTRA.get(m.get("estado", ""), m.get("estado", "")),
-        })
-
+    filas = [
+        _fila_muestra(
+            m,
+            campos=("codigo", "punto", "profundidad", "fecha", "hora", "tipo", "estado"),
+        )
+        for m in muestras
+    ]
     st.dataframe(pd.DataFrame(filas), use_container_width=True, hide_index=True)
 
     # ── Descarga de QR para cualquier muestra ────────────────────────────
@@ -1275,46 +1362,16 @@ def _render_listado() -> None:
     sel_edit = st.selectbox("Administrar muestra", list(opciones_edit.keys()), key="list_edit_muestra")
     muestra_sel = opciones_edit[sel_edit]
 
-    with st.expander("✏️ Editar muestra", expanded=False):
-        with st.form("form_editar_muestra", clear_on_submit=False):
-            em1, em2 = st.columns(2)
-            with em1:
-                edit_tipo = st.selectbox(
-                    "Tipo de muestra",
-                    TIPOS_MUESTRA,
-                    index=TIPOS_MUESTRA.index(muestra_sel.get("tipo_muestra", "simple"))
-                    if muestra_sel.get("tipo_muestra") in TIPOS_MUESTRA else 0,
-                    format_func=lambda t: ETIQUETA_TIPO.get(t, t),
-                    key="edit_m_tipo",
-                )
-            with em2:
-                edit_clima = st.selectbox(
-                    "Clima",
-                    [""] + OPCIONES_CLIMA,
-                    index=(OPCIONES_CLIMA.index(muestra_sel["clima"]) + 1)
-                    if muestra_sel.get("clima") in OPCIONES_CLIMA else 0,
-                    key="edit_m_clima",
-                )
-
-            edit_obs = st.text_area(
-                "Observaciones de campo",
-                value=muestra_sel.get("observaciones_campo") or "",
-                key="edit_m_obs",
-            )
-
-            edit_submitted = st.form_submit_button("Guardar cambios", type="primary")
-
-        if edit_submitted:
-            try:
-                actualizar_muestra(muestra_sel["id"], {
-                    "tipo_muestra":       edit_tipo,
-                    "clima":              edit_clima or None,
-                    "observaciones_campo": edit_obs.strip() or None,
-                })
-                st.success("Muestra actualizada.")
-                st.rerun()
-            except Exception as exc:
-                st.error(f"Error: {exc}")
+    # Antes había aquí un form parcial que solo dejaba editar 3 campos
+    # (tipo, clima, obs). Eso confundía al usuario que asumía que el resto
+    # no era editable. Ahora un único botón remite al tab Registro, que
+    # detecta la muestra existente y precarga TODOS los campos.
+    inline_note(
+        "Para editar esta muestra (fecha, hora, técnico, profundidades, etc.) "
+        "ve al tab <b>Registro</b> — selecciona la misma campaña y punto y "
+        "se cargarán todos los datos para corrección.",
+        tipo="info",
+    )
 
     if muestra_sel.get("estado") == "recolectada":
         with st.expander("🗑️ Eliminar muestra", expanded=False):
@@ -1596,20 +1653,8 @@ def _render_cadena_custodia() -> None:
                 "nombre": parts[1].strip() if len(parts) > 1 else sel,
             })
 
-        # Registrar nuevo equipo inline
-        with st.expander("Registrar nuevo equipo", expanded=False):
-            ea1, ea2 = st.columns(2)
-            with ea1:
-                cod_extra = st.text_input("Código", key="cc_eq_cod_extra", placeholder="Código")
-            with ea2:
-                nom_extra = st.text_input("Nombre", key="cc_eq_nom_extra", placeholder="Nombre del equipo")
-            if st.button("Agregar equipo", key="btn_cc_nuevo_eq"):
-                if cod_extra.strip() and nom_extra.strip():
-                    registrar_equipo(cod_extra.strip(), nom_extra.strip())
-                    st.success(f"Equipo '{nom_extra.strip()}' registrado.")
-                    st.rerun()
-                else:
-                    st.error("Completa código y nombre del equipo.")
+        # Registrar nuevo equipo inline (usa helper compartido)
+        _widget_nuevo_equipo("cc")
 
         cfg["equipos"] = equipos if equipos else EQUIPOS_DEFAULT
 
@@ -1636,44 +1681,27 @@ def _render_cadena_custodia() -> None:
     dc1, dc2 = st.columns(2)
 
     with dc1:
-        if st.button("Generar Excel", key="btn_cc_excel", type="primary", use_container_width=True):
-            with st.spinner("Generando Excel..."):
-                try:
-                    excel_bytes = generar_excel_cadena(campana_id, cfg)
-                    st.session_state["cc_excel"] = excel_bytes
-                    st.session_state["cc_campana_id"] = campana_id
-                except Exception as exc:
-                    st.error(f"Error generando Excel: {exc}")
-
-        if st.session_state.get("cc_excel") and st.session_state.get("cc_campana_id") == campana_id:
-            st.download_button(
-                label="Descargar Excel",
-                data=st.session_state["cc_excel"],
-                file_name=f"cadena_custodia_{cfg['codigo_documento']}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-                key="dl_cc_excel",
-            )
+        _generate_download_widget(
+            label_btn="Generar Excel",
+            label_dl="Descargar Excel",
+            generate_fn=lambda cid, c=cfg: generar_excel_cadena(cid, c),
+            campana_id=campana_id,
+            state_key="cc_excel",
+            file_name=f"cadena_custodia_{cfg['codigo_documento']}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            btn_kwargs={"type": "primary", "use_container_width": True},
+        )
 
     with dc2:
-        if st.button("Generar PDF", key="btn_cc_pdf", use_container_width=True):
-            with st.spinner("Generando PDF..."):
-                try:
-                    pdf_bytes = generar_pdf_cadena(campana_id, cfg)
-                    st.session_state["cc_pdf"] = pdf_bytes
-                    st.session_state["cc_pdf_campana_id"] = campana_id
-                except Exception as exc:
-                    st.error(f"Error generando PDF: {exc}")
-
-        if st.session_state.get("cc_pdf") and st.session_state.get("cc_pdf_campana_id") == campana_id:
-            st.download_button(
-                label="Descargar PDF",
-                data=st.session_state["cc_pdf"],
-                file_name=f"cadena_custodia_{cfg['codigo_documento']}.pdf",
-                mime="application/pdf",
-                use_container_width=True,
-                key="dl_cc_pdf",
-            )
+        _generate_download_widget(
+            label_btn="Generar PDF",
+            label_dl="Descargar PDF",
+            generate_fn=lambda cid, c=cfg: generar_pdf_cadena(cid, c),
+            campana_id=campana_id,
+            state_key="cc_pdf",
+            file_name=f"cadena_custodia_{cfg['codigo_documento']}.pdf",
+            mime="application/pdf",
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1815,36 +1843,25 @@ def _render_ficha_campo() -> None:
 
     st.divider()
 
-    if st.button(
-        f"Generar {len(muestras)} fichas DOCX",
-        key="btn_fichas_docx",
-        type="primary",
-        use_container_width=True,
-    ):
-        with st.spinner(f"Generando {len(muestras)} fichas..."):
-            try:
-                docx_bytes = generar_docx_fichas(campana_id, params_seleccionados=params_ficha_lab)
-                st.session_state["fichas_docx"] = docx_bytes
-                st.session_state["fichas_campana_id"] = campana_id
-            except Exception as exc:
-                st.error(f"Error generando fichas: {exc}")
+    # Determinar código de campaña (para nombre del archivo) ahora — el helper
+    # lo usa al construir el nombre del download_button.
+    campana_info = next(
+        (m.get("campanas") or {} for m in muestras if m.get("campanas")), {}
+    )
+    campana_codigo = campana_info.get("codigo", "campana")
 
-    if (
-        st.session_state.get("fichas_docx")
-        and st.session_state.get("fichas_campana_id") == campana_id
-    ):
-        campana_info = next(
-            (m.get("campanas") or {} for m in muestras if m.get("campanas")), {}
-        )
-        campana_codigo = campana_info.get("codigo", "campana")
-        st.download_button(
-            label="Descargar fichas DOCX",
-            data=st.session_state["fichas_docx"],
-            file_name=f"fichas_campo_{campana_codigo}.docx",
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            use_container_width=True,
-            key="dl_fichas_docx",
-        )
+    _generate_download_widget(
+        label_btn=f"Generar {len(muestras)} fichas DOCX",
+        label_dl="Descargar fichas DOCX",
+        generate_fn=lambda cid, p=params_ficha_lab: generar_docx_fichas(
+            cid, params_seleccionados=p,
+        ),
+        campana_id=campana_id,
+        state_key="fichas_docx",
+        file_name=f"fichas_campo_{campana_codigo}.docx",
+        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        btn_kwargs={"type": "primary", "use_container_width": True},
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
