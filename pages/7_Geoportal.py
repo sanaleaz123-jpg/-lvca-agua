@@ -332,12 +332,8 @@ def _construir_mapa(puntos: list[dict], solo_excedencias: bool, mostrar_heatmap:
         name="Satélite",
         max_native_zoom=17, max_zoom=19,
     ).add_to(m)
-    folium.TileLayer(
-        tiles="https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
-        attr="OpenTopoMap",
-        name="Topográfico",
-        max_native_zoom=17, max_zoom=19,
-    ).add_to(m)
+    # Capa Topográfico removida — el satélite + calles cubren los casos de uso
+    # y reduce la carga visual del control de capas.
 
     MiniMap(toggle_display=True, position="bottomright", zoom_level_offset=-5).add_to(m)
 
@@ -870,8 +866,8 @@ def main() -> None:
     map_data = st_folium(mapa, use_container_width=True, height=520, returned_objects=["last_object_clicked"])
     st.caption(
         "Para zoom muy cerrado se recomienda la capa **Calles** — el satélite "
-        "Esri y el topográfico no tienen imágenes de alta resolución en zonas "
-        "altiplánicas remotas (cuenca alta del Chili)."
+        "Esri no tiene imágenes de alta resolución en zonas altiplánicas "
+        "remotas de la cuenca alta del Chili."
     )
 
     # Click en el mapa → actualizar la selección persistente del selectbox
