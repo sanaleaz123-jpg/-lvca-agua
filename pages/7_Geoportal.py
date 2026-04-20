@@ -408,6 +408,17 @@ def _construir_mapa(puntos: list[dict], solo_excedencias: bool, mostrar_heatmap:
         ).add_to(fg_heat)
         fg_heat.add_to(m)
 
+        # CRÍTICO: el canvas del heatmap intercepta el cursor y bloquea los
+        # clicks a los marcadores debajo. Lo dejamos puramente visual con
+        # pointer-events: none. Solo afecta al canvas del plugin (clase
+        # 'leaflet-heatmap-layer'), no al canvas de los CircleMarker que
+        # vive en otro pane (.leaflet-marker-pane / overlayPane SVG).
+        m.get_root().html.add_child(folium.Element(
+            '<style>'
+            'canvas.leaflet-heatmap-layer{pointer-events:none !important;}'
+            '</style>'
+        ))
+
     # Capa de marcadores — added LAST so they are on top of heatmap
     fg_puntos = folium.FeatureGroup(name="Puntos de monitoreo", show=True)
     for p in pts_filtrados:
