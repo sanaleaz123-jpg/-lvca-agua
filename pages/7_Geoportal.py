@@ -100,17 +100,25 @@ def _clasificar_cat(param: dict) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_kpi_card(valor, label: str, color: str, icono_name: str) -> str:
-    """Tarjeta KPI minimalista — ícono SVG sutil, valor prominente, label uppercase."""
+    """
+    Tarjeta KPI minimalista al estilo SSDH/ANA:
+    - Ícono SVG sutil arriba a la derecha
+    - Label uppercase pequeño
+    - Valor grande y prominente
+    - Franja de color identitaria al borde inferior (3px)
+    """
     from components.ui_styles import icon as _icon
-    icono_svg = _icon(icono_name, size=18, color="#94a3b8")
+    icono_svg = _icon(icono_name, size=18, color=color)
     return f"""
-    <div style="background:#ffffff; border-radius:12px; padding:18px 22px;
-         text-align:left; border:1px solid #f1f5f9; transition: all 0.18s ease;
+    <div style="background:#ffffff; border-radius:12px; padding:18px 22px 14px 22px;
+         text-align:left; border:1px solid #f1f5f9; border-bottom:3px solid {color};
+         transition: all 0.18s ease;
          min-height: 110px; display: flex; flex-direction: column; justify-content: space-between;">
         <div style="display:flex; align-items:center; justify-content:space-between;">
             <span style="font-size:0.7rem; color:#94a3b8; text-transform:uppercase;
                  letter-spacing:0.05em; font-weight:600;">{label}</span>
-            <span>{icono_svg}</span>
+            <span style="background:{color}1a; padding:6px; border-radius:8px;
+                 display:inline-flex; align-items:center; justify-content:center;">{icono_svg}</span>
         </div>
         <div style="font-size:1.85rem; font-weight:600; line-height:1.1; color:{color};
              letter-spacing:-0.02em; margin-top:8px;">{valor}</div>
@@ -127,10 +135,11 @@ def _render_dashboard(puntos: list[dict]) -> None:
     indices = [p["indice_cumplimiento"] for p in puntos if p.get("indice_cumplimiento") is not None]
     ic_general = round(sum(indices) / len(indices) * 100, 1) if indices else 0
 
-    # ── KPIs minimalistas: íconos SVG Lucide, sin colores fuertes salvo el valor ──
+    # ── KPIs estilo SSDH/ANA: cada métrica con su color identitario,
+    #     franja inferior y halo sutil en el ícono ─────────────────────
     k1, k2, k3, k4, k5 = st.columns(5)
     with k1:
-        st.markdown(_render_kpi_card(n_total, "Puntos monitoreados", "#0f172a", "map_pin"), unsafe_allow_html=True)
+        st.markdown(_render_kpi_card(n_total, "Puntos monitoreados", "#0a9396", "map_pin"), unsafe_allow_html=True)
     with k2:
         st.markdown(_render_kpi_card(n_ok, "Cumplen ECA", "#1b6b35", "check"), unsafe_allow_html=True)
     with k3:
@@ -245,6 +254,31 @@ def _cargar_geojson_puntos() -> dict[str, dict]:
     return siluetas
 
 
+def _cargar_geojson_cuencas() -> list[dict]:
+    """
+    Carga los polígonos de cuencas desde `static/geojson/cuencas/*.geojson`.
+    Estilo SSDH/ANA: outline verde brillante sobre satélite para anclar
+    visualmente al territorio.
+    """
+    import json
+    from pathlib import Path
+
+    cuencas_dir = Path(__file__).parent.parent / "static" / "geojson" / "cuencas"
+    cuencas = []
+    if not cuencas_dir.exists():
+        return cuencas
+    for f in cuencas_dir.glob("*.geojson"):
+        try:
+            with open(f, encoding="utf-8") as fh:
+                cuencas.append({
+                    "data": json.load(fh),
+                    "nombre": f.stem.replace("_", " "),
+                })
+        except Exception:
+            pass
+    return cuencas
+
+
 def _popup_html(p: dict) -> str:
     """Popup compacto para el marcador (Fix 2: campos corregidos)."""
     eca = p.get("ecas") or {}
@@ -336,6 +370,31 @@ def _construir_mapa(puntos: list[dict], solo_excedencias: bool, mostrar_heatmap:
     # y reduce la carga visual del control de capas.
 
     MiniMap(toggle_display=True, position="bottomright", zoom_level_offset=-5).add_to(m)
+
+    # ── Polígonos de cuencas hidrográficas (estilo SSDH/ANA) ─────────────
+    # Outline verde brillante, sin relleno, para anclar visualmente al
+    # territorio sin tapar los detalles del mapa base.
+    cuencas = _cargar_geojson_cuencas()
+    if cuencas:
+        fg_cuencas = folium.FeatureGroup(name="Cuencas hidrográficas", show=True)
+        for cu in cuencas:
+            folium.GeoJson(
+                cu["data"],
+                style_function=lambda feature: {
+                    "color": "#22c55e",      # verde brillante (SSDH)
+                    "weight": 2.2,
+                    "fillColor": "#22c55e",
+                    "fillOpacity": 0.04,      # apenas perceptible — solo enmarca
+                    "dashArray": "0",
+                },
+                highlight_function=lambda feature: {
+                    "color": "#15803d",
+                    "weight": 3,
+                    "fillOpacity": 0.10,
+                },
+                tooltip=f"Cuenca: {cu['nombre']}",
+            ).add_to(fg_cuencas)
+        fg_cuencas.add_to(m)
 
     # Polígonos de represas/lagunas
     siluetas = _cargar_geojson_puntos()

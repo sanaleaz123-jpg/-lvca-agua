@@ -21,7 +21,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from components.auth_guard import require_rol
-from components.ui_styles import aplicar_estilos, page_header, section_header
+from components.ui_styles import aplicar_estilos, page_header, section_header, top_nav
 from services.resultado_service import get_metricas_dashboard, get_puntos_con_estado
 
 # Centro del mapa: Arequipa / cuenca Chili-Quilca
@@ -335,6 +335,10 @@ def main() -> None:
         st.stop()
 
     aplicar_estilos()
+    # POC: barra de navegación horizontal arriba (estilo SSDH/ANA).
+    # Reemplaza al sidebar en esta página. Si funciona bien, se extiende
+    # al resto de páginas y se elimina el sidebar global.
+    top_nav()
     page_header(
         "Panel de Control LVCA",
         f"AUTODEMA — Cuenca Chili-Quilca &middot; {sesion.nombre_completo}",

@@ -833,6 +833,149 @@ def page_header(titulo: str, subtitulo: str = "") -> None:
     )
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Top navigation horizontal (estilo SSDH/ANA)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# CSS específico de top-nav (se inyecta solo cuando se llama a top_nav())
+_TOP_NAV_CSS = """<style>
+/* Wrapper del top-nav: espacio arriba, separador inferior sutil */
+.lvca-top-nav-wrap {
+    background: #ffffff;
+    border-bottom: 1px solid #e2e8f0;
+    margin: -1.5rem -1rem 1.5rem -1rem;
+    padding: 14px 1.2rem 6px 1.2rem;
+}
+/* Línea 1: marca + usuario */
+.lvca-brand {
+    display: flex; align-items: baseline; gap: 12px;
+    margin-bottom: 6px;
+}
+.lvca-brand-name {
+    font-weight: 700; color: #1b6b35; font-size: 1.15rem;
+    letter-spacing: -0.015em;
+}
+.lvca-brand-sub {
+    font-size: 0.76rem; color: #64748b;
+}
+.lvca-user-block {
+    text-align: right; font-size: 0.76rem; line-height: 1.3;
+}
+.lvca-user-name { font-weight: 600; color: #1e293b; display: block; }
+.lvca-user-rol  { color: #94a3b8; text-transform: uppercase;
+                  letter-spacing: 0.04em; font-size: 0.66rem; }
+
+/* Page links dentro del top-nav: se ven como pills horizontales */
+.lvca-top-nav-wrap [data-testid="stPageLink"] {
+    margin: 0 !important;
+}
+.lvca-top-nav-wrap [data-testid="stPageLink"] a {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 12px !important;
+    margin: 0 !important;
+    font-size: 0.82rem !important;
+    font-weight: 500 !important;
+    color: #475569 !important;
+    border-radius: 8px !important;
+    border: 1px solid transparent !important;
+    background: transparent !important;
+    transition: all 0.15s ease !important;
+    white-space: nowrap;
+}
+.lvca-top-nav-wrap [data-testid="stPageLink"] a:hover {
+    background: #f1f5f9 !important;
+    color: #1b6b35 !important;
+}
+/* En modo top-nav, ocultamos el sidebar entero para liberar todo el ancho */
+.lvca-top-nav-wrap ~ * [data-testid="stSidebar"],
+body:has(.lvca-top-nav-wrap) [data-testid="stSidebar"],
+body:has(.lvca-top-nav-wrap) [data-testid="collapsedControl"] {
+    display: none !important;
+}
+/* El contenedor principal: ya sin sidebar, ocupa todo el ancho */
+body:has(.lvca-top-nav-wrap) [data-testid="stMain"] {
+    margin-left: 0 !important;
+}
+</style>"""
+
+# Mapeo página → ícono Material Symbols (usados por st.page_link nativo)
+_TOP_NAV_ICONS: dict[str, str] = {
+    "pages/1_Inicio.py":          ":material/home:",
+    "pages/2_Campanas.py":        ":material/event:",
+    "pages/3_Muestras_Campo.py":  ":material/science:",
+    "pages/4_Resultados_Lab.py":  ":material/biotech:",
+    "pages/10_Base_Datos.py":     ":material/database:",
+    "pages/8_Informes.py":        ":material/description:",
+    "pages/7_Geoportal.py":       ":material/map:",
+    "pages/5_Parametros.py":      ":material/list_alt:",
+    "pages/6_Puntos_Muestreo.py": ":material/place:",
+    "pages/9_Administracion.py":  ":material/settings:",
+}
+
+
+def top_nav() -> None:
+    """
+    Barra de navegación horizontal arriba de la página (estilo SSDH/ANA).
+    Reemplaza al sidebar — lo oculta vía CSS dentro del wrapper.
+
+    Llamar inmediatamente después de aplicar_estilos() y antes de cualquier
+    otro contenido. Solo renderiza si hay sesión activa.
+    """
+    sesion = st.session_state.get("sesion")
+    if not sesion:
+        return
+
+    # Importar dinámicamente para evitar circular import
+    from components.auth_guard import _PAGINAS_NAV
+    from services.auth_service import ROL_JERARQUIA
+
+    nivel_user = ROL_JERARQUIA.get(sesion.rol, 0)
+    permitidas = [
+        (label, ruta, rol)
+        for label, ruta, rol, _seccion in _PAGINAS_NAV
+        if nivel_user >= ROL_JERARQUIA.get(rol, 0)
+    ]
+    if not permitidas:
+        return
+
+    # CSS solo cuando se usa
+    st.markdown(_TOP_NAV_CSS, unsafe_allow_html=True)
+
+    # Wrapper que activa el ocultamiento del sidebar y los estilos del nav
+    st.markdown('<div class="lvca-top-nav-wrap">', unsafe_allow_html=True)
+
+    # Línea 1: marca + usuario
+    head_l, head_r = st.columns([4, 1])
+    with head_l:
+        st.markdown(
+            '<div class="lvca-brand">'
+            '<span class="lvca-brand-name">LVCA</span>'
+            '<span class="lvca-brand-sub">Plataforma de Vigilancia y Calidad del Agua · AUTODEMA</span>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+    with head_r:
+        rol_label = sesion.rol.replace("_", " ").capitalize()
+        st.markdown(
+            f'<div class="lvca-user-block">'
+            f'<span class="lvca-user-name">{sesion.nombre_completo}</span>'
+            f'<span class="lvca-user-rol">{rol_label}</span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+    # Línea 2: links de navegación horizontales
+    nav_cols = st.columns(len(permitidas))
+    for col, (label, ruta, _rol) in zip(nav_cols, permitidas):
+        with col:
+            st.page_link(ruta, label=label, icon=_TOP_NAV_ICONS.get(ruta))
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
 def section_header(titulo: str, icono: str = "") -> None:
     """
     Sub-encabezado consistente de sección. Si `icono` es el nombre de un ícono
