@@ -76,7 +76,7 @@ def main() -> None:
     top_nav()
     page_header(
         "Base de Datos",
-        "Consolidado de datos de campo, fisicoquimicos e hidrobiologicos por campana",
+        "Consolidado de datos de campo, fisicoquímicos e hidrobiológicos por campaña",
     )
 
     es_admin = _es_admin()

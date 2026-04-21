@@ -532,7 +532,7 @@ def _render_mapa() -> None:
 def main() -> None:
     aplicar_estilos()
     top_nav()
-    page_header("Puntos de Muestreo", "Gestion de puntos de monitoreo — Cuenca Chili-Quilca")
+    page_header("Puntos de Muestreo", "Gestión de puntos de monitoreo — Cuenca Chili-Quilca")
 
     tab_lista, tab_nuevo, tab_mapa = st.tabs([
         "Listado de puntos",

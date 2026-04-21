@@ -601,7 +601,7 @@ def _render_valores_eca() -> None:
 def main() -> None:
     aplicar_estilos()
     top_nav()
-    page_header("Parametros y ECAs", "Gestion de parametros de calidad de agua y estandares ambientales")
+    page_header("Parámetros y ECAs", "Gestión de parámetros de calidad de agua y estándares ambientales")
 
     tab_lista, tab_nuevo, tab_eca = st.tabs([
         "Listado de parámetros",

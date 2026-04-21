@@ -294,7 +294,7 @@ def _render_informe_punto() -> None:
 def main() -> None:
     aplicar_estilos()
     top_nav()
-    page_header("Informes", "Generacion de informes y exportacion de datos")
+    page_header("Informes", "Generación de informes y exportación de datos")
 
     tab_campana, tab_punto = st.tabs([
         "Informe por campaña",
