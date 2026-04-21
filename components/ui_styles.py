@@ -896,6 +896,21 @@ _TOP_NAV_CSS = """<style>
     background: #f1f5f9 !important;
     color: #1b6b35 !important;
 }
+/* El contenido del link no se trunca: label completo siempre visible */
+.lvca-top-nav-wrap [data-testid="stPageLink"] a > div,
+.lvca-top-nav-wrap [data-testid="stPageLink"] a p,
+.lvca-top-nav-wrap [data-testid="stPageLink"] a span {
+    overflow: visible !important;
+    text-overflow: clip !important;
+    white-space: nowrap !important;
+    max-width: none !important;
+}
+/* Columnas del horizontal-block: ancho auto según contenido, no equi-repartido */
+.lvca-top-nav-wrap [data-testid="stHorizontalBlock"] {
+    flex-wrap: wrap !important;
+    gap: 2px !important;
+    align-items: center;
+}
 </style>"""
 
 # Mapeo página → ícono Material Symbols (usados por st.page_link nativo)
@@ -910,6 +925,21 @@ _TOP_NAV_ICONS: dict[str, str] = {
     "pages/5_Parametros.py":      ":material/list_alt:",
     "pages/6_Puntos_Muestreo.py": ":material/place:",
     "pages/9_Administracion.py":  ":material/settings:",
+}
+
+# Labels cortos específicos del top-nav (los labels largos de _PAGINAS_NAV
+# se truncan visualmente cuando hay muchas páginas).
+_TOP_NAV_LABELS: dict[str, str] = {
+    "pages/1_Inicio.py":          "Inicio",
+    "pages/2_Campanas.py":        "Campañas",
+    "pages/3_Muestras_Campo.py":  "Muestras",
+    "pages/4_Resultados_Lab.py":  "Resultados",
+    "pages/10_Base_Datos.py":     "Base de Datos",
+    "pages/8_Informes.py":        "Informes",
+    "pages/7_Geoportal.py":       "Geoportal",
+    "pages/5_Parametros.py":      "Parámetros",
+    "pages/6_Puntos_Muestreo.py": "Puntos",
+    "pages/9_Administracion.py":  "Admin",
 }
 
 
@@ -964,11 +994,17 @@ def top_nav() -> None:
             unsafe_allow_html=True,
         )
 
-    # Línea 2: links de navegación horizontales
-    nav_cols = st.columns(len(permitidas))
-    for col, (label, ruta, _rol) in zip(nav_cols, permitidas):
+    # Línea 2: links de navegación horizontales.
+    # Pesos proporcionales a la longitud del label corto, para que los largos
+    # tengan más espacio y los cortos no desperdicien ancho.
+    labels_short = [
+        _TOP_NAV_LABELS.get(ruta, label) for label, ruta, _rol in permitidas
+    ]
+    weights = [max(3, len(lbl) + 2) for lbl in labels_short]
+    nav_cols = st.columns(weights, gap="small")
+    for col, (_, ruta, _rol), lbl in zip(nav_cols, permitidas, labels_short):
         with col:
-            st.page_link(ruta, label=label, icon=_TOP_NAV_ICONS.get(ruta))
+            st.page_link(ruta, label=lbl, icon=_TOP_NAV_ICONS.get(ruta))
 
     st.markdown('</div>', unsafe_allow_html=True)
 
