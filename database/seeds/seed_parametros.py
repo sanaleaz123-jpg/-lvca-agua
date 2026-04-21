@@ -37,7 +37,7 @@ PARAMETROS: list[dict] = [
      "metodo_referencia": "SM 4500-H+ B electrométrico", "es_in_situ": True},
 
     {"codigo": "P002", "nombre": "Temperatura del agua",
-     "nombre_corto": "Temp. agua", "categoria_id": 1, "unidad_simbolo": "gC",
+     "nombre_corto": "Temp. agua", "categoria_id": 1, "unidad_simbolo": "°C",
      "metodo_referencia": "SM 2550 B", "es_in_situ": True},
 
     {"codigo": "P003", "nombre": "Conductividad/TDS/Salinidad",

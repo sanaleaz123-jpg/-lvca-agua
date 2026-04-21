@@ -125,7 +125,7 @@ ECA_VALORES: list[dict] = [
     # ══════════════════════════════════════════════════════════
     # Fisicoquimico in-situ
     {"eca_codigo": "ECA-C1A1", "param_codigo": "P001", "valor_minimo": 6.5,  "valor_maximo": 8.5},
-    {"eca_codigo": "ECA-C1A1", "param_codigo": "P002", "valor_maximo": 25.0, "observacion": "Delta T max 3 gC sobre condicion natural"},
+    {"eca_codigo": "ECA-C1A1", "param_codigo": "P002", "valor_maximo": 25.0, "observacion": "Delta T max 3 °C sobre condicion natural"},
     {"eca_codigo": "ECA-C1A1", "param_codigo": "P003", "valor_maximo": 1500.0},
     {"eca_codigo": "ECA-C1A1", "param_codigo": "P004", "valor_minimo": 6.0},
     {"eca_codigo": "ECA-C1A1", "param_codigo": "P006", "valor_maximo": 5.0},
@@ -174,7 +174,7 @@ ECA_VALORES: list[dict] = [
     # ECA Categoria 1 A2  -  Tratamiento convencional
     # ══════════════════════════════════════════════════════════
     {"eca_codigo": "ECA-C1A2", "param_codigo": "P001", "valor_minimo": 5.5,   "valor_maximo": 9.0},
-    {"eca_codigo": "ECA-C1A2", "param_codigo": "P002", "valor_maximo": 25.0,  "observacion": "Delta T max 3 gC"},
+    {"eca_codigo": "ECA-C1A2", "param_codigo": "P002", "valor_maximo": 25.0,  "observacion": "Delta T max 3 °C"},
     {"eca_codigo": "ECA-C1A2", "param_codigo": "P003", "valor_maximo": 1600.0},
     {"eca_codigo": "ECA-C1A2", "param_codigo": "P004", "valor_minimo": 5.0},
     {"eca_codigo": "ECA-C1A2", "param_codigo": "P006", "valor_maximo": 100.0},
@@ -213,7 +213,7 @@ ECA_VALORES: list[dict] = [
     # ECA Categoria 1 A3  -  Tratamiento avanzado
     # ══════════════════════════════════════════════════════════
     {"eca_codigo": "ECA-C1A3", "param_codigo": "P001", "valor_minimo": 5.5,   "valor_maximo": 9.0},
-    {"eca_codigo": "ECA-C1A3", "param_codigo": "P002", "valor_maximo": 25.0,  "observacion": "Delta T max 3 gC"},
+    {"eca_codigo": "ECA-C1A3", "param_codigo": "P002", "valor_maximo": 25.0,  "observacion": "Delta T max 3 °C"},
     {"eca_codigo": "ECA-C1A3", "param_codigo": "P003", "valor_maximo": 1600.0},
     {"eca_codigo": "ECA-C1A3", "param_codigo": "P004", "valor_minimo": 4.0},
     {"eca_codigo": "ECA-C1A3", "param_codigo": "P006", "valor_maximo": 500.0},
@@ -276,7 +276,7 @@ ECA_VALORES: list[dict] = [
     # ECA Categoria 4 E1  -  Conservacion lagunas y lagos
     # ══════════════════════════════════════════════════════════
     {"eca_codigo": "ECA-C4E1", "param_codigo": "P001", "valor_minimo": 6.5,   "valor_maximo": 9.0},
-    {"eca_codigo": "ECA-C4E1", "param_codigo": "P002", "valor_maximo": 22.0,  "observacion": "Delta T max 3 gC"},
+    {"eca_codigo": "ECA-C4E1", "param_codigo": "P002", "valor_maximo": 22.0,  "observacion": "Delta T max 3 °C"},
     {"eca_codigo": "ECA-C4E1", "param_codigo": "P004", "valor_minimo": 5.0},
     {"eca_codigo": "ECA-C4E1", "param_codigo": "P006", "valor_maximo": 25.0},
     {"eca_codigo": "ECA-C4E1", "param_codigo": "P019", "valor_maximo": 5.0},
@@ -307,7 +307,7 @@ ECA_VALORES: list[dict] = [
     # ECA Categoria 4 E2  -  Conservacion rios
     # ══════════════════════════════════════════════════════════
     {"eca_codigo": "ECA-C4E2", "param_codigo": "P001", "valor_minimo": 6.5,   "valor_maximo": 9.0},
-    {"eca_codigo": "ECA-C4E2", "param_codigo": "P002", "valor_maximo": 25.0,  "observacion": "Delta T max 3 gC sobre condicion natural"},
+    {"eca_codigo": "ECA-C4E2", "param_codigo": "P002", "valor_maximo": 25.0,  "observacion": "Delta T max 3 °C sobre condicion natural"},
     {"eca_codigo": "ECA-C4E2", "param_codigo": "P003", "valor_maximo": 2000.0},
     {"eca_codigo": "ECA-C4E2", "param_codigo": "P004", "valor_minimo": 5.0},
     {"eca_codigo": "ECA-C4E2", "param_codigo": "P006", "valor_maximo": 25.0},

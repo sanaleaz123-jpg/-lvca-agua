@@ -107,7 +107,7 @@ UNIDADES: list[dict] = [
     {"simbolo": "U Pt-Co",      "nombre": "Unidades Platino-Cobalto"},
     {"simbolo": "U Hazen",      "nombre": "Unidades Hazen"},
     {"simbolo": "pH",           "nombre": "Potencial de hidrogeno",       "descripcion": "Escala adimensional 0-14"},
-    {"simbolo": "gC",           "nombre": "Grados Celsius"},
+    {"simbolo": "°C",           "nombre": "Grados Celsius"},
     {"simbolo": "K",            "nombre": "Kelvin"},
     {"simbolo": "uS/cm",        "nombre": "Microsiemens por centimetro"},
     {"simbolo": "mS/cm",        "nombre": "Milisiemens por centimetro"},
