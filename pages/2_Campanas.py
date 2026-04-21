@@ -17,7 +17,7 @@ import pandas as pd
 import streamlit as st
 
 from components.auth_guard import require_rol
-from components.ui_styles import aplicar_estilos, page_header, success_check_overlay, toast
+from components.ui_styles import aplicar_estilos, page_header, success_check_overlay, toast, top_nav
 from services.campana_service import (
     ESTADOS,
     ETIQUETA_ESTADO,
@@ -696,6 +696,7 @@ def _render_formulario_nueva() -> None:
 @require_rol("administrador")
 def main() -> None:
     aplicar_estilos()
+    top_nav()
     page_header("Campanas de Monitoreo", "Gestion del ciclo de vida de campanas — AUTODEMA / Cuenca Chili-Quilca")
 
     tab_lista, tab_nueva = st.tabs(["📋 Listado de campañas", "➕ Nueva campaña"])

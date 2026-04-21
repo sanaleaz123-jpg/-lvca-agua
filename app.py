@@ -23,7 +23,7 @@ st.set_page_config(
     page_title=APP_NOMBRE,
     page_icon="💧",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
     menu_items={
         "About": f"**{APP_NOMBRE}**\n{APP_ENTIDAD}\nv{APP_VERSION}",
         "Report a bug": None,
