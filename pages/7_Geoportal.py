@@ -884,7 +884,7 @@ def _render_ultimos_resultados(punto: dict, cat: str = "") -> None:
 def main() -> None:
     aplicar_estilos()
     top_nav()
-    page_header("Geoportal", "Monitoreo de Calidad de Agua — Cuenca Chili-Quilca")
+    page_header("Geoportal", "Monitoreo de Calidad de Agua — Sistemas Chili Regulado y Colca Regulado · AUTODEMA")
 
     try:
         import folium

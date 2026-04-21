@@ -298,7 +298,7 @@ def main() -> None:
 
     aplicar_estilos()
     top_nav()
-    page_header("Resultados de Laboratorio", "Ingreso y validacion con semaforo ECA &middot; D.S. N° 004-2017-MINAM")
+    page_header("Resultados de Laboratorio", "Ingreso y validación con semáforo ECA &middot; D.S. N° 004-2017-MINAM")
 
     # ── Selección en cascada ─────────────────────────────────────────────────
     with st.expander("📋 Seleccionar muestra", expanded=True):

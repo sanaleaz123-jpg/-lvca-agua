@@ -337,7 +337,7 @@ def _render_sistema() -> None:
 def main() -> None:
     aplicar_estilos()
     top_nav()
-    page_header("Administracion", "Gestion de usuarios y estado del sistema")
+    page_header("Administración", "Gestión de usuarios y estado del sistema")
 
     tab_usuarios, tab_nuevo, tab_sistema = st.tabs([
         "Usuarios",
