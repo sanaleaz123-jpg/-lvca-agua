@@ -846,19 +846,32 @@ def page_header(titulo: str, subtitulo: str = "") -> None:
 
 # CSS específico de top-nav (se inyecta solo cuando se llama a top_nav()).
 # El contenedor real es `.st-key-lvca_top_nav` (st.container(key=...)) — ese
-# envuelve realmente todo el bloque a nivel DOM, no como un <div> insertado
-# por markdown (que se cierra solo porque cada st.markdown vive en su propio
-# wrapper de Streamlit). Por eso `position: sticky` funciona sobre esa clase.
+# envuelve todo el bloque a nivel DOM.
+#
+# Para que `position: sticky` funcione, NINGÚN ancestro puede tener
+# `overflow: hidden/auto/scroll` entre el sticky y su scroll-parent. Se
+# fuerza `overflow: visible` en la cadena de ancestros vía :has().
 _TOP_NAV_CSS = """<style>
 .st-key-lvca_top_nav {
-    position: sticky;
-    top: 0;
-    z-index: 999;
-    background: #ffffff;
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 999 !important;
+    background: #ffffff !important;
     border-bottom: 1px solid #e2e8f0;
-    margin: -1.5rem -1rem 1.5rem -1rem;
-    padding: 10px 1.2rem 4px 1.2rem;
-    box-shadow: 0 1px 2px rgba(15,23,42,0.02);
+    padding: 10px 1.2rem 6px 1.2rem;
+    box-shadow: 0 1px 2px rgba(15,23,42,0.04);
+    margin-bottom: 1rem;
+}
+
+/* Forzar overflow visible en la cadena de ancestros que contienen el
+   top-nav — cualquier overflow:hidden/auto intermedio rompe el sticky. */
+[data-testid="stAppViewContainer"]:has(.st-key-lvca_top_nav),
+[data-testid="stMain"]:has(.st-key-lvca_top_nav),
+[data-testid="stMainBlockContainer"]:has(.st-key-lvca_top_nav),
+[data-testid="stVerticalBlock"]:has(> .st-key-lvca_top_nav),
+[data-testid="stVerticalBlockBorderWrapper"]:has(.st-key-lvca_top_nav),
+section.main:has(.st-key-lvca_top_nav) {
+    overflow: visible !important;
 }
 /* Línea 1: marca + usuario */
 .lvca-brand {
