@@ -27,7 +27,7 @@ from typing import Callable
 import streamlit as st
 
 from services.auth_service import Rol, ROL_JERARQUIA
-from components.ui_styles import aplicar_estilos, badge_rol
+from components.ui_styles import aplicar_estilos
 
 # Mensajes por rol requerido
 _MENSAJES: dict[Rol, str] = {
@@ -53,80 +53,6 @@ _PAGINAS_NAV = [
     ("Administración",      "pages/9_Administracion.py",    "administrador", "config"),
 ]
 
-_SECCION_LABELS = {
-    "principal":     "INICIO",
-    "campo":         "TRABAJO DE CAMPO",
-    "datos":         "DATOS Y REPORTES",
-    "visualizacion": "VISUALIZACIÓN",
-    "config":        "CONFIGURACIÓN",
-}
-
-_SECCION_ICONOS = {
-    "principal":     "🏠",
-    "campo":         "🧪",
-    "datos":         "📊",
-    "visualizacion": "🗺️",
-    "config":        "⚙️",
-}
-
-_ROL_NIVEL = ROL_JERARQUIA
-
-
-def _render_sidebar() -> None:
-    """Renderiza el sidebar con navegación agrupada por secciones."""
-    sesion = st.session_state.get("sesion")
-    if not sesion:
-        return
-
-    aplicar_estilos()
-
-    with st.sidebar:
-        # Header con logo
-        st.image("imagenes/logo_lvca.png", width=80)
-        st.markdown(
-            "<p style='font-size:0.72rem; color:#64748b !important; "
-            "margin:0; padding-bottom:4px;'>AUTODEMA</p>",
-            unsafe_allow_html=True,
-        )
-        st.divider()
-
-        # Info del usuario
-        st.markdown(
-            f"<p style='font-weight:600; font-size:0.9rem; margin-bottom:2px; "
-            f"color:#1e293b !important;'>{sesion.nombre_completo}</p>",
-            unsafe_allow_html=True,
-        )
-        badge_rol(sesion.rol)
-        st.divider()
-
-        # Navegación agrupada
-        nivel_usuario = _ROL_NIVEL.get(sesion.rol, 1)
-        secciones_vistas: set[str] = set()
-
-        for label, ruta, rol_minimo, seccion in _PAGINAS_NAV:
-            if nivel_usuario < _ROL_NIVEL.get(rol_minimo, 1):
-                continue
-
-            if seccion not in secciones_vistas:
-                secciones_vistas.add(seccion)
-                icono = _SECCION_ICONOS.get(seccion, "")
-                sec_label = _SECCION_LABELS.get(seccion, "")
-                st.markdown(
-                    f"<p style='font-size:0.65rem; font-weight:700; color:#94a3b8 !important; "
-                    f"text-transform:uppercase; letter-spacing:1px; margin:12px 0 4px 4px; "
-                    f"padding:0;'>{icono} {sec_label}</p>",
-                    unsafe_allow_html=True,
-                )
-
-            st.page_link(ruta, label=label)
-
-        st.divider()
-        if st.button("Cerrar sesión", use_container_width=True, key="btn_logout_guard", icon=":material/logout:"):
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
-            st.rerun()
-
-
 def verificar_sesion() -> bool:
     """True si hay una sesión activa en session_state."""
     return st.session_state.get("sesion") is not None
@@ -136,7 +62,7 @@ def verificar_acceso(rol_minimo: Rol = "visitante") -> None:
     """
     Verifica sesión y rol. Si no cumple, muestra mensaje y detiene la página
     con st.stop() para que el resto del código no se ejecute.
-    Renderiza el sidebar con navegación corregida.
+    La navegación se sirve desde top_nav() dentro de cada página.
     """
     if not verificar_sesion():
         _pantalla_sin_sesion()
@@ -149,8 +75,6 @@ def verificar_acceso(rol_minimo: Rol = "visitante") -> None:
     if nivel_usuario < nivel_requerido:
         _pantalla_acceso_denegado(rol_minimo, sesion.rol)
         st.stop()
-
-    _render_sidebar()
 
 
 def require_rol(rol_minimo: Rol = "visitante") -> Callable:
@@ -173,6 +97,7 @@ def require_rol(rol_minimo: Rol = "visitante") -> Callable:
 # ─── pantallas de bloqueo ─────────────────────────────────────────────────────
 
 def _pantalla_sin_sesion() -> None:
+    aplicar_estilos()
     st.warning("### Acceso restringido")
     st.info("Por favor, inicia sesión para continuar.")
     if st.button("Ir al inicio de sesión", type="primary"):
@@ -180,6 +105,7 @@ def _pantalla_sin_sesion() -> None:
 
 
 def _pantalla_acceso_denegado(rol_requerido: Rol, rol_actual: Rol) -> None:
+    aplicar_estilos()
     st.error("### Acceso denegado")
     st.write(_MENSAJES.get(rol_requerido, "No tienes permisos para esta sección."))
     st.caption(f"Tu rol actual: **{rol_actual.capitalize()}**")

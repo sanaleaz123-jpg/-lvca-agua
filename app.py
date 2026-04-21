@@ -5,8 +5,7 @@ Punto de entrada de la aplicación Streamlit LVCA – AUTODEMA.
 Responsabilidades:
   - Mostrar la pantalla de login si no hay sesión activa.
   - Almacenar la sesión en st.session_state["sesion"].
-  - Redirigir al dashboard apropiado según el rol del usuario.
-  - Exponer el menú de navegación lateral con las páginas permitidas por rol.
+  - Una vez autenticado, redirigir a pages/1_Inicio.py (el panel real).
 
 Ejecución:
     streamlit run app.py
@@ -16,7 +15,6 @@ import streamlit as st
 
 from config.settings import APP_NOMBRE, APP_ENTIDAD, APP_VERSION
 from services.auth_service import login, logout, AuthError, SesionUsuario
-from components.ui_styles import aplicar_estilos, badge_rol, page_header
 
 # ─── configuración global de la app ──────────────────────────────────────────
 st.set_page_config(
@@ -31,27 +29,19 @@ st.set_page_config(
     },
 )
 
-# ─── definición de páginas por rol ───────────────────────────────────────────
-# La lista única vive en components/auth_guard._PAGINAS_NAV para evitar drift.
-from components.auth_guard import _PAGINAS_NAV as PAGINAS  # noqa: E402
-
-_SECCION_LABELS = {
-    "principal":     "INICIO",
-    "campo":         "TRABAJO DE CAMPO",
-    "datos":         "DATOS Y REPORTES",
-    "visualizacion": "VISUALIZACION",
-    "config":        "CONFIGURACION",
-}
-
-_SECCION_ICONOS = {
-    "principal":     "🏠",
-    "campo":         "🧪",
-    "datos":         "📊",
-    "visualizacion": "🗺️",
-    "config":        "⚙️",
-}
-
-from services.auth_service import ROL_JERARQUIA as _ROL_NIVEL  # noqa: E402
+# Sidebar globalmente oculto — la navegación se sirve vía top_nav() en cada
+# página. Inyectado lo más temprano posible para evitar flash del sidebar
+# nativo de Streamlit antes de que el CSS de página cargue.
+st.markdown(
+    "<style>"
+    "[data-testid='stSidebar'],"
+    "[data-testid='stSidebarNav'],"
+    "[data-testid='collapsedControl']"
+    "{display:none !important}"
+    "[data-testid='stMain']{margin-left:0 !important}"
+    "</style>",
+    unsafe_allow_html=True,
+)
 
 
 # ─── helpers de sesión ────────────────────────────────────────────────────────
@@ -153,156 +143,6 @@ def _pantalla_login() -> None:
         )
 
 
-# ─── barra lateral con navegación ─────────────────────────────────────────────
-
-def _sidebar(sesion: SesionUsuario) -> None:
-    aplicar_estilos()
-
-    with st.sidebar:
-        # Header con logo
-        st.image("imagenes/logo_lvca.png", width=80)
-        st.markdown(
-            f"<p style='font-size:0.72rem; color:#64748b !important; "
-            f"margin:0; padding-bottom:4px;'>{APP_ENTIDAD}</p>",
-            unsafe_allow_html=True,
-        )
-        st.divider()
-
-        # Info del usuario
-        st.markdown(
-            f"<p style='font-weight:600; font-size:0.9rem; margin-bottom:2px; "
-            f"color:#1e293b !important;'>{sesion.nombre_completo}</p>",
-            unsafe_allow_html=True,
-        )
-        badge_rol(sesion.rol)
-        if sesion.institucion:
-            st.markdown(
-                f"<p style='font-size:0.75rem; color:#64748b !important; margin-top:4px;'>"
-                f"{sesion.institucion}</p>",
-                unsafe_allow_html=True,
-            )
-        st.divider()
-
-        # Navegación agrupada por sección
-        nivel_usuario = _ROL_NIVEL.get(sesion.rol, 1)
-        secciones_vistas: set[str] = set()
-
-        for label, ruta, rol_minimo, seccion in PAGINAS:
-            if nivel_usuario < _ROL_NIVEL.get(rol_minimo, 1):
-                continue
-
-            if seccion not in secciones_vistas:
-                secciones_vistas.add(seccion)
-                icono = _SECCION_ICONOS.get(seccion, "")
-                sec_label = _SECCION_LABELS.get(seccion, "")
-                st.markdown(
-                    f"<p style='font-size:0.65rem; font-weight:700; color:#94a3b8 !important; "
-                    f"text-transform:uppercase; letter-spacing:1px; margin:12px 0 4px 4px; "
-                    f"padding:0;'>{icono} {sec_label}</p>",
-                    unsafe_allow_html=True,
-                )
-
-            st.page_link(ruta, label=label)
-
-        st.divider()
-
-        if st.button("Cerrar sesion", use_container_width=True, icon=":material/logout:"):
-            _cerrar_sesion()
-            st.rerun()
-
-        st.markdown(
-            f"<p style='text-align:center; font-size:0.65rem; color:#94a3b8 !important; "
-            f"margin-top:8px;'>v{APP_VERSION}</p>",
-            unsafe_allow_html=True,
-        )
-
-
-# ─── dashboard de bienvenida ──────────────────────────────────────────────────
-
-def _render_card(icono: str, titulo: str, desc: str, ruta: str, label_btn: str) -> None:
-    """Tarjeta de acceso rápido."""
-    st.markdown(
-        f"""
-        <div class="lvca-card">
-            <div class="lvca-card-icon">{icono}</div>
-            <div class="lvca-card-title">{titulo}</div>
-            <div class="lvca-card-desc">{desc}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    st.page_link(ruta, label=label_btn, use_container_width=True)
-
-
-def _dashboard(sesion: SesionUsuario) -> None:
-    _sidebar(sesion)
-
-    page_header(
-        f"Bienvenido, {sesion.nombre}",
-        f"{sesion.rol.capitalize()} &middot; {sesion.email}",
-    )
-    st.divider()
-
-    nivel = _ROL_NIVEL.get(sesion.rol, 1)
-    nivel_visualizador = _ROL_NIVEL.get("visualizador", 0)
-    nivel_admin = _ROL_NIVEL.get("administrador", 0)
-
-    if nivel >= nivel_visualizador:
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            _render_card(
-                "📅", "Campanas",
-                "Gestiona las campanas de monitoreo activas.",
-                "pages/2_Campanas.py", "Ir a campanas →",
-            )
-        with col2:
-            _render_card(
-                "🧪", "Muestras",
-                "Registra muestras de campo y cadena de custodia.",
-                "pages/3_Muestras_Campo.py", "Nueva muestra →",
-            )
-        with col3:
-            _render_card(
-                "🔬", "Resultados",
-                "Ingresa resultados y revisa alertas ECA.",
-                "pages/4_Resultados_Lab.py", "Ver resultados →",
-            )
-        with col4:
-            _render_card(
-                "🗺️", "Geoportal",
-                "Mapa interactivo de puntos de muestreo.",
-                "pages/7_Geoportal.py", "Abrir mapa →",
-            )
-    else:
-        st.info(
-            "Tienes acceso de **visitante**. Puedes consultar el geoportal "
-            "y el mapa de puntos de muestreo."
-        )
-        st.page_link("pages/7_Geoportal.py", label="🗺️ Ver Geoportal")
-
-    if nivel >= nivel_admin:
-        st.divider()
-        st.markdown(
-            "<p style='font-size:0.75rem; font-weight:700; color:#6c757d; "
-            "text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;'>"
-            "Accesos de administracion</p>",
-            unsafe_allow_html=True,
-        )
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            st.page_link("pages/5_Parametros.py", label="📋 Parametros / ECAs",
-                         use_container_width=True)
-        with c2:
-            st.page_link("pages/6_Puntos_Muestreo.py", label="📍 Puntos de muestreo",
-                         use_container_width=True)
-        with c3:
-            st.page_link("pages/8_Informes.py", label="📄 Generar informes",
-                         use_container_width=True)
-        with c4:
-            st.page_link("pages/9_Administracion.py", label="⚙️ Administracion",
-                         use_container_width=True)
-
-
 # ─── punto de entrada ─────────────────────────────────────────────────────
 
 def main() -> None:
@@ -311,7 +151,9 @@ def main() -> None:
     if sesion is None:
         _pantalla_login()
     else:
-        _dashboard(sesion)
+        # Sesión activa: redirigir al panel real (pages/1_Inicio.py).
+        # El top_nav() de esa página sirve la navegación global.
+        st.switch_page("pages/1_Inicio.py")
 
 
 if __name__ == "__main__":
