@@ -844,19 +844,26 @@ def page_header(titulo: str, subtitulo: str = "") -> None:
 # Top navigation horizontal (estilo SSDH/ANA)
 # ─────────────────────────────────────────────────────────────────────────────
 
-# CSS específico de top-nav (se inyecta solo cuando se llama a top_nav())
+# CSS específico de top-nav (se inyecta solo cuando se llama a top_nav()).
+# El contenedor real es `.st-key-lvca_top_nav` (st.container(key=...)) — ese
+# envuelve realmente todo el bloque a nivel DOM, no como un <div> insertado
+# por markdown (que se cierra solo porque cada st.markdown vive en su propio
+# wrapper de Streamlit). Por eso `position: sticky` funciona sobre esa clase.
 _TOP_NAV_CSS = """<style>
-/* Wrapper del top-nav: espacio arriba, separador inferior sutil */
-.lvca-top-nav-wrap {
+.st-key-lvca_top_nav {
+    position: sticky;
+    top: 0;
+    z-index: 999;
     background: #ffffff;
     border-bottom: 1px solid #e2e8f0;
     margin: -1.5rem -1rem 1.5rem -1rem;
-    padding: 14px 1.2rem 6px 1.2rem;
+    padding: 10px 1.2rem 4px 1.2rem;
+    box-shadow: 0 1px 2px rgba(15,23,42,0.02);
 }
 /* Línea 1: marca + usuario */
 .lvca-brand {
     display: flex; align-items: baseline; gap: 12px;
-    margin-bottom: 6px;
+    margin-bottom: 4px;
 }
 .lvca-brand-name {
     font-weight: 700; color: #1b6b35; font-size: 1.15rem;
@@ -873,10 +880,10 @@ _TOP_NAV_CSS = """<style>
                   letter-spacing: 0.04em; font-size: 0.66rem; }
 
 /* Page links dentro del top-nav: se ven como pills horizontales */
-.lvca-top-nav-wrap [data-testid="stPageLink"] {
+.st-key-lvca_top_nav [data-testid="stPageLink"] {
     margin: 0 !important;
 }
-.lvca-top-nav-wrap [data-testid="stPageLink"] a {
+.st-key-lvca_top_nav [data-testid="stPageLink"] a {
     display: flex !important;
     align-items: center;
     justify-content: center;
@@ -892,21 +899,21 @@ _TOP_NAV_CSS = """<style>
     transition: all 0.15s ease !important;
     white-space: nowrap;
 }
-.lvca-top-nav-wrap [data-testid="stPageLink"] a:hover {
+.st-key-lvca_top_nav [data-testid="stPageLink"] a:hover {
     background: #f1f5f9 !important;
     color: #1b6b35 !important;
 }
 /* El contenido del link no se trunca: label completo siempre visible */
-.lvca-top-nav-wrap [data-testid="stPageLink"] a > div,
-.lvca-top-nav-wrap [data-testid="stPageLink"] a p,
-.lvca-top-nav-wrap [data-testid="stPageLink"] a span {
+.st-key-lvca_top_nav [data-testid="stPageLink"] a > div,
+.st-key-lvca_top_nav [data-testid="stPageLink"] a p,
+.st-key-lvca_top_nav [data-testid="stPageLink"] a span {
     overflow: visible !important;
     text-overflow: clip !important;
     white-space: nowrap !important;
     max-width: none !important;
 }
 /* Columnas del horizontal-block: ancho auto según contenido, no equi-repartido */
-.lvca-top-nav-wrap [data-testid="stHorizontalBlock"] {
+.st-key-lvca_top_nav [data-testid="stHorizontalBlock"] {
     flex-wrap: wrap !important;
     gap: 2px !important;
     align-items: center;
@@ -971,42 +978,41 @@ def top_nav() -> None:
     # CSS solo cuando se usa
     st.markdown(_TOP_NAV_CSS, unsafe_allow_html=True)
 
-    # Wrapper que activa el ocultamiento del sidebar y los estilos del nav
-    st.markdown('<div class="lvca-top-nav-wrap">', unsafe_allow_html=True)
+    # st.container(key=...) genera una clase `.st-key-lvca_top_nav` sobre un
+    # wrapper real del DOM — necesario para que `position: sticky` funcione
+    # (un <div> insertado por markdown no envuelve los siblings posteriores).
+    with st.container(key="lvca_top_nav"):
+        # Línea 1: marca + usuario
+        head_l, head_r = st.columns([4, 1])
+        with head_l:
+            st.markdown(
+                '<div class="lvca-brand">'
+                '<span class="lvca-brand-name">LVCA</span>'
+                '<span class="lvca-brand-sub">Plataforma de Vigilancia y Calidad del Agua · AUTODEMA</span>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+        with head_r:
+            rol_label = sesion.rol.replace("_", " ").capitalize()
+            st.markdown(
+                f'<div class="lvca-user-block">'
+                f'<span class="lvca-user-name">{sesion.nombre_completo}</span>'
+                f'<span class="lvca-user-rol">{rol_label}</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
 
-    # Línea 1: marca + usuario
-    head_l, head_r = st.columns([4, 1])
-    with head_l:
-        st.markdown(
-            '<div class="lvca-brand">'
-            '<span class="lvca-brand-name">LVCA</span>'
-            '<span class="lvca-brand-sub">Plataforma de Vigilancia y Calidad del Agua · AUTODEMA</span>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-    with head_r:
-        rol_label = sesion.rol.replace("_", " ").capitalize()
-        st.markdown(
-            f'<div class="lvca-user-block">'
-            f'<span class="lvca-user-name">{sesion.nombre_completo}</span>'
-            f'<span class="lvca-user-rol">{rol_label}</span>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
-
-    # Línea 2: links de navegación horizontales.
-    # Pesos proporcionales a la longitud del label corto, para que los largos
-    # tengan más espacio y los cortos no desperdicien ancho.
-    labels_short = [
-        _TOP_NAV_LABELS.get(ruta, label) for label, ruta, _rol in permitidas
-    ]
-    weights = [max(3, len(lbl) + 2) for lbl in labels_short]
-    nav_cols = st.columns(weights, gap="small")
-    for col, (_, ruta, _rol), lbl in zip(nav_cols, permitidas, labels_short):
-        with col:
-            st.page_link(ruta, label=lbl, icon=_TOP_NAV_ICONS.get(ruta))
-
-    st.markdown('</div>', unsafe_allow_html=True)
+        # Línea 2: links de navegación horizontales.
+        # Pesos proporcionales a la longitud del label corto, para que los
+        # largos tengan más espacio y los cortos no desperdicien ancho.
+        labels_short = [
+            _TOP_NAV_LABELS.get(ruta, label) for label, ruta, _rol in permitidas
+        ]
+        weights = [max(3, len(lbl) + 2) for lbl in labels_short]
+        nav_cols = st.columns(weights, gap="small")
+        for col, (_, ruta, _rol), lbl in zip(nav_cols, permitidas, labels_short):
+            with col:
+                st.page_link(ruta, label=lbl, icon=_TOP_NAV_ICONS.get(ruta))
 
 
 def section_header(titulo: str, icono: str = "") -> None:
