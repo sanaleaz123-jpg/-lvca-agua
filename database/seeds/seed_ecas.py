@@ -300,8 +300,8 @@ ECA_VALORES: list[dict] = [
     {"eca_codigo": "ECA-C4E1", "param_codigo": "P081", "valor_maximo": 1.0},
     {"eca_codigo": "ECA-C4E1", "param_codigo": "P083", "valor_maximo": 0.005},
     {"eca_codigo": "ECA-C4E1", "param_codigo": "P089", "valor_maximo": 0.12},
-    # Clorofila-a limite troficos
-    {"eca_codigo": "ECA-C4E1", "param_codigo": "P124", "valor_maximo": 8.0,   "observacion": "ug/L clorofila-a estado mesotrofico"},
+    # Nota: Clorofila A (P124) no está definida por DS 004-2017-MINAM para
+    # Cat 4 E1 ni Cat 4 E2. No se incluye aquí — interpretación estricta.
 
     # ══════════════════════════════════════════════════════════
     # ECA Categoria 4 E2  -  Conservacion rios
