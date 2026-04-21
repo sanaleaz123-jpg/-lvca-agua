@@ -845,33 +845,41 @@ def page_header(titulo: str, subtitulo: str = "") -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 # CSS específico de top-nav (se inyecta solo cuando se llama a top_nav()).
-# El contenedor real es `.st-key-lvca_top_nav` (st.container(key=...)) — ese
-# envuelve todo el bloque a nivel DOM.
 #
-# Para que `position: sticky` funcione, NINGÚN ancestro puede tener
-# `overflow: hidden/auto/scroll` entre el sticky y su scroll-parent. Se
-# fuerza `overflow: visible` en la cadena de ancestros vía :has().
+# Uso `position: fixed` (no sticky) porque sticky es frágil en Streamlit:
+# depende de que ningún ancestro tenga overflow:hidden/auto, pero forzar
+# overflow:visible en los contenedores de scroll de Streamlit (stMain /
+# stAppViewContainer) deshabilita el scroll de la página.
+#
+# Fixed no depende de ancestros: siempre queda pegado al viewport.
+# Contrapartida: hay que añadir padding-top al contenido para que no
+# quede oculto debajo, y ocultar stHeader (la barra casi-invisible de
+# Streamlit) para que no se solape.
 _TOP_NAV_CSS = """<style>
 .st-key-lvca_top_nav {
-    position: sticky !important;
+    position: fixed !important;
     top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
     z-index: 999 !important;
     background: #ffffff !important;
     border-bottom: 1px solid #e2e8f0;
-    padding: 10px 1.2rem 6px 1.2rem;
-    box-shadow: 0 1px 2px rgba(15,23,42,0.04);
-    margin-bottom: 1rem;
+    padding: 10px 1.5rem 6px 1.5rem;
+    box-shadow: 0 1px 3px rgba(15,23,42,0.04);
 }
 
-/* Forzar overflow visible en la cadena de ancestros que contienen el
-   top-nav — cualquier overflow:hidden/auto intermedio rompe el sticky. */
-[data-testid="stAppViewContainer"]:has(.st-key-lvca_top_nav),
-[data-testid="stMain"]:has(.st-key-lvca_top_nav),
-[data-testid="stMainBlockContainer"]:has(.st-key-lvca_top_nav),
-[data-testid="stVerticalBlock"]:has(> .st-key-lvca_top_nav),
-[data-testid="stVerticalBlockBorderWrapper"]:has(.st-key-lvca_top_nav),
-section.main:has(.st-key-lvca_top_nav) {
-    overflow: visible !important;
+/* Ocultar el stHeader de Streamlit (la delgada barra nativa arriba)
+   para que no choque con el top-nav fijo. */
+[data-testid="stHeader"] {
+    display: none !important;
+}
+
+/* Empujar el contenido de la página para que no quede oculto bajo el
+   top-nav fijo. La altura depende del tamaño del label de usuario +
+   altura de los page_links. 108px es un buffer seguro; si el top-nav
+   quedara más compacto/alto, ajustar aquí. */
+[data-testid="stMainBlockContainer"]:has(.st-key-lvca_top_nav) {
+    padding-top: 108px !important;
 }
 /* Línea 1: marca + usuario */
 .lvca-brand {
