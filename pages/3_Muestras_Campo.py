@@ -21,7 +21,7 @@ import pandas as pd
 import streamlit as st
 
 from components.auth_guard import require_rol
-from components.ui_styles import aplicar_estilos, page_header, success_check_overlay, inline_note
+from components.ui_styles import aplicar_estilos, page_header, success_check_overlay, inline_note, top_nav
 # Nota: get_admin_client ya no se importa directamente — todas las queries van
 # vía services/muestra_service (get_campana_detalle reemplazó al helper local
 # que saltaba el patrón de services).
@@ -1871,6 +1871,7 @@ def _render_ficha_campo() -> None:
 @require_rol("administrador")
 def main() -> None:
     aplicar_estilos()
+    top_nav()
     # El cache de muestras vive solo dentro de un mismo render — al inicio
     # se limpia para que cualquier rerun (después de crear/editar/eliminar)
     # vea datos frescos. Dentro del render los 5 tabs comparten la query.

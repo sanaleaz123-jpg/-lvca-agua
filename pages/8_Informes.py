@@ -17,7 +17,7 @@ import pandas as pd
 import streamlit as st
 
 from components.auth_guard import require_rol
-from components.ui_styles import aplicar_estilos, page_header
+from components.ui_styles import aplicar_estilos, page_header, top_nav
 from services.informe_service import (
     get_resumen_campana,
     get_resumen_punto,
@@ -293,6 +293,7 @@ def _render_informe_punto() -> None:
 @require_rol("visualizador")
 def main() -> None:
     aplicar_estilos()
+    top_nav()
     page_header("Informes", "Generacion de informes y exportacion de datos")
 
     tab_campana, tab_punto = st.tabs([

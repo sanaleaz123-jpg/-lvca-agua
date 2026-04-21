@@ -162,6 +162,13 @@ small, .small, .stCaption, [data-testid="stCaption"] {
 /* ── Ocultar nav nativa de Streamlit ───────────────────────────────────── */
 [data-testid='stSidebarNav'] { display: none; }
 
+/* ── Sidebar global OFF: la navegación se sirve vía top_nav() ──────────── */
+[data-testid="stSidebar"],
+[data-testid="collapsedControl"] {
+    display: none !important;
+}
+[data-testid="stMain"] { margin-left: 0 !important; }
+
 /* ── Sidebar limpio (separación por espacio, no por línea fuerte) ──────── */
 [data-testid="stSidebar"] {
     background: #ffffff;
@@ -888,16 +895,6 @@ _TOP_NAV_CSS = """<style>
 .lvca-top-nav-wrap [data-testid="stPageLink"] a:hover {
     background: #f1f5f9 !important;
     color: #1b6b35 !important;
-}
-/* En modo top-nav, ocultamos el sidebar entero para liberar todo el ancho */
-.lvca-top-nav-wrap ~ * [data-testid="stSidebar"],
-body:has(.lvca-top-nav-wrap) [data-testid="stSidebar"],
-body:has(.lvca-top-nav-wrap) [data-testid="collapsedControl"] {
-    display: none !important;
-}
-/* El contenedor principal: ya sin sidebar, ocupa todo el ancho */
-body:has(.lvca-top-nav-wrap) [data-testid="stMain"] {
-    margin-left: 0 !important;
 }
 </style>"""
 

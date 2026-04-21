@@ -20,7 +20,7 @@ import pandas as pd
 import streamlit as st
 
 from components.auth_guard import require_rol
-from components.ui_styles import aplicar_estilos, page_header, success_check_overlay, toast
+from components.ui_styles import aplicar_estilos, page_header, success_check_overlay, toast, top_nav
 from services.parametro_registry import clasificar_categoria
 from services.resultado_service import (
     get_campanas,
@@ -297,6 +297,7 @@ def main() -> None:
         st.stop()
 
     aplicar_estilos()
+    top_nav()
     page_header("Resultados de Laboratorio", "Ingreso y validacion con semaforo ECA &middot; D.S. N° 004-2017-MINAM")
 
     # ── Selección en cascada ─────────────────────────────────────────────────

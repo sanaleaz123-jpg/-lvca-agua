@@ -19,7 +19,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from components.auth_guard import require_rol
-from components.ui_styles import aplicar_estilos, page_header
+from components.ui_styles import aplicar_estilos, page_header, top_nav
 from services.mapa_service import (
     get_comparativa_eca_punto,
     get_datos_mensuales_parametro,
@@ -101,27 +101,41 @@ def _clasificar_cat(param: dict) -> str:
 
 def _render_kpi_card(valor, label: str, color: str, icono_name: str) -> str:
     """
-    Tarjeta KPI minimalista al estilo SSDH/ANA:
-    - Ícono SVG sutil arriba a la derecha
-    - Label uppercase pequeño
-    - Valor grande y prominente
-    - Franja de color identitaria al borde inferior (3px)
+    Tarjeta KPI estilo SSDH/ANA — más notoria visualmente:
+    - Franja de color de 4px arriba y borde inferior del color (visible)
+    - Ícono SVG en círculo pintado del color (no halo sutil)
+    - Label uppercase, valor prominente con peso 700
     """
     from components.ui_styles import icon as _icon
-    icono_svg = _icon(icono_name, size=18, color=color)
+
+    # rgba con alpha 0.12 para fondo de halo (más compatible que hex 8 dígitos)
+    def _hex_to_rgba(h: str, alpha: float) -> str:
+        h = h.lstrip("#")
+        if len(h) != 6:
+            return f"rgba(148,163,184,{alpha})"
+        r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+        return f"rgba({r},{g},{b},{alpha})"
+
+    halo_bg = _hex_to_rgba(color, 0.14)
+    icono_svg = _icon(icono_name, size=20, color=color)
+
     return f"""
-    <div style="background:#ffffff; border-radius:12px; padding:18px 22px 14px 22px;
-         text-align:left; border:1px solid #f1f5f9; border-bottom:3px solid {color};
+    <div style="background:#ffffff; border-radius:12px;
+         padding:0 0 14px 0;
+         border:1px solid #f1f5f9; overflow:hidden;
+         box-shadow:0 1px 3px rgba(15,23,42,0.04);
          transition: all 0.18s ease;
-         min-height: 110px; display: flex; flex-direction: column; justify-content: space-between;">
-        <div style="display:flex; align-items:center; justify-content:space-between;">
-            <span style="font-size:0.7rem; color:#94a3b8; text-transform:uppercase;
-                 letter-spacing:0.05em; font-weight:600;">{label}</span>
-            <span style="background:{color}1a; padding:6px; border-radius:8px;
+         min-height: 130px; display: flex; flex-direction: column;">
+        <div style="height:4px; background:{color};"></div>
+        <div style="padding:14px 18px 0 18px; display:flex; align-items:center;
+             justify-content:space-between; margin-bottom:8px;">
+            <span style="font-size:0.68rem; color:#64748b; text-transform:uppercase;
+                 letter-spacing:0.06em; font-weight:600;">{label}</span>
+            <span style="background:{halo_bg}; width:34px; height:34px; border-radius:10px;
                  display:inline-flex; align-items:center; justify-content:center;">{icono_svg}</span>
         </div>
-        <div style="font-size:1.85rem; font-weight:600; line-height:1.1; color:{color};
-             letter-spacing:-0.02em; margin-top:8px;">{valor}</div>
+        <div style="padding:0 18px; font-size:2rem; font-weight:700; line-height:1.05;
+             color:{color}; letter-spacing:-0.025em;">{valor}</div>
     </div>"""
 
 
@@ -869,6 +883,7 @@ def _render_ultimos_resultados(punto: dict, cat: str = "") -> None:
 @require_rol("visitante")
 def main() -> None:
     aplicar_estilos()
+    top_nav()
     page_header("Geoportal", "Monitoreo de Calidad de Agua — Cuenca Chili-Quilca")
 
     try:

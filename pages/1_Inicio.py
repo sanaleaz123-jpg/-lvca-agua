@@ -335,9 +335,6 @@ def main() -> None:
         st.stop()
 
     aplicar_estilos()
-    # POC: barra de navegación horizontal arriba (estilo SSDH/ANA).
-    # Reemplaza al sidebar en esta página. Si funciona bien, se extiende
-    # al resto de páginas y se elimina el sidebar global.
     top_nav()
     page_header(
         "Panel de Control LVCA",
