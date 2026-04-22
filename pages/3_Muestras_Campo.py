@@ -21,7 +21,14 @@ import pandas as pd
 import streamlit as st
 
 from components.auth_guard import require_rol
-from components.ui_styles import aplicar_estilos, page_header, success_check_overlay, inline_note, top_nav
+from components.ui_styles import (
+    aplicar_estilos,
+    inline_note,
+    page_header,
+    section_header,
+    success_check_overlay,
+    top_nav,
+)
 # Nota: get_admin_client ya no se importa directamente — todas las queries van
 # vía services/muestra_service (get_campana_detalle reemplazó al helper local
 # que saltaba el patrón de services).
@@ -344,7 +351,7 @@ def _abreviar_nombre(nombre_completo: str) -> str:
 
 
 def _render_registro() -> None:
-    st.markdown("#### Registro de muestra de campo")
+    section_header("Registro de muestra de campo", "edit")
     st.caption("Si el punto ya tiene una muestra en la campaña, se cargan los datos para editar.")
 
     campana_id = _selector_campana_campo("reg")
@@ -467,7 +474,7 @@ def _render_registro() -> None:
     modos_muestreo = ["superficial", "columna"]
     modo_idx = modos_muestreo.index(def_modo) if def_modo in modos_muestreo else 0
 
-    st.markdown("**Modo de muestreo**")
+    section_header("Modo de muestreo", "droplet")
     modo_muestreo = st.radio(
         "Tipo de muestreo",
         modos_muestreo,
@@ -525,7 +532,7 @@ def _render_registro() -> None:
             )
         else:
             # Columna de agua: ecosonda, Secchi y 3 profundidades
-            st.markdown("**Profundidades**")
+            section_header("Profundidades", "waves")
             st.caption("Ingrese las profundidades en metros para cada nivel de muestreo.")
             pt1, pt2 = st.columns(2)
             with pt1:
@@ -575,7 +582,7 @@ def _render_registro() -> None:
         )
 
         # ── Observaciones (incluye clima, descarga, nivel) ──────────────
-        st.markdown("**Observaciones de campo**")
+        section_header("Observaciones de campo", "file")
         oc1, oc2, oc3 = st.columns(3)
         with oc1:
             clima = st.selectbox("Clima", lista_clima, index=clima_idx)
@@ -591,7 +598,7 @@ def _render_registro() -> None:
         )
 
         # ── Fotos de campo ───────────────────────────────────────────────
-        st.markdown("**Fotos iniciales** (opcional, máx. 5)")
+        section_header("Fotos iniciales (opcional, máx. 5)", "eye")
         st.caption(
             "Sube hasta 5 fotos al registrar. Para agregar más después o usar "
             "la cámara del celular, ve al tab **Fotos de Campo**."
