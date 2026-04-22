@@ -42,6 +42,115 @@ ICONOS_PUNTO = {
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Sección 0 — Grilla de módulo-cards estilo SSDH-ANA
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _render_module_grid() -> None:
+    """
+    Grilla 3×2 de navegación a los módulos principales (estilo SSDH-ANA).
+    Cada card es un st.page_link con emoji icon, envuelto en un container
+    con key para scopear el CSS sin afectar page_links de otras partes
+    (ej. top_nav).
+    """
+    st.markdown(
+        """
+        <style>
+        /* Card layout: ícono arriba en círculo pastel + label abajo. */
+        .st-key-lvca_module_grid [data-testid="stPageLink"] a {
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: center !important;
+            justify-content: center !important;
+            gap: 14px !important;
+            padding: 26px 16px 22px 16px !important;
+            background: #ffffff !important;
+            border: 1px solid #e8eaed !important;
+            border-radius: 10px !important;
+            text-align: center !important;
+            min-height: 150px !important;
+            box-shadow: 0 1px 2px rgba(15,23,42,0.04) !important;
+            transition: transform 0.15s ease, box-shadow 0.15s ease,
+                        border-color 0.15s ease !important;
+            color: #1a1a1a !important;
+            font-weight: 600 !important;
+            font-size: 0.92rem !important;
+            line-height: 1.3 !important;
+            white-space: normal !important;
+        }
+        .st-key-lvca_module_grid [data-testid="stPageLink"] a:hover {
+            transform: translateY(-2px) !important;
+            box-shadow: 0 4px 16px rgba(21,101,192,0.15) !important;
+            border-color: #1565C0 !important;
+            color: #1565C0 !important;
+        }
+        /* Primer span dentro del <a> = contenedor del icono (emoji). */
+        .st-key-lvca_module_grid [data-testid="stPageLink"] a > span:first-child {
+            width: 56px !important;
+            height: 56px !important;
+            background: rgba(21,101,192,0.08) !important;
+            border-radius: 50% !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            font-size: 28px !important;
+            line-height: 1 !important;
+            flex-shrink: 0 !important;
+            transition: background 0.15s ease !important;
+        }
+        .st-key-lvca_module_grid [data-testid="stPageLink"] a:hover > span:first-child {
+            background: rgba(21,101,192,0.15) !important;
+        }
+        /* Evitar que el label se trunque con "..." en cards estrechas. */
+        .st-key-lvca_module_grid [data-testid="stPageLink"] a p,
+        .st-key-lvca_module_grid [data-testid="stPageLink"] a div,
+        .st-key-lvca_module_grid [data-testid="stPageLink"] a > span:not(:first-child) {
+            overflow: visible !important;
+            text-overflow: clip !important;
+            white-space: normal !important;
+            line-height: 1.3 !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    with st.container(key="lvca_module_grid"):
+        r1 = st.columns(3, gap="medium")
+        with r1[0]:
+            st.page_link("pages/7_Geoportal.py",
+                         label="Geoportal",
+                         icon="🗺️",
+                         use_container_width=True)
+        with r1[1]:
+            st.page_link("pages/2_Campanas.py",
+                         label="Campañas de Monitoreo",
+                         icon="📋",
+                         use_container_width=True)
+        with r1[2]:
+            st.page_link("pages/3_Muestras_Campo.py",
+                         label="Muestras de Campo",
+                         icon="🧪",
+                         use_container_width=True)
+
+        r2 = st.columns(3, gap="medium")
+        with r2[0]:
+            st.page_link("pages/4_Resultados_Lab.py",
+                         label="Resultados de Laboratorio",
+                         icon="📊",
+                         use_container_width=True)
+        with r2[1]:
+            st.page_link("pages/8_Informes.py",
+                         label="Informes",
+                         icon="📄",
+                         use_container_width=True)
+        with r2[2]:
+            st.page_link("pages/10_Base_Datos.py",
+                         label="Base de Datos",
+                         icon="🗄️",
+                         use_container_width=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Sección 1 — Tarjetas KPI
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -341,6 +450,10 @@ def main() -> None:
         f"AUTODEMA &middot; {sesion.nombre_completo}",
         ambito="Cuenca Chili-Quilca",
     )
+
+    # ── 0. Acceso a módulos (grilla SSDH-ANA) ───────────────────────────────
+    _render_module_grid()
+    st.divider()
 
     # ── Cargar datos ─────────────────────────────────────────────────────────
     with st.spinner("Cargando métricas..."):
