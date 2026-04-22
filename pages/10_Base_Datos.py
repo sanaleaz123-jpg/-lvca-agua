@@ -178,7 +178,7 @@ def main() -> None:
             "Código Punto": d["punto_codigo"],
             "Punto": d["punto_nombre"],
             "Código Muestra": d.get("codigo_muestra", ""),
-            "Código Lab.": d.get("codigo_laboratorio", ""),
+            "Código Lab.": d.get("codigo_laboratorio") or "",
             "Cuenca": d["cuenca"],
             "Tipo": (d["tipo"] or "").capitalize(),
             "ECA": d["eca_codigo"],
@@ -186,6 +186,12 @@ def main() -> None:
         for cod, label in columnas_visibles:
             row[label] = d.get(cod)
         df_rows.append(row)
+
+    # Ocultar columna "Código Lab." si ninguna muestra tiene valor asignado.
+    # Reaparece automáticamente en cuanto se cargue un código en Recepción.
+    if all(not r.get("Código Lab.") for r in df_rows):
+        for r in df_rows:
+            r.pop("Código Lab.", None)
 
     df = pd.DataFrame(df_rows)
 
