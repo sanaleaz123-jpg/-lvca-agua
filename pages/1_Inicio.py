@@ -457,16 +457,21 @@ def _render_mapa(puntos: list[dict]) -> None:
         name="Satélite",
     ).add_to(m)
 
-    # Leyenda
+    # Leyenda estilo SSDH-ANA: sin borde, sombra más presente.
     leyenda = """
-    <div style="position:fixed; bottom:30px; left:30px; z-index:1000;
-         background:white; padding:10px 14px; border-radius:6px;
-         border:1px solid #ccc; font-size:13px; line-height:1.6;
-         box-shadow: 0 2px 6px rgba(0,0,0,0.15);">
-      <b>Estado ECA</b><br>
-      <span style="color:red;">&#9679;</span> Excedencia activa<br>
-      <span style="color:green;">&#9679;</span> Cumple ECA<br>
-      <span style="color:gray;">&#9679;</span> Sin datos recientes
+    <div style="position:fixed; bottom:24px; left:24px; z-index:1000;
+         background:#ffffff; padding:12px 16px; border-radius:8px;
+         font-size:12px; line-height:1.55; min-width:160px;
+         box-shadow: 0 4px 16px rgba(15,23,42,0.14),
+                     0 1px 3px rgba(15,23,42,0.08);
+         font-family:sans-serif;">
+      <div style="font-weight:700; color:#1a1a1a; font-size:13px;
+           letter-spacing:-0.01em; margin-bottom:6px;">Estado ECA</div>
+      <div style="color:#475569;">
+        <span style="color:#c62828; font-size:14px;">&#9679;</span> Excedencia activa<br>
+        <span style="color:#2e7d32; font-size:14px;">&#9679;</span> Cumple ECA<br>
+        <span style="color:#9e9e9e; font-size:14px;">&#9679;</span> Sin datos recientes
+      </div>
     </div>
     """
     m.get_root().html.add_child(folium.Element(leyenda))
@@ -665,16 +670,40 @@ def _render_tareas_pendientes() -> None:
     cols = st.columns(min(3, len(items)))
     for i, item in enumerate(items):
         with cols[i % len(cols)]:
+            # Card SSDH: ícono en círculo pastel a la izquierda, título +
+            # detalle a la derecha, borde izquierdo del color de severidad.
+            h = item["color"].lstrip("#")
+            r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+            halo = f"rgba({r},{g},{b},0.12)"
             st.markdown(
-                f"""<div class="lvca-card" style="text-align:left;">
-                    <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
-                        <span style="color:{item['color']};">{icon(item['icon'], 22, item['color'])}</span>
-                        <span style="font-weight:700; color:#1e293b; font-size:0.95rem;">
-                            {item['title']}
-                        </span>
-                    </div>
-                    <div style="font-size:0.82rem; color:#64748b; margin-bottom:14px; min-height:2.6em;">
-                        {item['detail']}
+                f"""<div style="background:#ffffff;
+                     border:1px solid #e8eaed;
+                     border-left:3px solid {item['color']};
+                     border-radius:8px;
+                     padding:14px 16px;
+                     box-shadow:0 1px 2px rgba(15,23,42,0.04);
+                     text-align:left;">
+                    <div style="display:flex; align-items:flex-start;
+                         gap:12px; margin-bottom:10px;">
+                        <div style="width:38px; height:38px; border-radius:50%;
+                             background:{halo}; flex-shrink:0;
+                             display:inline-flex; align-items:center;
+                             justify-content:center;">
+                            <span style="color:{item['color']}; line-height:0;">
+                                {icon(item['icon'], 20, item['color'])}
+                            </span>
+                        </div>
+                        <div style="flex:1; min-width:0;">
+                            <div style="font-weight:600; color:#1a1a1a;
+                                 font-size:0.93rem; line-height:1.3;">
+                                {item['title']}
+                            </div>
+                            <div style="font-size:0.78rem; color:#64748b;
+                                 margin-top:4px; line-height:1.4;
+                                 min-height:2.4em;">
+                                {item['detail']}
+                            </div>
+                        </div>
                     </div>
                 </div>""",
                 unsafe_allow_html=True,

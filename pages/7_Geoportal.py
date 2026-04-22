@@ -540,22 +540,29 @@ def _construir_mapa(puntos: list[dict], solo_excedencias: bool, mostrar_heatmap:
 
     folium.LayerControl(collapsed=False).add_to(m)
 
-    # Leyenda
+    # Leyenda estilo SSDH-ANA: sin borde, sombra más presente, título con
+    # norma legal debajo. El separador inferior es un hair-line.
     leyenda_html = """
-    <div style="position:fixed; bottom:30px; left:30px; z-index:1000;
-         background:white; padding:10px 14px; border-radius:8px;
-         border:1px solid #ccc; font-size:11px; line-height:1.7;
-         box-shadow:0 2px 8px rgba(0,0,0,0.15); min-width:180px;">
-      <b style="font-size:12px;">Estado ECA</b><br>
-      <span style="font-size:9px; color:#666;">D.S. N° 004-2017-MINAM</span>
-      <div style="margin:6px 0;">
+    <div style="position:fixed; bottom:24px; left:24px; z-index:1000;
+         background:#ffffff; padding:12px 16px; border-radius:8px;
+         font-size:12px; line-height:1.55; min-width:180px;
+         box-shadow: 0 4px 16px rgba(15,23,42,0.14),
+                     0 1px 3px rgba(15,23,42,0.08);
+         font-family:sans-serif;">
+      <div style="font-weight:700; color:#1a1a1a; font-size:13px;
+           letter-spacing:-0.01em;">Estado ECA</div>
+      <div style="font-size:10px; color:#94a3b8; margin-bottom:8px;">
+        D.S. N° 004-2017-MINAM
+      </div>
+      <div style="color:#475569;">
         <span style="color:#2e7d32; font-size:14px;">&#9679;</span> Cumple ECA<br>
         <span style="color:#0a9396; font-size:14px;">&#9679;</span> Excedencia leve<br>
         <span style="color:#e8870e; font-size:14px;">&#9679;</span> Excedencia media<br>
         <span style="color:#c62828; font-size:14px;">&#9679;</span> Excedencia alta<br>
         <span style="color:#9e9e9e; font-size:14px;">&#9679;</span> Sin datos
       </div>
-      <div style="font-size:9px; color:#999; border-top:1px solid #eee; padding-top:3px;">
+      <div style="font-size:10px; color:#94a3b8; border-top:1px solid #f1f5f9;
+           padding-top:6px; margin-top:8px;">
         Radio = N° parámetros evaluados
       </div>
     </div>
