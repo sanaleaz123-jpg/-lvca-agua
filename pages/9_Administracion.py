@@ -16,7 +16,7 @@ import pandas as pd
 import streamlit as st
 
 from components.auth_guard import require_rol
-from components.ui_styles import aplicar_estilos, page_header, top_nav
+from components.ui_styles import aplicar_estilos, page_header, section_header, top_nav
 from services.admin_service import (
     ROLES,
     get_usuarios,
@@ -37,7 +37,7 @@ from services.admin_service import (
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_usuarios() -> None:
-    st.markdown("#### Usuarios registrados")
+    section_header("Usuarios registrados", "users")
 
     usuarios = get_usuarios()
     if not usuarios:
@@ -183,7 +183,7 @@ def _render_editar_usuario(usuario_id: str) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_nuevo_usuario() -> None:
-    st.markdown("#### Registrar nuevo usuario")
+    section_header("Registrar nuevo usuario", "plus")
     st.caption("El usuario recibirá acceso inmediato con las credenciales proporcionadas.")
 
     with st.form("form_nuevo_usuario", clear_on_submit=True):
@@ -248,7 +248,7 @@ def _render_nuevo_usuario() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_sistema() -> None:
-    st.markdown("#### Estado del sistema")
+    section_header("Estado del sistema", "shield")
 
     # ── Estadísticas ─────────────────────────────────────────────────────
     with st.spinner("Cargando estadísticas..."):
@@ -270,7 +270,7 @@ def _render_sistema() -> None:
 
     # ── Actividad reciente ───────────────────────────────────────────────
     st.divider()
-    st.markdown("#### Actividad reciente (últimos 7 días)")
+    section_header("Actividad reciente (últimos 7 días)", "clock")
 
     try:
         actividad = get_actividad_reciente(dias=7)
@@ -324,7 +324,7 @@ def _render_sistema() -> None:
 
     # ── Info del entorno ─────────────────────────────────────────────────
     st.divider()
-    st.markdown("#### Configuración")
+    section_header("Configuración", "settings")
     from config.settings import APP_ENV, SUPABASE_URL
     st.caption(f"Entorno: **{APP_ENV}** | Supabase: {SUPABASE_URL[:40]}...")
 

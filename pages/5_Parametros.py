@@ -16,7 +16,7 @@ import pandas as pd
 import streamlit as st
 
 from components.auth_guard import require_rol
-from components.ui_styles import aplicar_estilos, page_header, top_nav
+from components.ui_styles import aplicar_estilos, page_header, section_header, top_nav
 from services.parametro_service import (
     get_parametros,
     get_parametro,
@@ -117,7 +117,7 @@ def _selector_unidad(
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_listado() -> None:
-    st.markdown("#### Filtros")
+    section_header("Filtros", "filter")
     fc1, fc2, fc3 = st.columns(3)
 
     categorias = get_categorias()
@@ -327,7 +327,7 @@ def _render_editar(parametro_id: str) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_nuevo() -> None:
-    st.markdown("#### Nuevo parámetro de calidad de agua")
+    section_header("Nuevo parámetro de calidad de agua", "plus")
 
     categorias = get_categorias()
     categorias = [c for c in categorias if c["nombre"] in _CATEGORIAS_ORDEN]
@@ -337,7 +337,7 @@ def _render_nuevo() -> None:
     cat_opciones = {c["nombre"]: c["id"] for c in categorias}
 
     # ── Campos fuera del form (para el selector de unidad con free-text) ──
-    st.markdown("##### Datos básicos")
+    section_header("Datos básicos", "edit")
 
     nc1, nc2 = st.columns(2)
     with nc1:
@@ -375,7 +375,7 @@ def _render_nuevo() -> None:
     )
 
     # ── Preservante y tipo de frasco ─────────────────────────────────────
-    st.markdown("##### Preservación y envase")
+    section_header("Preservación y envase", "archive")
     pc1, pc2 = st.columns(2)
     with pc1:
         sel_preservante = st.selectbox(
@@ -437,7 +437,7 @@ def _render_nuevo() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_valores_eca() -> None:
-    st.markdown("#### Límites ECA por parámetro")
+    section_header("Límites ECA por parámetro", "shield")
     st.caption("D.S. N° 004-2017-MINAM — Estándares de Calidad Ambiental para Agua")
 
     ecas = get_ecas()
@@ -480,7 +480,7 @@ def _render_valores_eca() -> None:
 
         # ── Editar/eliminar un valor existente ────────────────────────────────
         st.divider()
-        st.markdown("##### Editar valor existente")
+        section_header("Editar valor existente", "edit")
 
         val_opciones = {
             f"{v['parametro_codigo']} — {v['parametro_nombre']}": v
@@ -538,7 +538,7 @@ def _render_valores_eca() -> None:
 
     # ── Agregar nuevo valor ──────────────────────────────────────────────────
     st.divider()
-    st.markdown("##### Agregar nuevo límite")
+    section_header("Agregar nuevo límite", "plus")
 
     from services.parametro_service import get_parametros as _get_params
     all_params = _get_params(solo_activos=True)
