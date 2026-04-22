@@ -65,6 +65,19 @@ def _cerrar_sesion() -> None:
 
 # ─── pantalla de login ────────────────────────────────────────────────────────
 
+@st.cache_data(show_spinner=False)
+def _img_data_uri_cached(path: str) -> str:
+    """Lee un PNG del disco y lo convierte a data:URI base64. Cacheado
+    con @st.cache_data para que solo se ejecute una vez por sesión."""
+    import base64
+    from pathlib import Path as _Path
+    p = _Path(path)
+    if not p.exists():
+        return ""
+    b64 = base64.b64encode(p.read_bytes()).decode("ascii")
+    return f"data:image/png;base64,{b64}"
+
+
 def _pantalla_login() -> None:
     """Pantalla de login estilo SSDH-ANA — card centrada con banner azul."""
     # Cargar estilos globales (inyecta CSS + footer institucional).
@@ -86,15 +99,28 @@ def _pantalla_login() -> None:
             max-width: 100% !important;
         }
         /* El container con key="lvca_login_card" se convierte en card blanca
-           con sombra y banner azul arriba. */
+           con sombra y banner azul arriba. min-height reserva el alto
+           esperado para evitar el "flash" durante el streaming de Streamlit
+           (los widgets del form tardan unos ms más que el HTML del banner
+           en aparecer — si el card ya tiene altura reservada, no hay
+           saltos visuales). */
         .st-key-lvca_login_card {
             background: #ffffff !important;
             border-radius: 14px !important;
             box-shadow: 0 12px 32px rgba(13, 71, 161, 0.12),
                         0 4px 8px rgba(15, 23, 42, 0.04) !important;
             overflow: hidden !important;
-            padding: 0 !important;
+            padding: 0 0 18px 0 !important;
             border: 1px solid #eef0f2 !important;
+            min-height: 640px !important;
+        }
+        /* Padding horizontal aplicado a todos los hijos del card EXCEPTO
+           el banner azul (que tiene que llegar al borde). El banner es el
+           primer hijo, el resto recibe margen via esta regla. */
+        .st-key-lvca_login_card > div > div:not(:first-child),
+        .st-key-lvca_login_card [data-testid="stForm"] {
+            padding-left: 28px !important;
+            padding-right: 28px !important;
         }
         /* Inputs del login con estilo más limpio. */
         .st-key-lvca_login_card [data-baseweb="input"] {
@@ -159,14 +185,21 @@ def _pantalla_login() -> None:
         unsafe_allow_html=True,
     )
 
+    # Preparar los logos una vez (cacheado), antes del render del card.
+    autodema_uri = _img_data_uri_cached("imagenes/autodema_logo.png")
+    lvca_uri = _img_data_uri_cached("imagenes/logo_lvca.png")
+
     cols = st.columns([1, 1.6, 1])
     with cols[1]:
         with st.container(key="lvca_login_card"):
-            # Banner azul arriba del card (con gradiente SSDH).
+            # UN solo st.markdown para banner + logos + título "Iniciar
+            # sesión". Menos deltas de Streamlit = menos "flash" durante
+            # el streaming inicial de la página.
             st.markdown(
-                """
+                f"""
                 <div style="background:linear-gradient(135deg,#0D47A1 0%,#1565C0 100%);
-                     color:white; padding:28px 28px 22px 28px; text-align:center;">
+                     color:white; padding:28px 28px 22px 28px; text-align:center;
+                     margin:-0.5rem -1rem 0 -1rem;">
                     <h1 style="margin:0; font-size:1.45rem; font-weight:700;
                          color:#ffffff; letter-spacing:-0.02em; line-height:1.25;">
                         Laboratorio de Vigilancia<br>de Calidad de Agua
@@ -177,90 +210,60 @@ def _pantalla_login() -> None:
                         AUTODEMA
                     </p>
                 </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr;
+                     gap:14px; margin:22px 0 4px 0;">
+                    <div class="lvca-logo-frame">
+                        <img src="{autodema_uri}" alt="PEIMS-AUTODEMA"/>
+                    </div>
+                    <div class="lvca-logo-frame">
+                        <img src="{lvca_uri}" alt="LVCA"/>
+                    </div>
+                </div>
+                <div style="text-align:center; color:#1565C0; font-size:0.88rem;
+                     font-weight:600; margin:22px 0 8px 0; letter-spacing:-0.01em;">
+                    Iniciar sesión
+                </div>
                 """,
                 unsafe_allow_html=True,
             )
 
-            # Cuerpo del card — logos + form
-            inner_cols = st.columns([1, 10, 1])
-            with inner_cols[1]:
-                st.markdown("<div style='height:22px;'></div>", unsafe_allow_html=True)
-
-                # Logos en contenedores blancos uniformes para que el PNG
-                # transparente del LVCA no muestre el checker pattern.
-                import base64
-                from pathlib import Path
-
-                def _img_data_uri(path: str) -> str:
-                    p = Path(path)
-                    if not p.exists():
-                        return ""
-                    b64 = base64.b64encode(p.read_bytes()).decode("ascii")
-                    return f"data:image/png;base64,{b64}"
-
-                autodema_uri = _img_data_uri("imagenes/autodema_logo.png")
-                lvca_uri = _img_data_uri("imagenes/logo_lvca.png")
-
-                st.markdown(
-                    f"""
-                    <div style="display:grid; grid-template-columns:1fr 1fr;
-                         gap:14px; margin-bottom:4px;">
-                        <div class="lvca-logo-frame">
-                            <img src="{autodema_uri}" alt="PEIMS-AUTODEMA"/>
-                        </div>
-                        <div class="lvca-logo-frame">
-                            <img src="{lvca_uri}" alt="LVCA"/>
-                        </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
+            with st.form("form_login", clear_on_submit=False):
+                email = st.text_input(
+                    "Correo electrónico",
+                    placeholder="usuario@autodema.gob.pe",
+                )
+                password = st.text_input(
+                    "Contraseña",
+                    type="password",
+                    placeholder="••••••••",
+                )
+                submitted = st.form_submit_button(
+                    "Ingresar",
+                    type="primary",
+                    use_container_width=True,
                 )
 
-                st.markdown(
-                    "<div style='text-align:center; color:#1565C0; font-size:0.88rem; "
-                    "font-weight:600; margin:22px 0 8px 0; letter-spacing:-0.01em;'>"
-                    "Iniciar sesión</div>",
-                    unsafe_allow_html=True,
-                )
+            if submitted:
+                if not email or not password:
+                    st.error("Completa todos los campos.")
+                else:
+                    with st.spinner("Verificando credenciales..."):
+                        try:
+                            sesion = login(email, password)
+                            _iniciar_sesion(sesion)
+                            st.rerun()
+                        except AuthError as exc:
+                            st.error(str(exc))
 
-                with st.form("form_login", clear_on_submit=False):
-                    email = st.text_input(
-                        "Correo electrónico",
-                        placeholder="usuario@autodema.gob.pe",
-                    )
-                    password = st.text_input(
-                        "Contraseña",
-                        type="password",
-                        placeholder="••••••••",
-                    )
-                    st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
-                    submitted = st.form_submit_button(
-                        "Ingresar",
-                        type="primary",
-                        use_container_width=True,
-                    )
-
-                if submitted:
-                    if not email or not password:
-                        st.error("Completa todos los campos.")
-                    else:
-                        with st.spinner("Verificando credenciales..."):
-                            try:
-                                sesion = login(email, password)
-                                _iniciar_sesion(sesion)
-                                st.rerun()
-                            except AuthError as exc:
-                                st.error(str(exc))
-
-                # Pie del card
-                st.markdown(
-                    f"""<div style='text-align:center; color:#94a3b8;
-                         font-size:0.72rem; margin-top:18px;
-                         border-top:1px solid #f1f5f9; padding:12px 0 6px 0;'>
-                        {APP_ENTIDAD} · v{APP_VERSION}
-                    </div>""",
-                    unsafe_allow_html=True,
-                )
+            # Pie del card
+            st.markdown(
+                f"""<div style='text-align:center; color:#94a3b8;
+                     font-size:0.72rem; margin-top:16px;
+                     border-top:1px solid #f1f5f9; padding:12px 0 0 0;'>
+                    {APP_ENTIDAD} · v{APP_VERSION}
+                </div>""",
+                unsafe_allow_html=True,
+            )
 
 
 # ─── punto de entrada ─────────────────────────────────────────────────────
