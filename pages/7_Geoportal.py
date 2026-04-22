@@ -99,47 +99,6 @@ def _clasificar_cat(param: dict) -> str:
 # 1. DASHBOARD RESUMEN
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _render_geoportal_banner(titulo: str, subtitulo: str, ambito: str = "") -> None:
-    """
-    Banner estilo SSDH-ANA — sustituye al page_header() plano solo en el
-    Geoportal. Gradiente azul oscuro, título en blanco, subtítulo en azul
-    claro semitransparente, y (opcional) un tag de ámbito a la derecha
-    (equivalente al "UH 132" del SSDH).
-    """
-    ambito_html = (
-        f'<div style="display:flex; align-items:center; gap:8px; '
-        f'background:rgba(255,255,255,0.12); padding:6px 14px; '
-        f'border-radius:20px; font-size:0.8rem; color:#ffffff; '
-        f'font-weight:500; white-space:nowrap;">'
-        f'<span style="font-size:0.95rem; line-height:1;">🗺️</span> {ambito}'
-        f'</div>'
-        if ambito else ""
-    )
-    st.markdown(
-        f"""
-        <div style="background:linear-gradient(135deg,#0D47A1 0%,#1565C0 100%);
-             color:white; padding:18px 26px; border-radius:10px;
-             box-shadow:0 4px 12px rgba(13,71,161,0.25);
-             margin-bottom:18px;
-             display:flex; align-items:center; justify-content:space-between;
-             gap:20px; flex-wrap:wrap;">
-            <div style="flex:1; min-width:260px;">
-                <h1 style="margin:0; font-size:1.5rem; font-weight:700;
-                     color:#ffffff; letter-spacing:-0.02em; line-height:1.2;">
-                    {titulo}
-                </h1>
-                <p style="margin:4px 0 0 0; font-size:0.82rem;
-                     color:rgba(255,255,255,0.82); font-weight:400;">
-                    {subtitulo}
-                </p>
-            </div>
-            {ambito_html}
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
 def _render_kpi_card(
     valor,
     label: str,
@@ -946,7 +905,7 @@ def _render_ultimos_resultados(punto: dict, cat: str = "") -> None:
 def main() -> None:
     aplicar_estilos()
     top_nav()
-    _render_geoportal_banner(
+    page_header(
         "Geoportal",
         "Vigilancia de Calidad del Agua · LVCA",
         ambito="Sistemas Chili Regulado y Colca Regulado · AUTODEMA",
