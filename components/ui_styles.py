@@ -849,7 +849,8 @@ def page_header(titulo: str, subtitulo: str = "", ambito: str = "") -> None:
         f'background:rgba(255,255,255,0.12); padding:6px 14px; '
         f'border-radius:20px; font-size:0.8rem; color:#ffffff; '
         f'font-weight:500; white-space:nowrap;">'
-        f'<span style="font-size:0.95rem; line-height:1;">🗺️</span> {ambito}'
+        f'<span class="material-symbols-rounded" '
+        f'style="font-size:18px; line-height:1;">map</span> {ambito}'
         f'</div>'
         if ambito else ""
     )

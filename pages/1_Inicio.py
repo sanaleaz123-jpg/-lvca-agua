@@ -119,34 +119,34 @@ def _render_module_grid() -> None:
         with r1[0]:
             st.page_link("pages/7_Geoportal.py",
                          label="Geoportal",
-                         icon="🗺️",
+                         icon=":material/map:",
                          use_container_width=True)
         with r1[1]:
             st.page_link("pages/2_Campanas.py",
                          label="Campañas de Monitoreo",
-                         icon="📋",
+                         icon=":material/event:",
                          use_container_width=True)
         with r1[2]:
             st.page_link("pages/3_Muestras_Campo.py",
                          label="Muestras de Campo",
-                         icon="🧪",
+                         icon=":material/science:",
                          use_container_width=True)
 
         r2 = st.columns(3, gap="medium")
         with r2[0]:
             st.page_link("pages/4_Resultados_Lab.py",
                          label="Resultados de Laboratorio",
-                         icon="📊",
+                         icon=":material/biotech:",
                          use_container_width=True)
         with r2[1]:
             st.page_link("pages/8_Informes.py",
                          label="Informes",
-                         icon="📄",
+                         icon=":material/description:",
                          use_container_width=True)
         with r2[2]:
             st.page_link("pages/10_Base_Datos.py",
                          label="Base de Datos",
-                         icon="🗄️",
+                         icon=":material/database:",
                          use_container_width=True)
 
 
@@ -154,12 +154,58 @@ def _render_module_grid() -> None:
 # Sección 1 — Tarjetas KPI
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _render_kpi_card_material(valor, label: str, color: str, icon: str) -> str:
+    """
+    KPI card estilo SSDH-ANA con Material icon (en vez de SVG custom del
+    icon() registry). Mismo patrón visual que los KPI del Geoportal v2:
+    borde inferior coloreado + ícono circular pastel + valor grande dark.
+    """
+    h = color.lstrip("#")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    halo = f"rgba({r},{g},{b},0.12)"
+    return f"""
+    <div style="background:#ffffff; border-radius:8px;
+         padding:14px 18px 12px 18px;
+         border:1px solid #e8eaed;
+         border-bottom:3px solid {color};
+         box-shadow:0 1px 2px rgba(15,23,42,0.04);
+         min-height:110px; display:flex; flex-direction:column;">
+        <div style="display:flex; justify-content:space-between;
+             align-items:flex-start; gap:10px; margin-bottom:14px;">
+            <div style="font-size:0.88rem; color:#374151; font-weight:500;
+                 letter-spacing:-0.01em; flex:1; line-height:1.3;">{label}</div>
+            <div style="width:42px; height:42px; border-radius:50%;
+                 background:{halo};
+                 display:inline-flex; align-items:center;
+                 justify-content:center; flex-shrink:0;">
+                <span class="material-symbols-rounded"
+                    style="font-size:22px; color:{color}; line-height:1;">{icon}</span>
+            </div>
+        </div>
+        <div style="font-size:1.9rem; font-weight:400;
+             color:#1a1a1a; line-height:1; letter-spacing:-0.02em;">{valor}</div>
+    </div>"""
+
+
 def _render_kpis(metricas: dict) -> None:
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Muestras (30 d)",        metricas["muestras_mes"])
-    k2.metric("Parámetros analizados",  metricas["parametros_mes"])
-    k3.metric("Excedencias activas",    metricas["excedencias_activas"])
-    k4.metric("Puntos monitoreados",    metricas["puntos_monitoreados"])
+    cards = [
+        {"valor": metricas["muestras_mes"],
+         "label": "Muestras (30 d)",
+         "color": "#0A9396", "icon": "science"},
+        {"valor": metricas["parametros_mes"],
+         "label": "Parámetros analizados",
+         "color": "#00796B", "icon": "analytics"},
+        {"valor": metricas["excedencias_activas"],
+         "label": "Excedencias activas",
+         "color": "#C62828", "icon": "warning"},
+        {"valor": metricas["puntos_monitoreados"],
+         "label": "Puntos monitoreados",
+         "color": "#1565C0", "icon": "place"},
+    ]
+    cols = st.columns(4, gap="medium")
+    for col, card in zip(cols, cards):
+        with col:
+            st.markdown(_render_kpi_card_material(**card), unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
