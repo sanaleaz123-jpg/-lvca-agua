@@ -550,6 +550,32 @@ hr {
     transition: all 0.15s ease;
 }
 
+/* ── Footer institucional (position:fixed abajo) ──────────────────────── */
+.lvca-footer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: #0D47A1;
+    color: #ffffff;
+    text-align: center;
+    font-size: 0.72rem;
+    font-weight: 500;
+    padding: 7px 16px 6px 16px;
+    z-index: 100;
+    letter-spacing: 0.02em;
+    box-shadow: 0 -2px 8px rgba(13, 71, 161, 0.15);
+}
+.lvca-footer .lvca-footer-sep {
+    margin: 0 8px;
+    opacity: 0.55;
+}
+/* Padding-bottom en el main container para que el contenido no se
+   oculte detrás del footer fijo. */
+[data-testid="stMainBlockContainer"] {
+    padding-bottom: 48px !important;
+}
+
 /* ── Filter bar estilo SSDH: blanco con sombra sutil ──────────────────── */
 .lvca-filter-bar {
     background: #ffffff;
@@ -854,6 +880,19 @@ html { scroll-behavior: smooth; }
 # API pública
 # ─────────────────────────────────────────────────────────────────────────────
 
+_FOOTER_HTML = """
+<div class="lvca-footer">
+    <span class="material-symbols-rounded"
+        style="font-size:14px; vertical-align:-2px; margin-right:4px;">water_drop</span>
+    PEIMS / LVCA &middot; AUTODEMA
+    <span class="lvca-footer-sep">&middot;</span>
+    D.S. N° 004-2017-MINAM
+    <span class="lvca-footer-sep">&middot;</span>
+    v1.0.0
+</div>
+"""
+
+
 def aplicar_estilos() -> None:
     """
     Inyecta el CSS global y la fuente Inter. Llamar al inicio de cada página.
@@ -862,9 +901,14 @@ def aplicar_estilos() -> None:
     st.markdown(unsafe_allow_html=True) — una para el <link> de Google Fonts
     y otra para el bloque <style>. Esto evita que el parser de markdown se
     confunda con múltiples elementos top-level mezclados.
+
+    Además inyecta el footer institucional (position:fixed) que se muestra
+    en todas las páginas. Como `position:fixed` saca el elemento del flow,
+    el orden de inyección no importa.
     """
     st.markdown(_FONT_LINK, unsafe_allow_html=True)
     st.markdown(_GLOBAL_CSS, unsafe_allow_html=True)
+    st.markdown(_FOOTER_HTML, unsafe_allow_html=True)
 
 
 def page_header(titulo: str, subtitulo: str = "", ambito: str = "") -> None:
