@@ -163,25 +163,15 @@ def _pantalla_login() -> None:
     with cols[1]:
         with st.container(key="lvca_login_card"):
             # Banner azul arriba del card (con gradiente SSDH).
-            # El ícono water_drop usa Material Symbols Rounded (font cargado
-            # desde aplicar_estilos() → _FONT_LINK).
             st.markdown(
                 """
                 <div style="background:linear-gradient(135deg,#0D47A1 0%,#1565C0 100%);
                      color:white; padding:28px 28px 22px 28px; text-align:center;">
-                    <div style="display:flex; align-items:center; gap:14px;
-                         justify-content:center; margin-bottom:6px;">
-                        <span class="material-symbols-rounded"
-                            style="font-size:36px; line-height:1; color:#ffffff;
-                            font-variation-settings:'FILL' 1;">water_drop</span>
-                        <h1 style="margin:0; font-size:1.35rem; font-weight:700;
-                             color:#ffffff; letter-spacing:-0.02em; line-height:1.2;
-                             text-align:left;">
-                            Laboratorio de Vigilancia<br>
-                            de Calidad de Agua
-                        </h1>
-                    </div>
-                    <p style="margin:10px 0 0 0; font-size:0.82rem;
+                    <h1 style="margin:0; font-size:1.45rem; font-weight:700;
+                         color:#ffffff; letter-spacing:-0.02em; line-height:1.25;">
+                        Laboratorio de Vigilancia<br>de Calidad de Agua
+                    </h1>
+                    <p style="margin:12px 0 0 0; font-size:0.82rem;
                          color:rgba(255,255,255,0.92); font-weight:600;
                          letter-spacing:0.1em; text-transform:uppercase;">
                         AUTODEMA
