@@ -111,17 +111,48 @@ def _pantalla_login() -> None:
             font-size: 0.8rem !important;
             font-weight: 500 !important;
         }
-        /* Botón primario "Ingresar" */
-        .st-key-lvca_login_card button[kind="primary"] {
+        /* Botón primario "Ingresar" — selectores múltiples para ganar
+           especificidad contra el tema default de Streamlit (verde).
+           El form submit button usa kind="primaryFormSubmit" en ciertas
+           versiones; añadimos fallback genérico. */
+        .st-key-lvca_login_card button[kind="primary"],
+        .st-key-lvca_login_card button[kind="primaryFormSubmit"],
+        .st-key-lvca_login_card [data-testid="stFormSubmitButton"] button,
+        .st-key-lvca_login_card .stFormSubmitButton button {
             background: linear-gradient(135deg,#0D47A1 0%,#1565C0 100%) !important;
+            background-color: #0D47A1 !important;
+            color: #ffffff !important;
             border: none !important;
             box-shadow: 0 2px 6px rgba(13,71,161,0.2) !important;
             font-weight: 600 !important;
             letter-spacing: 0.02em !important;
         }
-        .st-key-lvca_login_card button[kind="primary"]:hover {
+        .st-key-lvca_login_card button[kind="primary"]:hover,
+        .st-key-lvca_login_card button[kind="primaryFormSubmit"]:hover,
+        .st-key-lvca_login_card [data-testid="stFormSubmitButton"] button:hover,
+        .st-key-lvca_login_card .stFormSubmitButton button:hover {
+            background: linear-gradient(135deg,#0D47A1 0%,#1976D2 100%) !important;
             box-shadow: 0 4px 12px rgba(13,71,161,0.3) !important;
             transform: translateY(-1px) !important;
+        }
+        /* Contenedores de logos: fondo blanco, sombra sutil, alto uniforme
+           — para que el PNG con transparencia no muestre el checker pattern
+           del tema oscuro / fondo gris. */
+        .lvca-logo-frame {
+            background: #ffffff;
+            border: 1px solid #eef0f2;
+            border-radius: 10px;
+            padding: 14px 18px;
+            height: 110px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 1px 3px rgba(15,23,42,0.04);
+        }
+        .lvca-logo-frame img {
+            max-height: 82px;
+            max-width: 100%;
+            object-fit: contain;
         }
         </style>
         """,
@@ -132,22 +163,28 @@ def _pantalla_login() -> None:
     with cols[1]:
         with st.container(key="lvca_login_card"):
             # Banner azul arriba del card (con gradiente SSDH).
+            # El ícono water_drop usa Material Symbols Rounded (font cargado
+            # desde aplicar_estilos() → _FONT_LINK).
             st.markdown(
                 """
                 <div style="background:linear-gradient(135deg,#0D47A1 0%,#1565C0 100%);
-                     color:white; padding:26px 30px 22px 30px; text-align:center;">
-                    <div style="display:inline-flex; align-items:center; gap:10px;
-                         justify-content:center; margin-bottom:8px;">
+                     color:white; padding:28px 28px 22px 28px; text-align:center;">
+                    <div style="display:flex; align-items:center; gap:14px;
+                         justify-content:center; margin-bottom:6px;">
                         <span class="material-symbols-rounded"
-                            style="font-size:30px; line-height:1; color:#ffffff;">water_drop</span>
-                        <h1 style="margin:0; font-size:1.7rem; font-weight:700;
-                             color:#ffffff; letter-spacing:-0.02em; line-height:1.1;">
-                            Plataforma LVCA
+                            style="font-size:36px; line-height:1; color:#ffffff;
+                            font-variation-settings:'FILL' 1;">water_drop</span>
+                        <h1 style="margin:0; font-size:1.35rem; font-weight:700;
+                             color:#ffffff; letter-spacing:-0.02em; line-height:1.2;
+                             text-align:left;">
+                            Laboratorio de Vigilancia<br>
+                            de Calidad de Agua
                         </h1>
                     </div>
-                    <p style="margin:0; font-size:0.82rem;
-                         color:rgba(255,255,255,0.88); font-weight:400;">
-                        Laboratorio de Vigilancia de la Calidad del Agua
+                    <p style="margin:10px 0 0 0; font-size:0.82rem;
+                         color:rgba(255,255,255,0.92); font-weight:600;
+                         letter-spacing:0.1em; text-transform:uppercase;">
+                        AUTODEMA
                     </p>
                 </div>
                 """,
@@ -157,17 +194,41 @@ def _pantalla_login() -> None:
             # Cuerpo del card — logos + form
             inner_cols = st.columns([1, 10, 1])
             with inner_cols[1]:
-                st.markdown("<div style='height:18px;'></div>", unsafe_allow_html=True)
+                st.markdown("<div style='height:22px;'></div>", unsafe_allow_html=True)
 
-                logo_l, logo_r = st.columns([1, 1])
-                with logo_l:
-                    st.image("imagenes/autodema_logo.png", width=110)
-                with logo_r:
-                    st.image("imagenes/logo_lvca.png", width=110)
+                # Logos en contenedores blancos uniformes para que el PNG
+                # transparente del LVCA no muestre el checker pattern.
+                import base64
+                from pathlib import Path
+
+                def _img_data_uri(path: str) -> str:
+                    p = Path(path)
+                    if not p.exists():
+                        return ""
+                    b64 = base64.b64encode(p.read_bytes()).decode("ascii")
+                    return f"data:image/png;base64,{b64}"
+
+                autodema_uri = _img_data_uri("imagenes/autodema_logo.png")
+                lvca_uri = _img_data_uri("imagenes/logo_lvca.png")
 
                 st.markdown(
-                    "<div style='text-align:center; color:#1565C0; font-size:0.85rem; "
-                    "font-weight:600; margin:16px 0 8px 0; letter-spacing:-0.01em;'>"
+                    f"""
+                    <div style="display:grid; grid-template-columns:1fr 1fr;
+                         gap:14px; margin-bottom:4px;">
+                        <div class="lvca-logo-frame">
+                            <img src="{autodema_uri}" alt="PEIMS-AUTODEMA"/>
+                        </div>
+                        <div class="lvca-logo-frame">
+                            <img src="{lvca_uri}" alt="LVCA"/>
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+                st.markdown(
+                    "<div style='text-align:center; color:#1565C0; font-size:0.88rem; "
+                    "font-weight:600; margin:22px 0 8px 0; letter-spacing:-0.01em;'>"
                     "Iniciar sesión</div>",
                     unsafe_allow_html=True,
                 )
