@@ -133,6 +133,11 @@ _FONT_LINK = (
     '<link rel="preconnect" href="https://fonts.googleapis.com">'
     '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
     '<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">'
+    # Material Symbols Rounded — para íconos en HTML <span class="material-symbols-rounded">.
+    # Streamlit la carga automáticamente solo si hay st.page_link(icon=":material/..."),
+    # así que la forzamos aquí para que funcione también en login y cualquier HTML
+    # inyectado antes de que se rendericen los page_links.
+    '<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet">'
 )
 
 _GLOBAL_CSS = """<style>
@@ -548,6 +553,24 @@ hr {
 [data-testid="stAlert"] {
     border-radius: 10px;
     transition: all 0.15s ease;
+}
+
+/* ── Material Symbols Rounded: clase base por si Streamlit no la define
+      todavía cuando el HTML se renderiza (ej. en el login). ──────────── */
+.material-symbols-rounded {
+    font-family: 'Material Symbols Rounded', sans-serif !important;
+    font-weight: normal;
+    font-style: normal;
+    line-height: 1;
+    letter-spacing: normal;
+    text-transform: none;
+    display: inline-block;
+    white-space: nowrap;
+    word-wrap: normal;
+    direction: ltr;
+    font-feature-settings: 'liga';
+    -webkit-font-feature-settings: 'liga';
+    -webkit-font-smoothing: antialiased;
 }
 
 /* ── Footer institucional (position:fixed abajo) ──────────────────────── */
