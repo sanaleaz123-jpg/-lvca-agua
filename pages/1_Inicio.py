@@ -338,7 +338,8 @@ def main() -> None:
     top_nav()
     page_header(
         "Panel de Control LVCA",
-        f"AUTODEMA — Cuenca Chili-Quilca &middot; {sesion.nombre_completo}",
+        f"AUTODEMA &middot; {sesion.nombre_completo}",
+        ambito="Cuenca Chili-Quilca",
     )
 
     # ── Cargar datos ─────────────────────────────────────────────────────────

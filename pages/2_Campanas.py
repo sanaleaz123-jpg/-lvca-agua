@@ -697,7 +697,11 @@ def _render_formulario_nueva() -> None:
 def main() -> None:
     aplicar_estilos()
     top_nav()
-    page_header("Campañas de Monitoreo", "Gestión del ciclo de vida de campañas — AUTODEMA / Cuenca Chili-Quilca")
+    page_header(
+        "Campañas de Monitoreo",
+        "Gestión del ciclo de vida de campañas · AUTODEMA",
+        ambito="Cuenca Chili-Quilca",
+    )
 
     tab_lista, tab_nueva = st.tabs(["📋 Listado de campañas", "➕ Nueva campaña"])
 
