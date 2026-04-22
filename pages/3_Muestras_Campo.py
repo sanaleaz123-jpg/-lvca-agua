@@ -786,7 +786,7 @@ def _render_registro() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_insitu() -> None:
-    st.markdown("#### Parámetros medidos en campo")
+    section_header("Parámetros medidos en campo", "thermometer")
 
     # Selector unificado: campañas en campo o ya recibidas en lab pueden tener
     # mediciones in-situ aún por registrar
@@ -874,7 +874,7 @@ def _render_insitu() -> None:
     limites = get_limites_insitu(muestra_id)
 
     # ── Equipos de medición (dropdown compartido con cadena) ─────────────
-    st.markdown("**Equipos de medición**")
+    section_header("Equipos de medición", "microscope")
 
     equipos_disponibles = get_equipos_registrados()
     opciones_eq = [f"{e['codigo']} — {e['nombre']}" for e in equipos_disponibles]
@@ -1150,7 +1150,7 @@ def _render_insitu_columna(
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_custodia() -> None:
-    st.markdown("#### Recepción en laboratorio")
+    section_header("Recepción en laboratorio", "archive")
     st.caption(
         "Avanza el estado de cada muestra individual: registra recepción "
         "en lab, cambia a 'analizada', etc. Para generar el documento oficial "
@@ -1210,7 +1210,7 @@ def _render_custodia() -> None:
     # ── Recepción en laboratorio (transporte → laboratorio) ──────────────
     with col_b:
         if estado_actual == "en_transporte":
-            st.markdown("**Recepción en laboratorio**")
+            section_header("Recepción en laboratorio", "archive")
 
     if estado_actual == "en_transporte":
         with st.form("form_recepcion", clear_on_submit=False):
@@ -1295,7 +1295,7 @@ def _render_custodia() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_listado() -> None:
-    st.markdown("#### Listado de muestras")
+    section_header("Listado de muestras", "list")
 
     campana_id = _selector_campana_todas("listado")
     if not campana_id:
@@ -1440,7 +1440,7 @@ def _opciones_supervisor_cadena() -> list[str]:
 
 
 def _render_cadena_custodia() -> None:
-    st.markdown("#### Documento de Cadena de Custodia — Formato AUTODEMA")
+    section_header("Documento de Cadena de Custodia — Formato AUTODEMA", "clipboard")
     st.caption(
         "Genera el documento oficial CC-MON-01 (Excel y PDF) a partir de las "
         "muestras recibidas en laboratorio. Para cambiar el estado de una "
@@ -1619,7 +1619,7 @@ def _render_cadena_custodia() -> None:
         cfg["parametros_lab"] = params_seleccionados
 
         # Parámetros extra
-        st.markdown("**Parámetros adicionales** (separados por coma)")
+        section_header("Parámetros adicionales (separados por coma)", "plus")
         extras_text = st.text_input(
             "Parámetros extra",
             placeholder="Ej: Cianuro, DBO5, Coliformes totales",
@@ -1667,7 +1667,7 @@ def _render_cadena_custodia() -> None:
 
     # ── Botones de descarga ──────────────────────────────────────────────
     st.divider()
-    st.markdown("#### Descargar cadena de custodia")
+    section_header("Descargar cadena de custodia", "download")
 
     # Persistir configuración para reutilizar en próximas generaciones
     sesion = st.session_state.get("sesion")
@@ -1716,7 +1716,7 @@ def _render_cadena_custodia() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_fotos_campo() -> None:
-    st.markdown("#### Fotos de campo")
+    section_header("Fotos de campo", "eye")
     st.caption(
         "Galería completa: agrega más fotos a una muestra existente, captura "
         "directamente con la cámara o elimina archivos individuales. "
@@ -1746,7 +1746,7 @@ def _render_fotos_campo() -> None:
     col_upload, col_camera = st.columns(2)
 
     with col_upload:
-        st.markdown("**Subir desde archivo**")
+        section_header("Subir desde archivo", "upload")
         archivos = st.file_uploader(
             "Seleccionar fotos",
             type=["jpg", "jpeg", "png"],
@@ -1769,7 +1769,7 @@ def _render_fotos_campo() -> None:
                 st.rerun()
 
     with col_camera:
-        st.markdown("**Tomar foto con cámara**")
+        section_header("Tomar foto con cámara", "eye")
         foto_cam = st.camera_input("Capturar foto", key="foto_camera")
         if foto_cam:
             if st.button("Guardar foto capturada", key="btn_guardar_cam"):
@@ -1787,7 +1787,7 @@ def _render_fotos_campo() -> None:
 
     # ── Galería de fotos existentes ─────────────────────────────────────
     st.divider()
-    st.markdown("**Fotos guardadas**")
+    section_header("Fotos guardadas", "archive")
     fotos = get_fotos_campo(muestra_id)
 
     if not fotos:
@@ -1807,7 +1807,7 @@ def _render_fotos_campo() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_ficha_campo() -> None:
-    st.markdown("#### Fichas de Identificación del Punto de Monitoreo")
+    section_header("Fichas de Identificación del Punto de Monitoreo", "file")
     st.caption("Genera todas las fichas de una campaña en un solo documento Word")
 
     campana_id = _selector_campana_todas("ficha")
