@@ -19,7 +19,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from components.auth_guard import require_rol
-from components.ui_styles import aplicar_estilos, page_header, top_nav
+from components.ui_styles import aplicar_estilos, page_header, section_header, top_nav
 from services.mapa_service import (
     get_comparativa_eca_punto,
     get_datos_mensuales_parametro,
@@ -1181,7 +1181,7 @@ def _render_categoria_tabs(
             st.info("Sin datos para esta categoría en el periodo seleccionado.")
 
         st.divider()
-        st.markdown("**Últimos 15 resultados (todas las categorías)**")
+        section_header("Últimos 15 resultados (todas las categorías)", "list")
         _render_ultimos_resultados(punto_sel, cat=categoria)
 
 
