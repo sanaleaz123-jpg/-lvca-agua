@@ -99,19 +99,26 @@ def _clasificar_cat(param: dict) -> str:
 # 1. DASHBOARD RESUMEN
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _render_kpi_card(valor, label: str, color: str, icono_name: str) -> str:
+def _render_kpi_card(
+    valor,
+    label: str,
+    color: str,
+    icono_name: str,
+    unidad: str = "",
+) -> str:
     """
-    Tarjeta KPI estilo SNIRH/ANA (POC rediseño 2026-04-21):
-    - Borde izquierdo 4px del color identitario (en vez de franja superior).
-    - Ícono SVG en círculo (border-radius 50%) sobre halo suave del color,
-      anclado arriba a la derecha.
-    - Card más compacta (min-height 92px vs 130px antes), border-radius 6px
-      para look más institucional, sombra un poco más presente.
-    - Label uppercase pequeño, valor prominente en peso 700.
+    Tarjeta KPI estilo SSDH-ANA (rediseño 2026-04-21 v2):
+    - Borde INFERIOR 3px del color identitario (no lateral).
+    - Título arriba-izquierda en case normal, peso 500 (no uppercase).
+    - Ícono SVG en círculo pastel (halo del color) arriba-derecha, en el
+      mismo row que el título vía flexbox.
+    - Valor grande DEBAJO, en negro oscuro (#1a1a1a), peso regular 400
+      (no coloreado, no bold) — es lo que da el aire institucional SSDH.
+    - Unidad opcional en texto pequeño gris al lado del valor.
     """
     from components.ui_styles import icon as _icon
 
-    # rgba con alpha 0.12 para fondo de halo (más compatible que hex 8 dígitos)
+    # rgba con alpha para fondo de halo (más compatible que hex 8 dígitos)
     def _hex_to_rgba(h: str, alpha: float) -> str:
         h = h.lstrip("#")
         if len(h) != 6:
@@ -120,30 +127,35 @@ def _render_kpi_card(valor, label: str, color: str, icono_name: str) -> str:
         return f"rgba({r},{g},{b},{alpha})"
 
     halo_bg = _hex_to_rgba(color, 0.12)
-    icono_svg = _icon(icono_name, size=18, color=color)
+    icono_svg = _icon(icono_name, size=22, color=color)
+
+    unidad_html = (
+        f'<span style="font-size:0.78rem; color:#6b7280; '
+        f'font-weight:400; margin-left:4px;">{unidad}</span>'
+        if unidad else ""
+    )
 
     return f"""
-    <div style="background:#ffffff; border-radius:6px;
-         padding:14px 16px;
-         border:1px solid #f1f5f9;
-         border-left:4px solid {color};
-         box-shadow:0 2px 6px rgba(15,23,42,0.06);
-         transition: transform 0.15s ease, box-shadow 0.15s ease;
-         min-height:92px; display:flex; flex-direction:column;
-         position:relative;">
-        <div style="position:absolute; top:12px; right:12px;
-             width:36px; height:36px; border-radius:50%;
-             background:{halo_bg};
-             display:inline-flex; align-items:center; justify-content:center;">
-            {icono_svg}
+    <div style="background:#ffffff; border-radius:8px;
+         padding:14px 18px 12px 18px;
+         border:1px solid #e8eaed;
+         border-bottom:3px solid {color};
+         box-shadow:0 1px 2px rgba(15,23,42,0.04);
+         min-height:110px; display:flex; flex-direction:column;">
+        <div style="display:flex; justify-content:space-between;
+             align-items:flex-start; gap:10px; margin-bottom:14px;">
+            <div style="font-size:0.88rem; color:#374151; font-weight:500;
+                 letter-spacing:-0.01em; flex:1; line-height:1.3;">{label}</div>
+            <div style="width:42px; height:42px; border-radius:50%;
+                 background:{halo_bg};
+                 display:inline-flex; align-items:center;
+                 justify-content:center; flex-shrink:0;">
+                {icono_svg}
+            </div>
         </div>
-        <div style="font-size:0.62rem; color:#64748b;
-             text-transform:uppercase; letter-spacing:0.05em;
-             font-weight:600; margin-bottom:8px;
-             padding-right:48px;">{label}</div>
-        <div style="font-size:1.7rem; font-weight:700;
-             line-height:1; color:{color}; letter-spacing:-0.02em;">
-             {valor}
+        <div style="display:flex; align-items:baseline;">
+            <span style="font-size:1.9rem; font-weight:400;
+                 color:#1a1a1a; line-height:1; letter-spacing:-0.02em;">{valor}</span>{unidad_html}
         </div>
     </div>"""
 
