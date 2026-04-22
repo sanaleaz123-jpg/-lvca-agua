@@ -830,12 +830,50 @@ def aplicar_estilos() -> None:
     st.markdown(_GLOBAL_CSS, unsafe_allow_html=True)
 
 
-def page_header(titulo: str, subtitulo: str = "") -> None:
-    """Encabezado de página."""
-    sub_html = f"<p>{subtitulo}</p>" if subtitulo else ""
+def page_header(titulo: str, subtitulo: str = "", ambito: str = "") -> None:
+    """
+    Encabezado de página — banner estilo SSDH-ANA.
+
+    - Gradiente azul institucional (#0D47A1 → #1565C0).
+    - Título en blanco, subtítulo en blanco semitransparente.
+    - Ámbito opcional: píldora a la derecha, equivalente al "UH 132" del
+      SSDH. Solo lo usa el Geoportal por ahora; el resto de páginas lo
+      dejan vacío.
+
+    Compatibilidad: la firma vieja `page_header(titulo, subtitulo)` sigue
+    funcionando — las 9 páginas que lo usan así quedan con el nuevo banner
+    sin cambios adicionales.
+    """
+    ambito_html = (
+        f'<div style="display:flex; align-items:center; gap:8px; '
+        f'background:rgba(255,255,255,0.12); padding:6px 14px; '
+        f'border-radius:20px; font-size:0.8rem; color:#ffffff; '
+        f'font-weight:500; white-space:nowrap;">'
+        f'<span style="font-size:0.95rem; line-height:1;">🗺️</span> {ambito}'
+        f'</div>'
+        if ambito else ""
+    )
+    sub_html = (
+        f'<p style="margin:4px 0 0 0; font-size:0.82rem; '
+        f'color:rgba(255,255,255,0.82); font-weight:400;">{subtitulo}</p>'
+        if subtitulo else ""
+    )
     st.markdown(
-        f'<div class="lvca-page-header">'
-        f'<h1>{titulo}</h1>{sub_html}</div>',
+        f"""
+        <div style="background:linear-gradient(135deg,#0D47A1 0%,#1565C0 100%);
+             color:white; padding:18px 26px; border-radius:10px;
+             box-shadow:0 4px 12px rgba(13,71,161,0.25);
+             margin-bottom:18px;
+             display:flex; align-items:center; justify-content:space-between;
+             gap:20px; flex-wrap:wrap;">
+            <div style="flex:1; min-width:260px;">
+                <h1 style="margin:0; font-size:1.5rem; font-weight:700;
+                     color:#ffffff; letter-spacing:-0.02em; line-height:1.2;">{titulo}</h1>
+                {sub_html}
+            </div>
+            {ambito_html}
+        </div>
+        """,
         unsafe_allow_html=True,
     )
 
