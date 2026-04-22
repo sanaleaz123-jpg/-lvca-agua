@@ -550,20 +550,57 @@ hr {
     transition: all 0.15s ease;
 }
 
-/* ── Filter bar — fondo neutro casi blanco, sin borde ──────────────────── */
+/* ── Filter bar estilo SSDH: blanco con sombra sutil ──────────────────── */
 .lvca-filter-bar {
-    background: #fafbfc;
-    border: 1px solid #f1f5f9;
-    border-radius: 12px;
-    padding: 14px 20px;
+    background: #ffffff;
+    border: 1px solid #eef0f2;
+    border-radius: 10px;
+    padding: 16px 22px;
     margin-bottom: 18px;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
 }
 .lvca-filter-bar label {
-    color: #64748b !important;
-    font-size: 0.74rem !important;
-    font-weight: 500 !important;
+    color: #475569 !important;
+    font-size: 0.72rem !important;
+    font-weight: 600 !important;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.05em;
+}
+
+/* ── Tabs SSDH: padding grande, underline azul al activar, fondo tintado
+      en hover. Aplica a todas las st.tabs de la plataforma. ──────────── */
+[data-testid="stTabs"] {
+    border-bottom: 1px solid #eef0f2;
+    margin-bottom: 14px;
+}
+[data-testid="stTabs"] button[data-baseweb="tab"] {
+    padding: 12px 20px !important;
+    font-size: 0.88rem !important;
+    font-weight: 500 !important;
+    color: #64748b !important;
+    border-radius: 0 !important;
+    margin-right: 2px !important;
+    background: transparent !important;
+    border-bottom: 3px solid transparent !important;
+    transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease !important;
+}
+[data-testid="stTabs"] button[data-baseweb="tab"]:hover {
+    color: #1565C0 !important;
+    background: rgba(21, 101, 192, 0.04) !important;
+}
+[data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"] {
+    color: #1565C0 !important;
+    font-weight: 600 !important;
+    border-bottom-color: #1565C0 !important;
+    background: rgba(21, 101, 192, 0.06) !important;
+}
+/* El highlight nativo de Streamlit (la barrita inferior) lo ocultamos:
+   nosotros estamos usando border-bottom del propio botón para el underline. */
+[data-testid="stTabs"] [data-baseweb="tab-highlight"] {
+    display: none !important;
+}
+[data-testid="stTabs"] [data-baseweb="tab-list"] {
+    border-bottom: none !important;
 }
 
 /* ── Toast / overlay para feedback de guardado ─────────────────────────── */
@@ -962,6 +999,13 @@ _TOP_NAV_CSS = """<style>
 .st-key-lvca_top_nav [data-testid="stPageLink"] a:hover {
     background: #f1f5f9 !important;
     color: #1b6b35 !important;
+}
+/* Material Symbols en los links del top-nav: tamaño y color coherentes
+   con el tamaño del label (16px, color heredado). */
+.st-key-lvca_top_nav [data-testid="stPageLink"] a .material-symbols-rounded,
+.st-key-lvca_top_nav [data-testid="stPageLink"] a span[class*="material"] {
+    font-size: 18px !important;
+    line-height: 1 !important;
 }
 /* El contenido del link no se trunca: label completo siempre visible */
 .st-key-lvca_top_nav [data-testid="stPageLink"] a > div,

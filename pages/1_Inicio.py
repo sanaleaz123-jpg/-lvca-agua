@@ -212,8 +212,58 @@ def _render_kpis(metricas: dict) -> None:
 # Sección 2 — Tabla de excedencias
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _format_excedencia_pct(e: dict) -> str:
+    """Signo + porcentaje de excedencia respecto al límite ECA."""
+    if e.get("lim_max") and e["lim_max"] > 0:
+        return f"+{((e['valor'] / e['lim_max'] - 1) * 100):.1f}%"
+    if e.get("lim_min") and e["lim_min"] > 0:
+        return "−{:.1f}%".format((1 - e["valor"] / e["lim_min"]) * 100)
+    return "—"
+
+
+def _render_excedencia_card(e: dict) -> str:
+    """Card individual para una excedencia, estilo SSDH-ANA."""
+    pct = _format_excedencia_pct(e)
+    valor = f"{e['valor']:.4g}" if isinstance(e.get("valor"), (int, float)) else str(e.get("valor", ""))
+    limite = f"{e['lim_max']:.4g}" if e.get("lim_max") else (
+        f"≥ {e['lim_min']:.4g}" if e.get("lim_min") else "—"
+    )
+    unidad = e.get("unidad", "") or ""
+    return f"""
+    <div style="background:#ffffff; border:1px solid #e8eaed;
+         border-left:3px solid #C62828; border-radius:8px;
+         padding:12px 16px; margin-bottom:10px;
+         display:grid; grid-template-columns:52px 1fr auto;
+         gap:14px; align-items:center;
+         box-shadow:0 1px 2px rgba(15,23,42,0.04);">
+        <div style="width:52px; height:52px; border-radius:50%;
+             background:rgba(198,40,40,0.1);
+             display:inline-flex; align-items:center; justify-content:center;">
+            <span class="material-symbols-rounded"
+                style="font-size:26px; color:#C62828; line-height:1;">warning</span>
+        </div>
+        <div style="min-width:0;">
+            <div style="font-size:0.92rem; font-weight:600; color:#1a1a1a;
+                 line-height:1.3; overflow:hidden; text-overflow:ellipsis;
+                 white-space:nowrap;">{e.get('punto_nombre', '—')}</div>
+            <div style="font-size:0.8rem; color:#475569; margin-top:3px;
+                 line-height:1.4;">
+                <b>{e.get('parametro_nombre', '—')}</b> =
+                <b style="color:#C62828;">{valor}</b> {unidad}
+                <span style="color:#94a3b8;">· ECA {e.get('eca_codigo', '—')}
+                (máx {limite})</span>
+            </div>
+            <div style="font-size:0.72rem; color:#94a3b8; margin-top:4px;">
+                {e.get('fecha', '—')}
+            </div>
+        </div>
+        <div style="font-size:0.95rem; font-weight:700; color:#C62828;
+             white-space:nowrap; letter-spacing:-0.01em;">{pct}</div>
+    </div>"""
+
+
 def _render_tabla_excedencias(excedencias: list[dict]) -> None:
-    from components.ui_styles import inline_note, excede_pill, estado_pill
+    from components.ui_styles import inline_note
     st.subheader("Excedencias activas (últimos 30 días)")
 
     if not excedencias:
@@ -223,41 +273,24 @@ def _render_tabla_excedencias(excedencias: list[dict]) -> None:
         )
         return
 
+    total = len(excedencias)
     inline_note(
-        f"<b>{len(excedencias)} resultado(s)</b> superan los ECA "
+        f"<b>{total} resultado(s)</b> superan los ECA "
         f"D.S. N° 004-2017-MINAM en los últimos 30 días.",
         tipo="warn",
     )
 
-    df = pd.DataFrame(excedencias)
+    # Render primeras 15 como cards; el resto queda accesible desde Base de Datos.
+    max_visibles = 15
+    visibles = excedencias[:max_visibles]
+    cards_html = "".join(_render_excedencia_card(e) for e in visibles)
+    st.markdown(cards_html, unsafe_allow_html=True)
 
-    # Calcular % de excedencia
-    df["excedencia_pct"] = df.apply(
-        lambda r: f"+{((r['valor'] / r['lim_max'] - 1) * 100):.1f}%"
-        if r.get("lim_max") and r["lim_max"] > 0
-        else ("−{:.1f}%".format((1 - r["valor"] / r["lim_min"]) * 100)
-              if r.get("lim_min") and r["lim_min"] > 0 else "—"),
-        axis=1,
-    )
-
-    df_vista = df[[
-        "fecha", "punto_nombre", "eca_codigo",
-        "parametro_nombre", "valor", "lim_max", "unidad", "excedencia_pct",
-    ]].copy()
-    df_vista.columns = [
-        "Fecha", "Punto", "ECA",
-        "Parámetro", "Valor", "Límite", "Unidad", "Excedencia",
-    ]
-
-    st.dataframe(
-        df_vista,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Valor":  st.column_config.NumberColumn(format="%.4g"),
-            "Límite": st.column_config.NumberColumn(format="%.4g"),
-        },
-    )
+    if total > max_visibles:
+        st.caption(
+            f"Mostrando las primeras {max_visibles} de {total}. "
+            "Ver todas en **Base de Datos**."
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
