@@ -17,7 +17,14 @@ import pandas as pd
 import streamlit as st
 
 from components.auth_guard import require_rol
-from components.ui_styles import aplicar_estilos, page_header, success_check_overlay, toast, top_nav
+from components.ui_styles import (
+    aplicar_estilos,
+    page_header,
+    section_header,
+    success_check_overlay,
+    toast,
+    top_nav,
+)
 from services.campana_service import (
     ESTADOS,
     ETIQUETA_ESTADO,
@@ -110,7 +117,7 @@ def _color_estado(estado: str) -> str:
 
 def _render_listado() -> None:
     # ── Filtros ──────────────────────────────────────────────────────────────
-    st.markdown("#### Filtros")
+    section_header("Filtros", "filter")
     fc1, fc2, fc3 = st.columns(3)
 
     with fc1:
@@ -546,7 +553,7 @@ def _render_editar_campana(campana_id: str, camp: dict) -> None:
 def _render_editar_puntos(campana_id: str, puntos_actuales: list[dict]) -> None:
     """Permite agregar/quitar puntos de muestreo vinculados."""
     st.markdown("---")
-    st.markdown("**Modificar puntos vinculados**")
+    section_header("Modificar puntos vinculados", "edit")
 
     todos_los_puntos = get_todos_los_puntos()
     opciones = {
@@ -580,7 +587,7 @@ def _render_editar_puntos(campana_id: str, puntos_actuales: list[dict]) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_formulario_nueva() -> None:
-    st.markdown("#### Nueva campaña de monitoreo")
+    section_header("Nueva campaña de monitoreo", "plus")
     st.caption("El código se generará automáticamente (CAMP-YYYY-NNN).")
 
     # Cargar puntos disponibles para el multiselect

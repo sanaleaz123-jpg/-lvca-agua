@@ -16,7 +16,7 @@ import pandas as pd
 import streamlit as st
 
 from components.auth_guard import require_rol
-from components.ui_styles import aplicar_estilos, page_header, top_nav
+from components.ui_styles import aplicar_estilos, page_header, section_header, top_nav
 from services.punto_service import (
     get_puntos,
     get_punto,
@@ -37,7 +37,7 @@ from services.storage_service import upload_croquis, get_croquis_url
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_listado() -> None:
-    st.markdown("#### Filtros")
+    section_header("Filtros", "filter")
     fc1, fc2, fc3, fc4 = st.columns(4)
 
     cuencas = get_cuencas()
@@ -156,7 +156,7 @@ def _render_editar(punto_id: str) -> None:
         with ec3:
             sistema_hidrico = st.text_input("Sistema Hídrico", value=punto.get("sistema_hidrico") or punto.get("subcuenca") or "", key=f"edit_sh_{kp}")
 
-        st.markdown("**Coordenadas**")
+        section_header("Coordenadas", "map_pin")
         co1, co2, co3 = st.columns(3)
         with co1:
             utm_este = st.number_input(
@@ -193,7 +193,7 @@ def _render_editar(punto_id: str) -> None:
             key=f"edit_ent_{kp}",
         )
 
-        st.markdown("**Datos para ficha de campo**")
+        section_header("Datos para ficha de campo", "file")
         ub1, ub2, ub3 = st.columns(3)
         with ub1:
             departamento = st.text_input(
@@ -294,7 +294,7 @@ def _render_editar(punto_id: str) -> None:
 
     # ── Croquis del punto ──────────────────────────────────────────────
     st.divider()
-    st.markdown("##### Croquis del punto de monitoreo")
+    section_header("Croquis del punto de monitoreo", "map")
     croquis_url = get_croquis_url(punto_id)
     if croquis_url:
         st.image(croquis_url, caption="Croquis actual", width=400)
@@ -324,7 +324,7 @@ def _render_nuevo() -> None:
     if msg_key in st.session_state:
         st.success(st.session_state.pop(msg_key))
 
-    st.markdown("#### Nuevo punto de muestreo")
+    section_header("Nuevo punto de muestreo", "plus")
 
     ecas = get_ecas()
     eca_opciones = {"Sin ECA asignado": None}
@@ -359,7 +359,7 @@ def _render_nuevo() -> None:
         with nc5:
             n_sistema_hidrico = st.text_input("Sistema Hídrico", placeholder="Chili Regulado")
 
-        st.markdown("**Coordenadas**")
+        section_header("Coordenadas", "map_pin")
         co1, co2, co3 = st.columns(3)
         with co1:
             utm_este = st.number_input("UTM Este", value=0.0, format="%.1f")
@@ -380,7 +380,7 @@ def _render_nuevo() -> None:
             placeholder="AUTODEMA",
         )
 
-        st.markdown("**Datos para ficha de campo**")
+        section_header("Datos para ficha de campo", "file")
         nu1, nu2, nu3 = st.columns(3)
         with nu1:
             n_departamento = st.text_input("Departamento", value="AREQUIPA", key="new_dpto")
@@ -460,7 +460,7 @@ def _render_nuevo() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_mapa() -> None:
-    st.markdown("#### Ubicación de puntos de muestreo")
+    section_header("Ubicación de puntos de muestreo", "map_pin")
 
     puntos = get_puntos(solo_activos=True)
     puntos_con_coords = [

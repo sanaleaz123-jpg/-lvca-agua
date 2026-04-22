@@ -17,7 +17,7 @@ import pandas as pd
 import streamlit as st
 
 from components.auth_guard import require_rol
-from components.ui_styles import aplicar_estilos, page_header, top_nav
+from components.ui_styles import aplicar_estilos, page_header, section_header, top_nav
 from services.informe_service import (
     get_resumen_campana,
     get_resumen_punto,
@@ -34,7 +34,7 @@ from services.punto_service import get_puntos
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_informe_campana() -> None:
-    st.markdown("#### Informe por campaña")
+    section_header("Informe por campaña", "file")
 
     campanas = get_campanas()
     if not campanas:
@@ -84,7 +84,7 @@ def _render_informe_campana() -> None:
 
     # ── Tabla de excedencias ─────────────────────────────────────────────
     if resumen["excedencias"]:
-        st.markdown("#### Excedencias ECA detectadas")
+        section_header("Excedencias ECA detectadas", "alert")
         df_exc = pd.DataFrame(resumen["excedencias"])
         st.dataframe(
             df_exc[[
@@ -132,7 +132,7 @@ def _render_informe_campana() -> None:
 
     # ── Descargas ────────────────────────────────────────────────────────
     st.divider()
-    st.markdown("#### Descargas")
+    section_header("Descargas", "download")
     dc1, dc2 = st.columns(2)
 
     with dc1:
@@ -167,7 +167,7 @@ def _render_informe_campana() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_informe_punto() -> None:
-    st.markdown("#### Informe por punto de muestreo")
+    section_header("Informe por punto de muestreo", "map_pin")
 
     puntos = get_puntos(solo_activos=True)
     if not puntos:
