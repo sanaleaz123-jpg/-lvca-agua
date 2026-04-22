@@ -101,10 +101,13 @@ def _clasificar_cat(param: dict) -> str:
 
 def _render_kpi_card(valor, label: str, color: str, icono_name: str) -> str:
     """
-    Tarjeta KPI estilo SSDH/ANA — más notoria visualmente:
-    - Franja de color de 4px arriba y borde inferior del color (visible)
-    - Ícono SVG en círculo pintado del color (no halo sutil)
-    - Label uppercase, valor prominente con peso 700
+    Tarjeta KPI estilo SNIRH/ANA (POC rediseño 2026-04-21):
+    - Borde izquierdo 4px del color identitario (en vez de franja superior).
+    - Ícono SVG en círculo (border-radius 50%) sobre halo suave del color,
+      anclado arriba a la derecha.
+    - Card más compacta (min-height 92px vs 130px antes), border-radius 6px
+      para look más institucional, sombra un poco más presente.
+    - Label uppercase pequeño, valor prominente en peso 700.
     """
     from components.ui_styles import icon as _icon
 
@@ -116,26 +119,32 @@ def _render_kpi_card(valor, label: str, color: str, icono_name: str) -> str:
         r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
         return f"rgba({r},{g},{b},{alpha})"
 
-    halo_bg = _hex_to_rgba(color, 0.14)
-    icono_svg = _icon(icono_name, size=20, color=color)
+    halo_bg = _hex_to_rgba(color, 0.12)
+    icono_svg = _icon(icono_name, size=18, color=color)
 
     return f"""
-    <div style="background:#ffffff; border-radius:12px;
-         padding:0 0 14px 0;
-         border:1px solid #f1f5f9; overflow:hidden;
-         box-shadow:0 1px 3px rgba(15,23,42,0.04);
-         transition: all 0.18s ease;
-         min-height: 130px; display: flex; flex-direction: column;">
-        <div style="height:4px; background:{color};"></div>
-        <div style="padding:14px 18px 0 18px; display:flex; align-items:center;
-             justify-content:space-between; margin-bottom:8px;">
-            <span style="font-size:0.68rem; color:#64748b; text-transform:uppercase;
-                 letter-spacing:0.06em; font-weight:600;">{label}</span>
-            <span style="background:{halo_bg}; width:34px; height:34px; border-radius:10px;
-                 display:inline-flex; align-items:center; justify-content:center;">{icono_svg}</span>
+    <div style="background:#ffffff; border-radius:6px;
+         padding:14px 16px;
+         border:1px solid #f1f5f9;
+         border-left:4px solid {color};
+         box-shadow:0 2px 6px rgba(15,23,42,0.06);
+         transition: transform 0.15s ease, box-shadow 0.15s ease;
+         min-height:92px; display:flex; flex-direction:column;
+         position:relative;">
+        <div style="position:absolute; top:12px; right:12px;
+             width:36px; height:36px; border-radius:50%;
+             background:{halo_bg};
+             display:inline-flex; align-items:center; justify-content:center;">
+            {icono_svg}
         </div>
-        <div style="padding:0 18px; font-size:2rem; font-weight:700; line-height:1.05;
-             color:{color}; letter-spacing:-0.025em;">{valor}</div>
+        <div style="font-size:0.62rem; color:#64748b;
+             text-transform:uppercase; letter-spacing:0.05em;
+             font-weight:600; margin-bottom:8px;
+             padding-right:48px;">{label}</div>
+        <div style="font-size:1.7rem; font-weight:700;
+             line-height:1; color:{color}; letter-spacing:-0.02em;">
+             {valor}
+        </div>
     </div>"""
 
 
