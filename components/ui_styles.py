@@ -661,7 +661,9 @@ hr {
     display: flex;
     align-items: center;
     justify-content: center;
-    animation: lvcaFadeIn 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+    animation:
+        lvcaFadeIn    0.18s cubic-bezier(0.4, 0, 0.2, 1),
+        lvcaOverlayOut 0.3s ease 1.5s forwards;
 }
 .lvca-success-card {
     background: white;
@@ -705,6 +707,9 @@ hr {
                         to   { transform: scale(1);    opacity: 1; } }
 @keyframes lvcaCircle { to { stroke-dashoffset: 0; } }
 @keyframes lvcaCheck  { to { stroke-dashoffset: 0; } }
+@keyframes lvcaOverlayOut {
+    to { opacity: 0; visibility: hidden; pointer-events: none; }
+}
 
 /* ── Toast (esquina superior derecha) ──────────────────────────────────── */
 .lvca-toast-wrap {
@@ -712,7 +717,9 @@ hr {
     top: 24px;
     right: 24px;
     z-index: 9998;
-    animation: lvcaToastIn 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    animation:
+        lvcaToastIn  0.25s cubic-bezier(0.4, 0, 0.2, 1),
+        lvcaToastOut 0.3s ease 2.7s forwards;
 }
 .lvca-toast {
     background: white;
@@ -758,6 +765,9 @@ hr {
 @keyframes lvcaToastIn {
     from { transform: translateX(120%); opacity: 0; }
     to   { transform: translateX(0);    opacity: 1; }
+}
+@keyframes lvcaToastOut {
+    to { opacity: 0; transform: translateX(40%); visibility: hidden; pointer-events: none; }
 }
 
 /* ── Estado pill (compacto, con icono y dot de color) ──────────────────── */
@@ -1279,11 +1289,14 @@ def minimal_form_close() -> None:
 def success_check_overlay(mensaje: str = "Guardado correctamente") -> None:
     """
     Renderiza un overlay con check verde animado en el centro de la pantalla.
-    Llamar inmediatamente después de un guardado exitoso, antes de st.rerun().
-    El overlay se desvanece a los ~1.6s gracias a un setTimeout en JS.
+    Llamar inmediatamente después de un guardado exitoso.
+    El overlay se desvanece a ~1.8s via animación CSS (keyframe lvcaOverlayOut).
     """
+    # Nota: scripts dentro de st.markdown(unsafe_allow_html=True) NO se ejecutan
+    # (los navegadores no corren <script> insertado por innerHTML). Por eso el
+    # ciclo de vida del overlay está 100% en CSS.
     overlay_html = f"""
-    <div class="lvca-success-overlay" id="lvca-success-overlay">
+    <div class="lvca-success-overlay">
         <div class="lvca-success-card">
             <svg class="lvca-check-svg" viewBox="0 0 56 56">
                 <circle cx="28" cy="28" r="26"/>
@@ -1292,14 +1305,6 @@ def success_check_overlay(mensaje: str = "Guardado correctamente") -> None:
             <div class="lvca-success-msg">{mensaje}</div>
         </div>
     </div>
-    <script>
-        setTimeout(function() {{
-            var el = document.getElementById('lvca-success-overlay');
-            if (el) el.style.transition = 'opacity 0.25s';
-            if (el) el.style.opacity = '0';
-            setTimeout(function() {{ if (el) el.remove(); }}, 280);
-        }}, 1300);
-    </script>
     """
     st.markdown(overlay_html, unsafe_allow_html=True)
 
@@ -1333,7 +1338,7 @@ def toast(
     icon_svg = icon(icon_name, size=18, color="currentColor")
     sub_html = f'<div class="lvca-toast-sub">{sub}</div>' if sub else ''
     toast_html = f"""
-    <div class="lvca-toast-wrap" id="lvca-toast-wrap">
+    <div class="lvca-toast-wrap">
         <div class="lvca-toast {cls}">
             <div class="lvca-toast-icon">{icon_svg}</div>
             <div class="lvca-toast-body">
@@ -1342,14 +1347,6 @@ def toast(
             </div>
         </div>
     </div>
-    <script>
-        setTimeout(function() {{
-            var el = document.getElementById('lvca-toast-wrap');
-            if (el) el.style.transition = 'opacity 0.25s, transform 0.25s';
-            if (el) {{ el.style.opacity = '0'; el.style.transform = 'translateX(40%)'; }}
-            setTimeout(function() {{ if (el) el.remove(); }}, 280);
-        }}, 2800);
-    </script>
     """
     st.markdown(toast_html, unsafe_allow_html=True)
 
