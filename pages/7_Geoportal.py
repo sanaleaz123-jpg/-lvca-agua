@@ -432,25 +432,36 @@ def _construir_mapa(puntos: list[dict], solo_excedencias: bool, mostrar_heatmap:
     MiniMap(toggle_display=True, position="bottomright", zoom_level_offset=-5).add_to(m)
 
     # ── Polígonos de cuencas hidrográficas (estilo SSDH/ANA) ─────────────
-    # Outline verde brillante, sin relleno, para anclar visualmente al
-    # territorio sin tapar los detalles del mapa base.
+    # Outline de color por cuenca para distinguirlas a simple vista:
+    #   Quilca-Vítor-Chili → verde    · Colca-Camaná → rojo
     cuencas = _cargar_geojson_cuencas()
+
+    def _color_cuenca(nombre: str) -> tuple[str, str]:
+        """Devuelve (color_base, color_hover) según la cuenca."""
+        n = nombre.lower()
+        if "quilca" in n or "vitor" in n or "chili" in n:
+            return ("#22c55e", "#15803d")    # verde / verde oscuro
+        if "colca" in n or "caman" in n:
+            return ("#dc2626", "#991b1b")    # rojo / rojo oscuro
+        return ("#64748b", "#334155")         # gris fallback
+
     if cuencas:
         fg_cuencas = folium.FeatureGroup(name="Cuencas hidrográficas", show=True)
         for cu in cuencas:
+            base, hover = _color_cuenca(cu["nombre"])
             folium.GeoJson(
                 cu["data"],
-                style_function=lambda feature: {
-                    "color": "#22c55e",      # verde brillante (SSDH)
-                    "weight": 2.2,
-                    "fillColor": "#22c55e",
-                    "fillOpacity": 0.04,      # apenas perceptible — solo enmarca
+                style_function=lambda feature, c=base: {
+                    "color": c,
+                    "weight": 2.5,
+                    "fillColor": c,
+                    "fillOpacity": 0.05,     # apenas perceptible — solo enmarca
                     "dashArray": "0",
                 },
-                highlight_function=lambda feature: {
-                    "color": "#15803d",
-                    "weight": 3,
-                    "fillOpacity": 0.10,
+                highlight_function=lambda feature, c=hover: {
+                    "color": c,
+                    "weight": 3.5,
+                    "fillOpacity": 0.12,
                 },
                 tooltip=f"Cuenca: {cu['nombre']}",
             ).add_to(fg_cuencas)
@@ -657,7 +668,10 @@ def _construir_mapa(puntos: list[dict], solo_excedencias: bool, mostrar_heatmap:
               border-top:2px dashed #60a5fa; vertical-align:middle; margin-right:4px;"></span> Quebrada<br>
         <span style="display:inline-block; width:14px; height:10px;
               border:1.5px solid #22c55e; background:rgba(34,197,94,0.08);
-              vertical-align:middle; margin-right:4px;"></span> Cuenca
+              vertical-align:middle; margin-right:4px;"></span> Cuenca Quilca-Vítor-Chili<br>
+        <span style="display:inline-block; width:14px; height:10px;
+              border:1.5px solid #dc2626; background:rgba(220,38,38,0.08);
+              vertical-align:middle; margin-right:4px;"></span> Cuenca Colca-Camaná
       </div>
       <div style="font-size:10px; color:#94a3b8; border-top:1px solid #f1f5f9;
            padding-top:6px; margin-top:8px;">
