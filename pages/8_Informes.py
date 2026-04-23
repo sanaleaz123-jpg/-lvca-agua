@@ -27,6 +27,29 @@ from services.informe_service import (
 )
 from services.resultado_service import get_campanas
 from services.punto_service import get_puntos
+from services.cumplimiento_service import EstadoECA
+
+
+# Paleta de veredictos — alineada con 4_Resultados_Lab.py
+_CHIP_ESTADOS: dict[str, dict] = {
+    EstadoECA.CUMPLE:                {"bg": "#d4edda", "fg": "#155724", "label": "Cumple"},
+    EstadoECA.EXCEDE:                {"bg": "#f8d7da", "fg": "#721c24", "label": "Excede"},
+    EstadoECA.EXCEDE_EXCEPCION_ART6: {"bg": "#fff3cd", "fg": "#856404", "label": "Art. 6"},
+    EstadoECA.NO_VERIFICABLE:        {"bg": "#e2e3e5", "fg": "#383d41", "label": "No verif."},
+    EstadoECA.NO_APLICA:             {"bg": "#ede7f6", "fg": "#4527a0", "label": "No aplica"},
+}
+
+
+def _chip_estado_html(estado: str, motivo: str = "") -> str:
+    info = _CHIP_ESTADOS.get(estado)
+    if info is None:
+        return estado or ""
+    motivo = (motivo or "").replace('"', "'")
+    return (
+        f'<span title="{motivo}" style="background:{info["bg"]};color:{info["fg"]};'
+        f'padding:1px 8px;border-radius:10px;font-size:0.82em;font-weight:500;'
+        f'white-space:nowrap">{info["label"]}</span>'
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -73,61 +96,114 @@ def _render_informe_campana() -> None:
 
     campana = resumen["campana"]
 
-    # ── Métricas ─────────────────────────────────────────────────────────
+    # ── Métricas (5 estados del motor de cumplimiento) ───────────────────
     st.markdown(f"### {campana['codigo']} — {campana['nombre']}")
 
-    mc1, mc2, mc3, mc4 = st.columns(4)
+    por_estado = resumen.get("por_estado", {})
+    n_cumple   = por_estado.get(EstadoECA.CUMPLE, 0)
+    n_excede   = por_estado.get(EstadoECA.EXCEDE, 0)
+    n_art6     = por_estado.get(EstadoECA.EXCEDE_EXCEPCION_ART6, 0)
+    n_noverif  = por_estado.get(EstadoECA.NO_VERIFICABLE, 0)
+    n_noaplica = por_estado.get(EstadoECA.NO_APLICA, 0)
+
+    mc1, mc2, mc3 = st.columns(3)
     mc1.metric("Puntos", len(resumen["puntos"]))
     mc2.metric("Muestras", len(resumen["muestras"]))
     mc3.metric("Resultados", resumen["total_resultados"])
-    mc4.metric("Excedencias", resumen["total_excedencias"])
+
+    me1, me2, me3, me4, me5 = st.columns(5)
+    me1.metric("Cumple",     n_cumple)
+    me2.metric("Excede",     n_excede,
+               delta=(f"-{n_excede}" if n_excede > 0 else None),
+               delta_color="inverse")
+    me3.metric("Art. 6",     n_art6)
+    me4.metric("No verif.",  n_noverif)
+    me5.metric("No aplica",  n_noaplica)
 
     # ── Tabla de excedencias ─────────────────────────────────────────────
     if resumen["excedencias"]:
         section_header("Excedencias ECA detectadas", "alert")
-        df_exc = pd.DataFrame(resumen["excedencias"])
+        exc_rows = []
+        for e in resumen["excedencias"]:
+            exc_rows.append({
+                "Punto":      e.get("punto_codigo", ""),
+                "Parámetro":  e.get("parametro_nombre", ""),
+                "Valor":      e.get("valor_comparado") if e.get("valor_comparado") is not None else e.get("valor"),
+                "Unidad":     e.get("unidad_comparada") or e.get("unidad"),
+                "ECA máx":    e.get("eca_rango_max"),
+                "Estado":     _CHIP_ESTADOS.get(e["estado_eca"], {}).get("label", e["estado_eca"]),
+                "Motivo":     e.get("motivo", ""),
+                "Fecha":      e.get("fecha_muestreo") or e.get("fecha_analisis"),
+            })
         st.dataframe(
-            df_exc[[
-                "punto_codigo", "parametro_nombre", "valor",
-                "lim_max", "lim_min", "unidad", "fecha_analisis",
-            ]].rename(columns={
-                "punto_codigo":     "Punto",
-                "parametro_nombre": "Parámetro",
-                "valor":            "Valor",
-                "lim_max":          "Lím. máx.",
-                "lim_min":          "Lím. mín.",
-                "unidad":           "Unidad",
-                "fecha_analisis":   "Fecha",
-            }),
+            pd.DataFrame(exc_rows),
             use_container_width=True,
             hide_index=True,
+            column_config={
+                "Motivo": st.column_config.TextColumn("Motivo", width="large"),
+            },
         )
-    else:
-        st.success("No se detectaron excedencias ECA en esta campaña.")
+    elif n_excede == 0 and n_art6 == 0:
+        st.success(
+            "No se detectaron excedencias ECA en esta campaña.",
+            icon=":material/check_circle:",
+        )
+
+    # ── Leyenda de estados ECA ───────────────────────────────────────────
+    with st.expander("Leyenda de estados ECA", icon=":material/help:"):
+        lc1, lc2, lc3 = st.columns(3)
+        lc1.markdown(
+            "**Cumple** — dentro del rango ECA aplicable, con conversión a "
+            "la especie oficial del DS cuando corresponde."
+        )
+        lc1.markdown(
+            "**Excede** — supera el umbral ECA. Se evaluó con el motor de "
+            "cumplimiento (forma analítica, especie, Δ3 temperatura, Tabla N°1 NH₃)."
+        )
+        lc2.markdown(
+            "**Art. 6** — excede, pero el punto tiene excepción aprobada por "
+            "ANA (condición natural no antrópica)."
+        )
+        lc2.markdown(
+            "**No verif.** — no se puede emitir juicio: LC>ECA, falta pH/T "
+            "para NH₃ Cat 4, zona de mezcla (Art. 7), falta línea base de "
+            "temperatura, o discrepancia total/disuelta."
+        )
+        lc3.markdown(
+            "**No aplica** — parámetro sin ECA en el DS 004-2017-MINAM para "
+            "la categoría del punto (ej. Fosfatos, N amoniacal total en Cat 4, "
+            "P total en Cat 3)."
+        )
 
     # ── Tabla de resultados completa ─────────────────────────────────────
-    with st.expander(f"Ver todos los resultados ({resumen['total_resultados']})", expanded=False):
+    with st.expander(
+        f"Ver todos los resultados ({resumen['total_resultados']})",
+        icon=":material/list:", expanded=False,
+    ):
         if resumen["resultados"]:
             df_res = pd.DataFrame(resumen["resultados"])
             df_vista = df_res[[
                 "muestra_codigo", "punto_codigo",
-                "parametro_nombre", "valor", "unidad", "estado_eca",
+                "parametro_nombre", "valor", "unidad", "estado_eca", "motivo",
             ]].rename(columns={
                 "muestra_codigo":   "Muestra",
                 "punto_codigo":     "Punto",
                 "parametro_nombre": "Parámetro",
                 "valor":            "Valor",
                 "unidad":           "Unidad",
-                "estado_eca":       "Estado ECA",
+                "estado_eca":       "Estado",
+                "motivo":           "Motivo",
             })
-            df_vista["Estado ECA"] = df_vista["Estado ECA"].map({
-                "cumple": "Cumple", "excede": "EXCEDE",
-                "sin_limite": "SIN ECA", "sin_dato": "Sin dato",
-            }).fillna(df_vista["Estado ECA"])
+            df_vista["Estado"] = df_vista["Estado"].map(
+                lambda e: _CHIP_ESTADOS.get(e, {}).get("label", e)
+            )
             st.dataframe(
                 df_vista,
                 use_container_width=True,
                 hide_index=True,
+                column_config={
+                    "Motivo": st.column_config.TextColumn("Motivo", width="large"),
+                },
             )
 
     # ── Descargas ────────────────────────────────────────────────────────

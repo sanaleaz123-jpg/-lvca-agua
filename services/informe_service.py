@@ -26,12 +26,25 @@ from database.client import get_admin_client
 
 def get_resumen_campana(campana_id: str) -> dict:
     """
-    Datos consolidados de una campaña para el informe:
-        campana, puntos, muestras, resultados (con ECA), excedencias
+    Datos consolidados de una campaña para el informe. Evalúa cada resultado
+    con el motor de cumplimiento (5 estados: cumple, excede, excede_art6,
+    no_verificable, no_aplica) aplicando conversión de especies, matricial
+    NH3, forma analítica, zona de mezcla, excepciones Art. 6 y línea base Δ3.
+
+    Retorna dict con:
+        campana            — fila de la campaña
+        puntos             — puntos vinculados
+        muestras           — muestras de la campaña
+        resultados         — filas con estado, motivo, valor_comparado, etc.
+        excedencias        — subconjunto con estado in {excede, excede_art6}
+        por_estado         — contadores por estado (para métricas agregadas)
+        total_resultados   — int
+        total_excedencias  — int
     """
+    from services.cumplimiento_service import evaluar, ContextoEvaluacion, EstadoECA
+
     db = get_admin_client()
 
-    # Campaña
     campana = (
         db.table("campanas")
         .select("*")
@@ -41,10 +54,13 @@ def get_resumen_campana(campana_id: str) -> dict:
         .data
     )
 
-    # Puntos vinculados
+    # Puntos vinculados (con flag zona mezcla)
     pts_res = (
         db.table("campana_puntos")
-        .select("puntos_muestreo(id, codigo, nombre, tipo, cuenca, eca_id, ecas(codigo, nombre))")
+        .select(
+            "puntos_muestreo(id, codigo, nombre, tipo, cuenca, eca_id, "
+            "dentro_zona_mezcla, ecas(codigo, nombre))"
+        )
         .eq("campana_id", campana_id)
         .execute()
     )
@@ -55,12 +71,16 @@ def get_resumen_campana(campana_id: str) -> dict:
     ]
     puntos.sort(key=lambda x: x.get("codigo", ""))
 
-    # Muestras
+    punto_by_id = {p["id"]: p for p in puntos if p.get("id")}
+
+    # Muestras (con fecha para Δ3 temperatura)
     m_res = (
         db.table("muestras")
         .select(
             "id, codigo, fecha_muestreo, estado, "
-            "puntos_muestreo(codigo, nombre)"
+            "punto_muestreo_id, "
+            "puntos_muestreo(codigo, nombre, eca_id, dentro_zona_mezcla, "
+            "  ecas(codigo))"
         )
         .eq("campana_id", campana_id)
         .order("fecha_muestreo")
@@ -69,88 +89,178 @@ def get_resumen_campana(campana_id: str) -> dict:
     muestras = m_res.data or []
     muestra_ids = [m["id"] for m in muestras]
 
-    # Resultados con parámetro y unidad
-    resultados = []
+    # Mediciones in situ por muestra (pH, T para evaluación matricial NH3 y Δ3)
+    mediciones_por_muestra: dict[str, dict[str, float]] = {}
     if muestra_ids:
-        r_res = (
-            db.table("resultados_laboratorio")
-            .select(
-                "muestra_id, valor_numerico, valor_texto, fecha_analisis, "
-                "parametros(codigo, nombre, unidades_medida(simbolo)), "
-                "muestras(codigo, punto_muestreo_id, puntos_muestreo(codigo, nombre, eca_id))"
+        try:
+            ins_res = (
+                db.table("mediciones_insitu")
+                .select("muestra_id, parametro, valor")
+                .in_("muestra_id", muestra_ids)
+                .execute()
             )
-            .in_("muestra_id", muestra_ids)
-            .order("fecha_analisis")
-            .execute()
-        )
-        resultados = r_res.data or []
+            for r in (ins_res.data or []):
+                key = (r.get("parametro") or "").lower().strip()
+                if r.get("valor") is None:
+                    continue
+                mediciones_por_muestra.setdefault(r["muestra_id"], {})[key] = float(r["valor"])
+        except Exception:
+            pass
 
-    # Límites ECA para evaluar excedencias
+    # Resultados con metadata extendida de parámetro (es_eca, forma_analitica, lmd, lcm)
+    resultados_raw = []
+    if muestra_ids:
+        try:
+            r_res = (
+                db.table("resultados_laboratorio")
+                .select(
+                    "muestra_id, parametro_id, valor_numerico, valor_texto, "
+                    "cualificador, fecha_analisis, "
+                    "parametros(id, codigo, nombre, es_eca, forma_analitica, "
+                    "  lmd, lcm, unidades_medida(simbolo))"
+                )
+                .in_("muestra_id", muestra_ids)
+                .order("fecha_analisis")
+                .execute()
+            )
+            resultados_raw = r_res.data or []
+        except Exception:
+            # Fallback pre-migraciones 010/012
+            r_res = (
+                db.table("resultados_laboratorio")
+                .select(
+                    "muestra_id, parametro_id, valor_numerico, valor_texto, "
+                    "fecha_analisis, "
+                    "parametros(id, codigo, nombre, unidades_medida(simbolo))"
+                )
+                .in_("muestra_id", muestra_ids)
+                .execute()
+            )
+            resultados_raw = r_res.data or []
+
+    # Límites ECA con expresado_como y forma_analitica
     eca_ids = {p.get("eca_id") for p in puntos if p.get("eca_id")}
-    param_ids = {
-        (r.get("parametros") or {}).get("codigo", "")
-        for r in resultados
-    }
-
-    limites: dict[tuple, dict] = {}
+    limites: dict[tuple, dict] = {}   # (eca_id, parametro_id) -> {valor_min, valor_max, expresado_como, forma_analitica}
     if eca_ids:
-        lim_res = (
-            db.table("eca_valores")
-            .select("eca_id, parametro_id, valor_minimo, valor_maximo, parametros(codigo)")
-            .in_("eca_id", list(eca_ids))
-            .execute()
-        )
+        try:
+            lim_res = (
+                db.table("eca_valores")
+                .select(
+                    "eca_id, parametro_id, valor_minimo, valor_maximo, "
+                    "expresado_como, forma_analitica"
+                )
+                .in_("eca_id", list(eca_ids))
+                .execute()
+            )
+        except Exception:
+            lim_res = (
+                db.table("eca_valores")
+                .select("eca_id, parametro_id, valor_minimo, valor_maximo")
+                .in_("eca_id", list(eca_ids))
+                .execute()
+            )
         for l in (lim_res.data or []):
-            p_cod = (l.get("parametros") or {}).get("codigo", "")
-            limites[(l["eca_id"], p_cod)] = l
+            limites[(l["eca_id"], l["parametro_id"])] = l
 
-    # Construir filas de resultados con estado ECA
+    # Excepciones Art. 6 por punto (vigentes)
+    excepciones_art6: set[tuple[str, str]] = set()  # (punto_id, parametro_id)
+    punto_ids = {m.get("punto_muestreo_id") for m in muestras if m.get("punto_muestreo_id")}
+    if punto_ids:
+        try:
+            from datetime import date as _date
+            exc_res = (
+                db.table("excepciones_art6")
+                .select("punto_muestreo_id, parametro_id, fecha_vencimiento")
+                .in_("punto_muestreo_id", list(punto_ids))
+                .eq("vigente", True)
+                .execute()
+            )
+            hoy = _date.today().isoformat()
+            for r in (exc_res.data or []):
+                venc = r.get("fecha_vencimiento")
+                if venc is None or venc >= hoy:
+                    excepciones_art6.add((r["punto_muestreo_id"], r["parametro_id"]))
+        except Exception:
+            pass
+
+    # Construir filas con motor de cumplimiento
     filas_resultado = []
     excedencias = []
-    for r in resultados:
-        prm = r.get("parametros") or {}
-        m = r.get("muestras") or {}
-        pt = m.get("puntos_muestreo") or {}
-        eca_id = pt.get("eca_id")
-        p_cod = prm.get("codigo", "")
-        lim = limites.get((eca_id, p_cod), {})
+    por_estado: dict[str, int] = {}
 
-        valor = r.get("valor_numerico")
-        estado = "sin_dato"
-        if valor is not None:
-            if lim.get("valor_maximo") is None and lim.get("valor_minimo") is None:
-                estado = "sin_limite"
-            elif (lim.get("valor_maximo") is not None and valor > lim["valor_maximo"]) or \
-                 (lim.get("valor_minimo") is not None and valor < lim["valor_minimo"]):
-                estado = "excede"
-            else:
-                estado = "cumple"
+    for r in resultados_raw:
+        prm = r.get("parametros") or {}
+        m_info = next((mm for mm in muestras if mm["id"] == r["muestra_id"]), {}) or {}
+        pt_info = m_info.get("puntos_muestreo") or {}
+        eca_id = pt_info.get("eca_id")
+        p_id = r.get("parametro_id") or prm.get("id")
+        lim = limites.get((eca_id, p_id), {})
+
+        mediciones = mediciones_por_muestra.get(r["muestra_id"], {})
+
+        # ContextoEvaluacion
+        ctx = ContextoEvaluacion(
+            valor_lab=r.get("valor_numerico"),
+            cualificador=r.get("cualificador"),
+            parametro_codigo=prm.get("codigo", ""),
+            parametro_nombre=prm.get("nombre", ""),
+            parametro_es_eca=bool(prm.get("es_eca", True)),
+            parametro_unidad_simbolo=(prm.get("unidades_medida") or {}).get("simbolo", ""),
+            parametro_lmd=prm.get("lmd"),
+            parametro_lcm=prm.get("lcm"),
+            parametro_forma_analitica=prm.get("forma_analitica") or "no_aplica",
+            eca_codigo=(pt_info.get("ecas") or {}).get("codigo"),
+            eca_valor_minimo=lim.get("valor_minimo"),
+            eca_valor_maximo=lim.get("valor_maximo"),
+            eca_expresado_como=lim.get("expresado_como"),
+            eca_forma_analitica=lim.get("forma_analitica") or "no_aplica",
+            ph=mediciones.get("ph"),
+            temperatura_celsius=(
+                mediciones.get("temperatura")
+                or mediciones.get("temperatura_agua")
+                or mediciones.get("temperatura del agua")
+            ),
+            fecha_muestreo=m_info.get("fecha_muestreo"),
+            punto_id=pt_info.get("id") or m_info.get("punto_muestreo_id"),
+            dentro_zona_mezcla=bool(pt_info.get("dentro_zona_mezcla")),
+            tiene_excepcion_art6=(m_info.get("punto_muestreo_id"), p_id) in excepciones_art6,
+        )
+        vered = evaluar(ctx)
 
         fila = {
-            "muestra_codigo":    m.get("codigo", ""),
-            "punto_codigo":      pt.get("codigo", ""),
-            "punto_nombre":      pt.get("nombre", ""),
-            "parametro_codigo":  p_cod,
+            "muestra_codigo":    m_info.get("codigo", ""),
+            "punto_codigo":      pt_info.get("codigo", ""),
+            "punto_nombre":      pt_info.get("nombre", ""),
+            "parametro_codigo":  prm.get("codigo", ""),
             "parametro_nombre":  prm.get("nombre", ""),
-            "unidad":            (prm.get("unidades_medida") or {}).get("simbolo", ""),
-            "valor":             valor,
+            "unidad":            ctx.parametro_unidad_simbolo,
+            "valor":             r.get("valor_numerico"),
             "valor_texto":       r.get("valor_texto") or "",
-            "lim_min":           lim.get("valor_minimo"),
-            "lim_max":           lim.get("valor_maximo"),
-            "estado_eca":        estado,
+            "cualificador":      r.get("cualificador") or "",
+            "lim_min":           ctx.eca_valor_minimo,
+            "lim_max":           ctx.eca_valor_maximo,
+            "estado_eca":        vered.estado,
+            "motivo":            vered.motivo,
+            "valor_comparado":   vered.valor_comparado,
+            "unidad_comparada":  vered.unidad_comparada or ctx.parametro_unidad_simbolo,
+            "eca_rango_max":    vered.eca_valor_maximo,
+            "eca_rango_min":    vered.eca_valor_minimo,
+            "fecha_muestreo":    (m_info.get("fecha_muestreo") or "")[:10],
             "fecha_analisis":    (r.get("fecha_analisis") or "")[:10],
         }
         filas_resultado.append(fila)
-        if estado == "excede":
+        por_estado[vered.estado] = por_estado.get(vered.estado, 0) + 1
+        if vered.estado in (EstadoECA.EXCEDE, EstadoECA.EXCEDE_EXCEPCION_ART6):
             excedencias.append(fila)
 
     return {
-        "campana":      campana,
-        "puntos":       puntos,
-        "muestras":     muestras,
-        "resultados":   filas_resultado,
-        "excedencias":  excedencias,
-        "total_resultados": len(filas_resultado),
+        "campana":           campana,
+        "puntos":            puntos,
+        "muestras":          muestras,
+        "resultados":        filas_resultado,
+        "excedencias":       excedencias,
+        "por_estado":        por_estado,
+        "total_resultados":  len(filas_resultado),
         "total_excedencias": len(excedencias),
     }
 
@@ -241,14 +351,24 @@ def generar_excel_campana(campana_id: str) -> bytes:
         }])
         info.to_excel(writer, sheet_name="Campaña", index=False)
 
+        # Mapa de estados → etiqueta legible
+        _ETIQ_ESTADO = {
+            "cumple":                "Cumple",
+            "excede":                "EXCEDE",
+            "excede_excepcion_art6": "Excede (Art. 6)",
+            "no_verificable":        "No verificable",
+            "no_aplica":             "No aplica",
+        }
+
         # Hoja 2: Resultados
         if resumen["resultados"]:
             df_res = pd.DataFrame(resumen["resultados"])
-            df_res = df_res.drop(columns=["parametro_codigo"], errors="ignore")
-            df_res["estado_eca"] = df_res["estado_eca"].map({
-                "cumple": "Cumple", "excede": "EXCEDE",
-                "sin_limite": "SIN ECA", "sin_dato": "Sin dato",
-            }).fillna(df_res["estado_eca"])
+            df_res = df_res.drop(
+                columns=["parametro_codigo", "valor_comparado",
+                         "unidad_comparada", "eca_rango_min", "eca_rango_max"],
+                errors="ignore",
+            )
+            df_res["estado_eca"] = df_res["estado_eca"].map(_ETIQ_ESTADO).fillna(df_res["estado_eca"])
             df_res = df_res.rename(columns={
                 "muestra_codigo":   "Muestra",
                 "punto_codigo":     "Punto",
@@ -257,17 +377,25 @@ def generar_excel_campana(campana_id: str) -> bytes:
                 "unidad":           "Unidad",
                 "valor":            "Valor",
                 "valor_texto":      "Valor texto",
+                "cualificador":     "Cualificador",
                 "lim_min":          "Lím. mín.",
                 "lim_max":          "Lím. máx.",
                 "estado_eca":       "Estado ECA",
+                "motivo":           "Motivo",
+                "fecha_muestreo":   "Fecha muestreo",
                 "fecha_analisis":   "Fecha análisis",
             })
             df_res.to_excel(writer, sheet_name="Resultados", index=False)
 
-        # Hoja 3: Excedencias
+        # Hoja 3: Excedencias (incluye Excede y Art. 6)
         if resumen["excedencias"]:
             df_exc = pd.DataFrame(resumen["excedencias"])
-            df_exc = df_exc.drop(columns=["parametro_codigo"], errors="ignore")
+            df_exc = df_exc.drop(
+                columns=["parametro_codigo", "valor_comparado",
+                         "unidad_comparada", "eca_rango_min", "eca_rango_max"],
+                errors="ignore",
+            )
+            df_exc["estado_eca"] = df_exc["estado_eca"].map(_ETIQ_ESTADO).fillna(df_exc["estado_eca"])
             df_exc = df_exc.rename(columns={
                 "muestra_codigo":   "Muestra",
                 "punto_codigo":     "Punto",
@@ -275,11 +403,24 @@ def generar_excel_campana(campana_id: str) -> bytes:
                 "parametro_nombre": "Parámetro",
                 "unidad":           "Unidad",
                 "valor":            "Valor",
+                "cualificador":     "Cualificador",
                 "lim_min":          "Lím. mín.",
                 "lim_max":          "Lím. máx.",
+                "estado_eca":       "Estado ECA",
+                "motivo":           "Motivo",
+                "fecha_muestreo":   "Fecha muestreo",
                 "fecha_analisis":   "Fecha análisis",
             })
             df_exc.to_excel(writer, sheet_name="Excedencias", index=False)
+
+        # Hoja 4bis: Resumen por estado (conteos)
+        por_estado = resumen.get("por_estado", {})
+        if por_estado:
+            df_est = pd.DataFrame([
+                {"Estado": _ETIQ_ESTADO.get(k, k), "Cantidad": v}
+                for k, v in por_estado.items()
+            ])
+            df_est.to_excel(writer, sheet_name="Resumen por estado", index=False)
 
         # Hoja 4: Puntos
         if resumen["puntos"]:
@@ -386,13 +527,13 @@ def generar_pdf_campana(campana_id: str) -> bytes:
     elementos.append(t)
     elementos.append(Spacer(1, 0.5*cm))
 
-    # Resumen numérico
+    # Resumen numérico + desglose por estado
     elementos.append(Paragraph("Resumen", subtitulo_style))
+    por_estado = resumen.get("por_estado", {})
     resumen_data = [
-        ["Puntos monitoreados:", str(len(resumen["puntos"]))],
-        ["Muestras tomadas:", str(len(resumen["muestras"]))],
+        ["Puntos monitoreados:",  str(len(resumen["puntos"]))],
+        ["Muestras tomadas:",     str(len(resumen["muestras"]))],
         ["Resultados registrados:", str(resumen["total_resultados"])],
-        ["Excedencias ECA:", str(resumen["total_excedencias"])],
     ]
     t2 = Table(resumen_data, colWidths=[5*cm, 12*cm])
     t2.setStyle(TableStyle([
@@ -401,21 +542,57 @@ def generar_pdf_campana(campana_id: str) -> bytes:
         ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
     ]))
     elementos.append(t2)
+    elementos.append(Spacer(1, 0.4*cm))
+
+    # Desglose por estado (5 categorías del motor de cumplimiento)
+    estado_labels = {
+        "cumple":                ("Cumple",            colors.HexColor("#d4edda")),
+        "excede":                ("Excede",            colors.HexColor("#f8d7da")),
+        "excede_excepcion_art6": ("Excede (Art. 6)",  colors.HexColor("#fff3cd")),
+        "no_verificable":        ("No verificable",   colors.HexColor("#e2e3e5")),
+        "no_aplica":             ("No aplica",         colors.HexColor("#ede7f6")),
+    }
+    elementos.append(Paragraph("Desglose por estado ECA", subtitulo_style))
+    estado_rows = [["Estado", "Cantidad"]]
+    estado_styles = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2c3e50")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+    ]
+    for idx, (estado_key, (label, color)) in enumerate(estado_labels.items(), start=1):
+        cantidad = por_estado.get(estado_key, 0)
+        estado_rows.append([label, str(cantidad)])
+        estado_styles.append(("BACKGROUND", (0, idx), (0, idx), color))
+    t_estado = Table(estado_rows, colWidths=[6*cm, 3*cm], repeatRows=1)
+    t_estado.setStyle(TableStyle(estado_styles))
+    elementos.append(t_estado)
     elementos.append(Spacer(1, 0.5*cm))
 
-    # Tabla de excedencias
+    # Tabla de excedencias (incluye Excede y Art. 6)
     if resumen["excedencias"]:
         elementos.append(Paragraph("Excedencias ECA Detectadas", subtitulo_style))
-        header = ["Punto", "Parámetro", "Valor", "Lím. máx.", "Unidad", "Fecha"]
+        header = ["Punto", "Parámetro", "Valor", "Unidad", "ECA máx.", "Estado", "Fecha"]
         rows = [header]
-        for e in resumen["excedencias"][:50]:  # limitar a 50
+        for e in resumen["excedencias"][:80]:
+            estado_key = e.get("estado_eca", "")
+            estado_label = estado_labels.get(estado_key, (estado_key, colors.white))[0]
+            valor_view = e.get("valor_comparado")
+            if valor_view is None:
+                valor_view = e.get("valor")
+            eca_max = e.get("eca_rango_max") if e.get("eca_rango_max") is not None else e.get("lim_max")
             rows.append([
                 e.get("punto_codigo", ""),
-                e.get("parametro_nombre", "")[:30],
-                f"{e['valor']:.4f}" if e.get("valor") is not None else "—",
-                f"{e['lim_max']:.4f}" if e.get("lim_max") is not None else "—",
-                e.get("unidad", ""),
-                e.get("fecha_analisis", ""),
+                e.get("parametro_nombre", "")[:28],
+                f"{valor_view:.4f}" if isinstance(valor_view, (int, float)) else "—",
+                (e.get("unidad_comparada") or e.get("unidad", ""))[:14],
+                f"{eca_max:.4f}" if isinstance(eca_max, (int, float)) else "—",
+                estado_label,
+                e.get("fecha_muestreo") or e.get("fecha_analisis", ""),
             ])
         t3 = Table(rows, repeatRows=1)
         t3.setStyle(TableStyle([
