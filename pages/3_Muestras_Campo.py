@@ -54,7 +54,6 @@ from services.muestra_service import (
     get_muestras_por_campana,
     get_muestra_por_campana_punto,
     get_puntos_de_campana_activa,
-    get_responsables_lab,
     get_usuarios_campo,
     recibir_en_laboratorio,
     registrar_insitu,
@@ -64,6 +63,7 @@ from services.parametro_registry import (
     get_parametros_lab_cadena,
 )
 from services.resultado_service import get_campanas, _get_usuario_interno_id
+from services.campana_service import get_parametros_lab_campana
 from services.cadena_custodia_service import (
     EQUIPOS_DEFAULT,
     config_para_campana,
@@ -73,11 +73,7 @@ from services.cadena_custodia_service import (
     guardar_config_persistida,
     registrar_equipo,
 )
-from services.storage_service import (
-    upload_foto_campo,
-    get_fotos_campo,
-    delete_foto_campo,
-)
+from services.storage_service import upload_foto_campo
 from services.ficha_campo_service import generar_docx_fichas
 
 
@@ -600,8 +596,8 @@ def _render_registro() -> None:
         # ── Fotos de campo ───────────────────────────────────────────────
         section_header("Fotos iniciales (opcional, máx. 5)", "eye")
         st.caption(
-            "Sube hasta 5 fotos al registrar. Para agregar más después o usar "
-            "la cámara del celular, ve al tab **Fotos de Campo**."
+            "Sube hasta 5 fotos al registrar la muestra. La primera se usa "
+            "en la Ficha de Campo."
         )
         fotos_subidas = st.file_uploader(
             "Seleccionar fotos JPG/PNG",
@@ -1396,47 +1392,12 @@ def _render_listado() -> None:
 # Tab 5 — Cadena de custodia oficial (Excel/PDF)
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Fallback usado solo si la tabla `usuarios` está vacía (primera instalación)
-# o si la query falla. En operación normal estos nombres salen de la BD vía
-# get_responsables_lab() (rol administrador o analista_lab, activos).
-_RECEPTORES_CADENA_FALLBACK = ["Alfonso Torres E.", "Jean Pierre Madariaga"]
-_SUPERVISOR_CADENA_FALLBACK = "Ing. Ana Lucía Paz Alcázar"
+# Lista fija de receptores autorizados para la cadena de custodia (solo estos
+# dos nombres pueden firmar como receptor en el laboratorio).
+_RECEPTORES_CADENA = ["Alfonso Torres", "Jean Pierre Llerena"]
 
-
-def _opciones_receptores_cadena() -> list[str]:
-    """Lista de nombres elegibles como receptor de cadena de custodia."""
-    try:
-        usuarios = get_responsables_lab()
-        nombres = [
-            f"{u.get('nombre', '').strip()} {u.get('apellido', '').strip()}".strip()
-            for u in usuarios
-        ]
-        nombres = [n for n in nombres if n]
-        if nombres:
-            return nombres
-    except Exception:
-        pass
-    return _RECEPTORES_CADENA_FALLBACK
-
-
-def _opciones_supervisor_cadena() -> list[str]:
-    """Lista de nombres elegibles como supervisor — admin tiene prioridad."""
-    try:
-        usuarios = get_responsables_lab()
-        # Priorizar usuarios con rol administrador
-        admins = [u for u in usuarios if u.get("rol") == "administrador"]
-        analistas = [u for u in usuarios if u.get("rol") == "analista_lab"]
-        ordenados = admins + analistas
-        nombres = [
-            f"{u.get('nombre', '').strip()} {u.get('apellido', '').strip()}".strip()
-            for u in ordenados
-        ]
-        nombres = [n for n in nombres if n]
-        if nombres:
-            return nombres
-    except Exception:
-        pass
-    return [_SUPERVISOR_CADENA_FALLBACK]
+# Supervisor/Jefe único para toda la plataforma.
+_SUPERVISOR_CADENA = "Ing. Ana Lucía Paz Alcázar"
 
 
 def _render_cadena_custodia() -> None:
@@ -1515,35 +1476,33 @@ def _render_cadena_custodia() -> None:
 
         nc1, nc2, nc3 = st.columns(3)
         with nc1:
-            cfg["nombre_muestreador"] = st.text_input(
+            # Muestreador: se toma automáticamente de los responsables de campo
+            # definidos al crear la campaña. No es editable aquí — si hay que
+            # cambiarlo, hacerlo en la página Campañas.
+            st.text_input(
                 "Nombre muestreador",
                 value=muestreador_auto,
-                key="cc_muestreador",
+                disabled=True,
+                key="cc_muestreador_display",
+                help="Se toma de los responsables de campo definidos en la campaña.",
             )
+            cfg["nombre_muestreador"] = muestreador_auto
         with nc2:
-            opciones_receptor = _opciones_receptores_cadena()
-            # Si la config persistida tenía un receptor que ya no existe en BD,
-            # lo agregamos al inicio para no perder la selección
-            receptor_actual = cfg.get("nombre_receptor", "")
-            if receptor_actual and receptor_actual not in opciones_receptor:
-                opciones_receptor = [receptor_actual] + opciones_receptor
             cfg["nombre_receptor"] = st.selectbox(
                 "Nombre receptor",
-                opciones_receptor,
+                _RECEPTORES_CADENA,
                 index=0,
                 key="cc_receptor",
             )
         with nc3:
-            opciones_supervisor = _opciones_supervisor_cadena()
-            supervisor_actual = cfg.get("nombre_supervisor", "")
-            if supervisor_actual and supervisor_actual not in opciones_supervisor:
-                opciones_supervisor = [supervisor_actual] + opciones_supervisor
-            cfg["nombre_supervisor"] = st.selectbox(
+            st.text_input(
                 "Supervisor/Jefe",
-                opciones_supervisor,
-                index=0,
-                key="cc_supervisor",
+                value=_SUPERVISOR_CADENA,
+                disabled=True,
+                key="cc_supervisor_display",
+                help="Supervisor fijo para toda la plataforma.",
             )
+            cfg["nombre_supervisor"] = _SUPERVISOR_CADENA
 
         # Fecha y hora de recepción
         fr1, fr2 = st.columns(2)
@@ -1566,24 +1525,14 @@ def _render_cadena_custodia() -> None:
         if temp_transporte_auto is not None:
             cfg["temperatura_transporte"] = temp_transporte_auto
 
-    # ── Preservación ─────────────────────────────────────────────────────
-    with st.expander("Preservación", expanded=False):
-        pc1, pc2, pc3, pc4, pc5, pc6 = st.columns(6)
-        pres = cfg["preservacion"]
-        with pc1:
-            pres["HNO3"] = st.checkbox("HNO3", value=True, key="cc_hno3")
-        with pc2:
-            pres["H2SO4"] = st.checkbox("H2SO4", value=True, key="cc_h2so4")
-        with pc3:
-            pres["HCl"] = st.checkbox("HCl", value=False, key="cc_hcl")
-        with pc4:
-            pres["Lugol"] = st.checkbox("Lugol", value=True, key="cc_lugol")
-        with pc5:
-            pres["Formol"] = st.checkbox("Formol", value=False, key="cc_formol")
-        with pc6:
-            pres["S/P"] = st.checkbox("Sin preservación", value=True, key="cc_sp")
-        # Eliminar NaOH si existía
-        pres.pop("NaOH", None)
+    # Preservación: cada parámetro trae su propio preservante desde la
+    # configuración del módulo Parámetros. El documento lo resuelve
+    # automáticamente al generarse, por eso dejamos todos los preservantes
+    # disponibles (el servicio decide qué marcar según los params activos).
+    cfg["preservacion"] = {
+        "HNO3":   True, "H2SO4": True, "HCl":    True,
+        "Lugol":  True, "Formol": True, "S/P":   True,
+    }
 
     # ── Condiciones de la muestra ─────────────────────────────────────────
     with st.expander("Condiciones de la muestra", expanded=False):
@@ -1599,37 +1548,37 @@ def _render_cadena_custodia() -> None:
             cond["temp_ambiente"] = st.checkbox("Temperatura ambiente", value=False, key="cc_temp")
             cond["hielo_potable"] = st.checkbox("Hielo calidad potable", value=False, key="cc_hielo")
 
-    # ── Parámetros de laboratorio ─────────────────────────────────────────
-    with st.expander("Parámetros de laboratorio", expanded=False):
-        st.caption("Parámetros fijos (marcados por defecto):")
+    # ── Parámetros de laboratorio (definidos en la Campaña) ──────────────
+    # La selección de parámetros la decide el usuario al crear/editar la
+    # campaña. Aquí solo se muestra un resumen de lo que saldrá marcado en
+    # el documento — no se permite editarlo en esta pantalla.
+    sel_camp = get_parametros_lab_campana(campana_id)
+    claves_camp = sel_camp["parametros_lab"]
+    extras_camp = sel_camp["parametros_lab_extra"]
+    if claves_camp:
+        cfg["parametros_lab"] = claves_camp
+    # Si la campaña no tiene selección explícita, se marcan todos por defecto
+    # (comportamiento de config_default).
+    cfg["parametros_lab_extra"] = extras_camp or []
 
-        # Checkboxes para los 15 parámetros fijos
-        params_seleccionados = []
-        cols_per_row = 5
+    with st.expander("Parámetros de laboratorio (definidos en la campaña)", expanded=False):
         param_list = list(get_parametros_lab_cadena())
-        for i in range(0, len(param_list), cols_per_row):
-            cols = st.columns(cols_per_row)
-            for j, col in enumerate(cols):
-                idx = i + j
-                if idx < len(param_list):
-                    p = param_list[idx]
-                    if col.checkbox(p["nombre"], value=True, key=f"cc_plab_{p['clave']}"):
-                        params_seleccionados.append(p["clave"])
-
-        cfg["parametros_lab"] = params_seleccionados
-
-        # Parámetros extra
-        section_header("Parámetros adicionales (separados por coma)", "plus")
-        extras_text = st.text_input(
-            "Parámetros extra",
-            placeholder="Ej: Cianuro, DBO5, Coliformes totales",
-            key="cc_params_extra",
-            label_visibility="collapsed",
+        seleccion_set = set(
+            claves_camp if claves_camp else [p["clave"] for p in param_list]
         )
-        if extras_text.strip():
-            cfg["parametros_lab_extra"] = [
-                e.strip() for e in extras_text.split(",") if e.strip()
-            ]
+        marcados = [p["nombre"] for p in param_list if p["clave"] in seleccion_set]
+        st.caption(
+            f"{len(marcados)} de {len(param_list)} parámetros marcados "
+            f"+ {len(extras_camp)} adicional(es). "
+            f"Para modificar, abre la página **Campañas** y edita esta campaña."
+        )
+        if marcados:
+            st.markdown("**Marcados:** " + ", ".join(marcados))
+        no_marcados = [p["nombre"] for p in param_list if p["clave"] not in seleccion_set]
+        if no_marcados:
+            st.caption("No marcados: " + ", ".join(no_marcados))
+        if extras_camp:
+            st.markdown("**Adicionales:** " + ", ".join(extras_camp))
 
     # ── Equipos (compartido con In situ) ─────────────────────────────────
     with st.expander("Equipos utilizados", expanded=False):
@@ -1712,98 +1661,7 @@ def _render_cadena_custodia() -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Tab 6 — Fotos de campo
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _render_fotos_campo() -> None:
-    section_header("Fotos de campo", "eye")
-    st.caption(
-        "Galería completa: agrega más fotos a una muestra existente, captura "
-        "directamente con la cámara o elimina archivos individuales. "
-        "Las fotos iniciales se pueden subir al momento del registro en el tab "
-        "**Registro**."
-    )
-
-    campana_id = _selector_campana_todas("fotos")
-    if not campana_id:
-        return
-
-    muestras = _muestras_por_campana_cached(campana_id)
-    if not muestras:
-        st.info("No hay muestras en esta campaña.")
-        return
-
-    opciones_m = {
-        f"{m['codigo']} — {(m.get('puntos_muestreo') or {}).get('nombre', '')}": m["id"]
-        for m in muestras
-    }
-    label_m = st.selectbox("Muestra", list(opciones_m.keys()), key="fotos_muestra")
-    muestra_id = opciones_m[label_m]
-
-    st.divider()
-
-    # ── Subir fotos ─────────────────────────────────────────────────────
-    col_upload, col_camera = st.columns(2)
-
-    with col_upload:
-        section_header("Subir desde archivo", "upload")
-        archivos = st.file_uploader(
-            "Seleccionar fotos",
-            type=["jpg", "jpeg", "png"],
-            accept_multiple_files=True,
-            key="fotos_upload",
-        )
-        if archivos:
-            if st.button(f"Subir {len(archivos)} foto(s)", key="btn_subir_fotos", type="primary"):
-                for archivo in archivos:
-                    try:
-                        upload_foto_campo(
-                            muestra_id,
-                            archivo.getvalue(),
-                            archivo.name,
-                            archivo.type,
-                        )
-                    except Exception as exc:
-                        st.error(f"Error subiendo {archivo.name}: {exc}")
-                st.success(f"{len(archivos)} foto(s) subida(s).")
-                st.rerun()
-
-    with col_camera:
-        section_header("Tomar foto con cámara", "eye")
-        foto_cam = st.camera_input("Capturar foto", key="foto_camera")
-        if foto_cam:
-            if st.button("Guardar foto capturada", key="btn_guardar_cam"):
-                try:
-                    upload_foto_campo(
-                        muestra_id,
-                        foto_cam.getvalue(),
-                        "captura_camara.jpg",
-                        "image/jpeg",
-                    )
-                    st.success("Foto guardada.")
-                    st.rerun()
-                except Exception as exc:
-                    st.error(f"Error: {exc}")
-
-    # ── Galería de fotos existentes ─────────────────────────────────────
-    st.divider()
-    section_header("Fotos guardadas", "archive")
-    fotos = get_fotos_campo(muestra_id)
-
-    if not fotos:
-        st.info("No hay fotos para esta muestra.")
-    else:
-        cols = st.columns(3)
-        for i, foto in enumerate(fotos):
-            with cols[i % 3]:
-                st.image(foto["url"], caption=foto["name"], use_container_width=True)
-                if st.button("Eliminar", key=f"del_foto_{i}"):
-                    delete_foto_campo(muestra_id, foto["name"])
-                    st.rerun()
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Tab 7 — Ficha de campo (generación DOCX/PDF)
+# Tab — Ficha de campo (generación DOCX/PDF)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_ficha_campo() -> None:
@@ -1832,21 +1690,32 @@ def _render_ficha_campo() -> None:
             puntos_info.append(f"{pt_nombre} ({pt_codigo})" if pt_codigo else pt_nombre)
     st.info(f"Se generarán **{len(puntos_info)}** fichas: {', '.join(puntos_info)}")
 
-    # ── Selección de parámetros para la ficha ────────────────────────────
-    with st.expander("Parámetros de laboratorio a incluir en la ficha", expanded=False):
-        st.caption("Solo los parámetros marcados aparecerán con ✓ en la ficha.")
+    # ── Parámetros definidos en la campaña ───────────────────────────────
+    # Los parámetros que aparecerán marcados en la ficha se deciden al crear
+    # o editar la campaña (página Campañas). Aquí solo se muestra el resumen.
+    sel_camp_ficha = get_parametros_lab_campana(campana_id)
+    claves_ficha = sel_camp_ficha["parametros_lab"]
+    param_list_ficha = list(get_parametros_lab_cadena())
+    if claves_ficha:
+        # Convertir claves (lowercase) → códigos (P###) que espera el servicio
+        codigos_por_clave = {p["clave"]: p["codigo"] for p in param_list_ficha}
+        params_ficha_lab = [codigos_por_clave[c] for c in claves_ficha if c in codigos_por_clave]
+    else:
+        # Sin selección explícita = todos
+        params_ficha_lab = [p["codigo"] for p in param_list_ficha]
 
-        params_ficha_lab = []
-        cols_per_row = 5
-        param_list = list(get_parametros_lab_cadena())
-        for i in range(0, len(param_list), cols_per_row):
-            cols = st.columns(cols_per_row)
-            for j, col in enumerate(cols):
-                idx = i + j
-                if idx < len(param_list):
-                    p = param_list[idx]
-                    if col.checkbox(p["nombre"], value=True, key=f"ficha_plab_{p['clave']}"):
-                        params_ficha_lab.append(p["codigo"])
+    with st.expander("Parámetros de laboratorio (definidos en la campaña)", expanded=False):
+        nombres_marcados = [
+            p["nombre"] for p in param_list_ficha
+            if p["codigo"] in set(params_ficha_lab)
+        ]
+        st.caption(
+            f"{len(nombres_marcados)} de {len(param_list_ficha)} parámetros "
+            f"aparecerán marcados en la ficha. Para modificar, abre la página "
+            f"**Campañas** y edita esta campaña."
+        )
+        if nombres_marcados:
+            st.markdown("**Marcados:** " + ", ".join(nombres_marcados))
 
     st.divider()
 
@@ -1886,13 +1755,12 @@ def main() -> None:
     page_header("Muestras de Campo", "Registro, mediciones in situ, cadena de custodia y etiquetas QR")
 
     # Orden lógico del flujo operativo:
-    #   campo (Registro → In situ → Fotos)
+    #   campo (Registro → In situ)
     #   transición a lab (Recepción en Lab)
     #   reportes (Documento CC, Ficha, Listado)
-    tab_reg, tab_insitu, tab_fotos, tab_custodia, tab_cadena, tab_ficha, tab_lista = st.tabs([
+    tab_reg, tab_insitu, tab_custodia, tab_cadena, tab_ficha, tab_lista = st.tabs([
         "Registro",
         "In situ",
-        "Fotos de Campo",
         "Recepción en Lab",
         "Documento CC",
         "Ficha de Campo",
@@ -1913,9 +1781,6 @@ def main() -> None:
 
     with tab_cadena:
         _render_cadena_custodia()
-
-    with tab_fotos:
-        _render_fotos_campo()
 
     with tab_ficha:
         _render_ficha_campo()

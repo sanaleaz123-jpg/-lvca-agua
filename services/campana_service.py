@@ -385,6 +385,85 @@ def actualizar_puntos_campana(campana_id: str, puntos_ids: list[str]) -> None:
     _invalidar_cache()
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Parámetros de laboratorio por campaña
+# Se persisten en cadena_custodia_config (ya existente) para que la Cadena de
+# Custodia y la Ficha de Campo consuman la misma fuente de verdad: lo decidido
+# al planificar la campaña.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def get_parametros_lab_campana(campana_id: str) -> dict:
+    """
+    Retorna los parámetros de laboratorio seleccionados para la campaña:
+        {"parametros_lab": [claves...], "parametros_lab_extra": [nombres...]}
+
+    Si la campaña no tiene selección guardada, retorna dict con listas vacías
+    (el consumidor debe interpretar eso como "todos seleccionados por defecto").
+    """
+    try:
+        db = get_admin_client()
+        res = (
+            db.table("cadena_custodia_config")
+            .select("config")
+            .eq("campana_id", campana_id)
+            .maybe_single()
+            .execute()
+        )
+        cfg = (res.data or {}).get("config") if res else None
+        if cfg:
+            return {
+                "parametros_lab":       cfg.get("parametros_lab", []) or [],
+                "parametros_lab_extra": cfg.get("parametros_lab_extra", []) or [],
+            }
+    except Exception:
+        pass
+    return {"parametros_lab": [], "parametros_lab_extra": []}
+
+
+def set_parametros_lab_campana(
+    campana_id: str,
+    parametros_lab: list[str],
+    parametros_lab_extra: list[str] | None = None,
+    usuario_id: Optional[str] = None,
+) -> bool:
+    """
+    Persiste la selección de parámetros de laboratorio para una campaña.
+    Actualiza la fila existente en cadena_custodia_config o la crea.
+
+    parametros_lab: lista de claves (lowercase codigo, ej. ["p019","p025"]).
+    parametros_lab_extra: lista de nombres libres.
+    """
+    try:
+        db = get_admin_client()
+        # Leer config actual para mezclar con el resto de campos
+        existente = (
+            db.table("cadena_custodia_config")
+            .select("config")
+            .eq("campana_id", campana_id)
+            .maybe_single()
+            .execute()
+        )
+        cfg = (existente.data or {}).get("config") if existente else None
+        if not cfg:
+            # Base mínima — la CC la completa al generar el documento
+            cfg = {}
+        cfg["parametros_lab"] = list(parametros_lab or [])
+        cfg["parametros_lab_extra"] = list(parametros_lab_extra or [])
+
+        payload = {
+            "campana_id":      campana_id,
+            "config":          cfg,
+            "actualizado_por": usuario_id,
+            "updated_at":      datetime.utcnow().isoformat(),
+        }
+        db.table("cadena_custodia_config").upsert(
+            payload, on_conflict="campana_id"
+        ).execute()
+        return True
+    except Exception:
+        return False
+
+
 def archivar_campana(campana_id: str, motivo: str = "", usuario_id: Optional[str] = None) -> None:
     """
     Soft-delete: marca la campaña como 'archivada' sin borrar datos.
