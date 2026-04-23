@@ -54,6 +54,7 @@ def get_puntos(
             "utm_este, utm_norte, utm_zona, latitud, longitud, altitud_msnm, "
             "entidad_responsable, activo, eca_id, "
             "departamento, provincia, distrito, accesibilidad, representatividad, finalidad, "
+            "dentro_zona_mezcla, zona_mezcla_observacion, "   # migración 013
             "ecas(id, codigo, nombre)"
         )
         .order("codigo")
@@ -94,6 +95,7 @@ def get_punto(punto_id: str) -> dict | None:
             "utm_este, utm_norte, utm_zona, latitud, longitud, altitud_msnm, "
             "entidad_responsable, activo, eca_id, "
             "departamento, provincia, distrito, accesibilidad, representatividad, finalidad, "
+            "dentro_zona_mezcla, zona_mezcla_observacion, "   # migración 013
             "ecas(id, codigo, nombre)"
         )
         .eq("id", punto_id)
@@ -276,5 +278,12 @@ def _build_fila(datos: dict) -> dict:
 
     if "activo" in datos:
         fila["activo"] = datos["activo"]
+
+    # Art. 7 — zona de mezcla (migración 013)
+    if "dentro_zona_mezcla" in datos:
+        fila["dentro_zona_mezcla"] = bool(datos["dentro_zona_mezcla"])
+    if "zona_mezcla_observacion" in datos:
+        v = datos["zona_mezcla_observacion"]
+        fila["zona_mezcla_observacion"] = (v.strip() if isinstance(v, str) and v.strip() else None)
 
     return fila
