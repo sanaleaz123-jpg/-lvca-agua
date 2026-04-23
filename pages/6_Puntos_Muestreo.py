@@ -30,6 +30,11 @@ from services.punto_service import (
 )
 from services.parametro_service import get_ecas
 from services.storage_service import upload_croquis, get_croquis_url
+from services.excepciones_service import (
+    listar_excepciones_art6,
+    registrar_excepcion_art6,
+    revocar_excepcion_art6,
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -107,6 +112,116 @@ def _render_listado() -> None:
     )
     punto_id = opciones_detalle[sel_detalle]
     _render_editar(punto_id)
+
+
+def _render_excepciones_art6(punto_id: str, punto_codigo: str) -> None:
+    """
+    Listado + alta de excepciones Art. 6 para el punto. Cada excepción
+    aplica por (punto × parámetro) y está sustentada por una R.J. de ANA.
+    Cuando existe excepción vigente, el motor de cumplimiento clasifica los
+    resultados que exceden el ECA como 'excede_excepcion_art6' (no 'excede').
+    """
+    section_header("Excepciones Art. 6 (condiciones naturales)", "eco")
+    st.caption(
+        "Si un parámetro excede el ECA por condiciones naturales (geología, "
+        "mineralización, desbalance natural), ANA puede aprobar una excepción. "
+        "Requiere estudio técnico-científico y R.J. de sustento."
+    )
+
+    # Listado
+    exc = listar_excepciones_art6(punto_id) or []
+    if exc:
+        from services.parametro_service import get_parametros
+        params = {p["id"]: p for p in (get_parametros() or [])}
+
+        for e in exc:
+            p_info = params.get(e["parametro_id"], {})
+            p_txt = f"{p_info.get('codigo','?')} — {p_info.get('nombre','?')}"
+            header = f"**{p_txt}**  ·  R.J. {e.get('rj_ana_sustento') or 'sin R.J.'}"
+            vig = e.get("vigente", True)
+            venc = e.get("fecha_vencimiento")
+            with st.expander(
+                header + ("" if vig else "  (REVOCADA)"),
+                icon=":material/check_circle:" if vig else ":material/cancel:",
+            ):
+                c1, c2 = st.columns([3, 1])
+                with c1:
+                    st.markdown(f"**Causa natural:** {e.get('causa_natural') or '—'}")
+                    if e.get("descripcion"):
+                        st.markdown(f"**Descripción:** {e['descripcion']}")
+                    st.caption(
+                        f"Aprobada: {e.get('fecha_aprobacion') or '—'}  ·  "
+                        f"Vence: {venc or 'indefinida'}"
+                    )
+                with c2:
+                    if vig and st.button(
+                        "Revocar",
+                        key=f"revocar_{e['id']}",
+                        icon=":material/block:",
+                    ):
+                        revocar_excepcion_art6(punto_id, e["parametro_id"])
+                        st.success("Excepción revocada.")
+                        st.rerun()
+    else:
+        st.caption("Este punto no tiene excepciones Art. 6 registradas.")
+
+    # Formulario para registrar nueva
+    with st.expander("Registrar nueva excepción", icon=":material/add:", expanded=False):
+        from services.parametro_service import get_parametros
+        params_lista = [p for p in (get_parametros(solo_activos=True) or [])
+                        if p.get("es_eca", True)]
+        opciones = {f"{p['codigo']} — {p['nombre']}": p["id"] for p in params_lista}
+
+        with st.form(f"form_nueva_excepcion_{punto_id[:8]}", clear_on_submit=True):
+            sel_param = st.selectbox("Parámetro *", list(opciones.keys()))
+            rj = st.text_input(
+                "R.J. ANA de sustento *",
+                placeholder="Ej: R.J. N° 123-2024-ANA",
+            )
+            cf1, cf2 = st.columns(2)
+            with cf1:
+                f_aprobacion = st.date_input(
+                    "Fecha de aprobación *",
+                    value=None,
+                    format="YYYY-MM-DD",
+                )
+            with cf2:
+                f_vencimiento = st.date_input(
+                    "Fecha de vencimiento (opcional)",
+                    value=None,
+                    format="YYYY-MM-DD",
+                )
+            causa = st.text_input(
+                "Causa natural *",
+                placeholder="Ej: Mineralización geológica (arsénico), desbalance natural de nutrientes, etc.",
+            )
+            descripcion = st.text_area(
+                "Descripción / justificación",
+                placeholder="Resumen del estudio técnico que sustenta la excepción.",
+                height=80,
+            )
+            submit_exc = st.form_submit_button(
+                "Registrar excepción", icon=":material/save:", type="primary",
+            )
+
+        if submit_exc:
+            if not rj.strip() or not causa.strip() or f_aprobacion is None:
+                st.error("R.J., causa natural y fecha de aprobación son obligatorios.")
+            else:
+                try:
+                    registrar_excepcion_art6(
+                        punto_id=punto_id,
+                        parametro_id=opciones[sel_param],
+                        rj_ana_sustento=rj.strip(),
+                        fecha_aprobacion=f_aprobacion.isoformat(),
+                        fecha_vencimiento=(f_vencimiento.isoformat() if f_vencimiento else None),
+                        causa_natural=causa.strip(),
+                        descripcion=descripcion.strip(),
+                    )
+                    st.success(f"Excepción registrada para {punto_codigo}.")
+                    st.rerun()
+                except Exception as exc_err:
+                    st.error(f"Error al registrar: {exc_err}")
 
 
 def _render_editar(punto_id: str) -> None:
@@ -230,6 +345,29 @@ def _render_editar(punto_id: str) -> None:
             placeholder="Ej: Monitoreo de vigilancia de calidad de agua.",
         )
 
+        # ── Art. 7 del DS 004-2017-MINAM — zona de mezcla ─────────────────
+        section_header("Zona de mezcla (Art. 7)", "water_drop")
+        st.caption(
+            "Cuando existe un vertimiento autorizado por ANA aguas arriba, "
+            "el cumplimiento ECA se verifica FUERA de la zona de mezcla. "
+            "Si el punto está dentro, la plataforma reporta los resultados "
+            "como 'No verificable' (no emite veredicto ECA)."
+        )
+        zm1, zm2 = st.columns([1, 2])
+        with zm1:
+            dentro_zm = st.checkbox(
+                "Punto dentro de zona de mezcla",
+                value=bool(punto.get("dentro_zona_mezcla")),
+                key=f"edit_zm_{kp}",
+            )
+        with zm2:
+            zm_obs = st.text_input(
+                "Observación / R.J. ANA de sustento",
+                value=punto.get("zona_mezcla_observacion") or "",
+                key=f"edit_zm_obs_{kp}",
+                placeholder="Ej: A 50 m aguas abajo de vertimiento autorizado R.A. 123-2022-ANA",
+            )
+
         submitted = st.form_submit_button("Guardar cambios", type="primary")
 
     # ── Botón activar/desactivar ──────────────────────────────────────────
@@ -249,7 +387,7 @@ def _render_editar(punto_id: str) -> None:
     # ── Eliminar punto ─────────────────────────────────────────────────────
     with bc2:
         if not punto.get("activo"):
-            with st.expander("🗑️ Eliminar punto", expanded=False):
+            with st.expander("Eliminar punto", icon=":material/delete:", expanded=False):
                 st.warning("Solo se pueden eliminar puntos sin muestras asociadas.")
                 if st.button("Eliminar permanentemente", key=f"btn_elim_{kp}", type="primary"):
                     try:
@@ -281,9 +419,12 @@ def _render_editar(punto_id: str) -> None:
             "departamento":         departamento.strip() or None,
             "provincia":            provincia.strip() or None,
             "distrito":             distrito.strip() or None,
-            "accesibilidad":        accesibilidad.strip() or None,
-            "representatividad":    representatividad.strip() or None,
-            "finalidad":            finalidad.strip() or None,
+            "accesibilidad":           accesibilidad.strip() or None,
+            "representatividad":       representatividad.strip() or None,
+            "finalidad":               finalidad.strip() or None,
+            # Art. 7 (migración 013)
+            "dentro_zona_mezcla":      dentro_zm,
+            "zona_mezcla_observacion": zm_obs,
         }
         try:
             actualizar_punto(punto_id, datos)
@@ -291,6 +432,10 @@ def _render_editar(punto_id: str) -> None:
             st.rerun()
         except Exception as exc:
             st.error(f"Error al actualizar: {exc}")
+
+    # ── Excepciones Art. 6 (condiciones naturales aprobadas por ANA) ─────────
+    st.divider()
+    _render_excepciones_art6(punto_id, punto.get("codigo", ""))
 
     # ── Croquis del punto ──────────────────────────────────────────────
     st.divider()
