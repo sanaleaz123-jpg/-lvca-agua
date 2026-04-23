@@ -314,6 +314,31 @@ def _cargar_geojson_cuencas() -> list[dict]:
     return cuencas
 
 
+def _cargar_geojson_rios() -> list[dict]:
+    """
+    Carga la red hídrica (ríos y quebradas) desde
+    `static/geojson/rios/*.geojson`. Un archivo por cuenca.
+    Estilo ANA: líneas azules, grosor según si es río o quebrada.
+    """
+    import json
+    from pathlib import Path
+
+    rios_dir = Path(__file__).parent.parent / "static" / "geojson" / "rios"
+    items = []
+    if not rios_dir.exists():
+        return items
+    for f in rios_dir.glob("*.geojson"):
+        try:
+            with open(f, encoding="utf-8") as fh:
+                items.append({
+                    "data": json.load(fh),
+                    "nombre": f.stem.replace("rios_", "").replace("_", " ").title(),
+                })
+        except Exception:
+            pass
+    return items
+
+
 def _popup_html(p: dict) -> str:
     """Popup compacto para el marcador (Fix 2: campos corregidos)."""
     eca = p.get("ecas") or {}
@@ -430,6 +455,67 @@ def _construir_mapa(puntos: list[dict], solo_excedencias: bool, mostrar_heatmap:
                 tooltip=f"Cuenca: {cu['nombre']}",
             ).add_to(fg_cuencas)
         fg_cuencas.add_to(m)
+
+    # ── Red hídrica: ríos y quebradas ────────────────────────────────────
+    # Estilo ANA: línea azul. Los ríos son más gruesos/opacos que las
+    # quebradas para permitir una lectura jerárquica a cualquier zoom.
+    rios_gj = _cargar_geojson_rios()
+    if rios_gj:
+        fg_rios = folium.FeatureGroup(name="Ríos", show=True)
+        fg_quebradas = folium.FeatureGroup(name="Quebradas", show=False)
+
+        def _style_rio(feature):
+            return {
+                "color": "#1d4ed8",      # azul río ANA
+                "weight": 2.5,
+                "opacity": 0.9,
+            }
+
+        def _style_quebrada(feature):
+            return {
+                "color": "#60a5fa",      # azul claro — quebrada secundaria
+                "weight": 1.3,
+                "opacity": 0.8,
+                "dashArray": "3,3",
+            }
+
+        for capa in rios_gj:
+            data = capa["data"]
+            # Separamos ríos y quebradas en features independientes para
+            # poder togglearlos por separado en el layer control.
+            feats_rio = [
+                f for f in data.get("features", [])
+                if (f.get("properties", {}).get("TIPO_CA") or "").lower().startswith("r")
+            ]
+            feats_queb = [
+                f for f in data.get("features", [])
+                if (f.get("properties", {}).get("TIPO_CA") or "").lower().startswith("q")
+            ]
+
+            if feats_rio:
+                folium.GeoJson(
+                    {"type": "FeatureCollection", "features": feats_rio},
+                    style_function=_style_rio,
+                    tooltip=folium.GeoJsonTooltip(
+                        fields=["NOMBRE_CA", "LONG_KM", "CATEGORIA"],
+                        aliases=["Río:", "Longitud (km):", "Categoría ECA:"],
+                        localize=True, sticky=False, labels=True,
+                    ),
+                ).add_to(fg_rios)
+
+            if feats_queb:
+                folium.GeoJson(
+                    {"type": "FeatureCollection", "features": feats_queb},
+                    style_function=_style_quebrada,
+                    tooltip=folium.GeoJsonTooltip(
+                        fields=["NOMBRE_CA", "LONG_KM", "CATEGORIA"],
+                        aliases=["Quebrada:", "Longitud (km):", "Categoría ECA:"],
+                        localize=True, sticky=False, labels=True,
+                    ),
+                ).add_to(fg_quebradas)
+
+        fg_rios.add_to(m)
+        fg_quebradas.add_to(m)
 
     # Polígonos de represas/lagunas
     siluetas = _cargar_geojson_puntos()
@@ -560,6 +646,18 @@ def _construir_mapa(puntos: list[dict], solo_excedencias: bool, mostrar_heatmap:
         <span style="color:#e8870e; font-size:14px;">&#9679;</span> Excedencia media<br>
         <span style="color:#c62828; font-size:14px;">&#9679;</span> Excedencia alta<br>
         <span style="color:#9e9e9e; font-size:14px;">&#9679;</span> Sin datos
+      </div>
+      <div style="border-top:1px solid #f1f5f9; padding-top:6px; margin-top:8px;
+           color:#475569; font-size:11px; line-height:1.45;">
+        <div style="font-weight:600; color:#1a1a1a; font-size:11px;
+             margin-bottom:3px;">Red hídrica</div>
+        <span style="display:inline-block; width:18px; height:3px;
+              background:#1d4ed8; vertical-align:middle; margin-right:4px;"></span> Río<br>
+        <span style="display:inline-block; width:18px; height:0;
+              border-top:2px dashed #60a5fa; vertical-align:middle; margin-right:4px;"></span> Quebrada<br>
+        <span style="display:inline-block; width:14px; height:10px;
+              border:1.5px solid #22c55e; background:rgba(34,197,94,0.08);
+              vertical-align:middle; margin-right:4px;"></span> Cuenca
       </div>
       <div style="font-size:10px; color:#94a3b8; border-top:1px solid #f1f5f9;
            padding-top:6px; margin-top:8px;">
@@ -915,7 +1013,7 @@ def main() -> None:
     page_header(
         "Geoportal",
         "Vigilancia de Calidad del Agua · LVCA",
-        ambito="Sistemas Chili Regulado y Colca Regulado · AUTODEMA",
+        ambito="Cuencas Quilca-Vítor-Chili y Colca-Camaná · AUTODEMA",
     )
 
     try:
