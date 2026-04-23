@@ -39,9 +39,12 @@ from services.campana_service import (
     eliminar_campana,
     get_campanas,
     get_detalle_campana,
+    get_parametros_lab_campana,
     get_todos_los_puntos,
     restaurar_campana,
+    set_parametros_lab_campana,
 )
+from services.parametro_registry import get_parametros_lab_cadena
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -63,6 +66,62 @@ _MAX_RESP_CAMPO = 4
 def _opciones_responsables_campo() -> list[str]:
     """Nombres elegibles como responsable de campo (lista fija)."""
     return list(_RESPONSABLES_CAMPO)
+
+
+def _render_seleccion_parametros_lab(
+    key_prefix: str,
+    seleccionados_default: list[str] | None = None,
+    extras_default: list[str] | None = None,
+) -> tuple[list[str], list[str]]:
+    """
+    Bloque reutilizable: selección de parámetros de laboratorio que serán
+    analizados en la campaña. Decide los parámetros que aparecerán marcados
+    con "X" en la Ficha de Campo y en el Documento de Cadena de Custodia.
+
+    seleccionados_default: lista de claves (lowercase codigo) pre-marcadas.
+        Si es None, se marcan todas.
+    extras_default: nombres libres a mostrar como extras.
+
+    Retorna (claves_seleccionadas, extras).
+    """
+    param_list = list(get_parametros_lab_cadena())
+    if seleccionados_default is None:
+        preseleccion: set[str] = {p["clave"] for p in param_list}
+    else:
+        preseleccion = set(seleccionados_default)
+
+    st.caption(
+        "Marca qué parámetros de laboratorio se analizarán en esta campaña. "
+        "Estos se mostrarán con «X» en la Ficha de Campo y en la Cadena de "
+        "Custodia."
+    )
+
+    seleccionados: list[str] = []
+    cols_per_row = 5
+    for i in range(0, len(param_list), cols_per_row):
+        cols = st.columns(cols_per_row)
+        for j, col in enumerate(cols):
+            idx = i + j
+            if idx >= len(param_list):
+                continue
+            p = param_list[idx]
+            marcado = col.checkbox(
+                p["nombre"],
+                value=p["clave"] in preseleccion,
+                key=f"{key_prefix}_plab_{p['clave']}",
+            )
+            if marcado:
+                seleccionados.append(p["clave"])
+
+    extras_str = ", ".join(extras_default or [])
+    extras_text = st.text_input(
+        "Parámetros adicionales (separados por coma)",
+        value=extras_str,
+        placeholder="Ej: Cianuro, DBO5, Coliformes totales",
+        key=f"{key_prefix}_plab_extras",
+    )
+    extras = [e.strip() for e in extras_text.split(",") if e.strip()]
+    return seleccionados, extras
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -442,6 +501,12 @@ def _render_detalle(campana_id: str) -> None:
 
 def _render_editar_campana(campana_id: str, camp: dict) -> None:
     """Formulario inline para editar datos de la campaña."""
+    # Cargar la selección actual de parámetros de lab (fuera del form para
+    # que el widget de checkboxes pueda renderizarse consistentemente).
+    sel_actual = get_parametros_lab_campana(campana_id)
+    claves_actuales = sel_actual["parametros_lab"] or None  # None = todos
+    extras_actuales = sel_actual["parametros_lab_extra"]
+
     with st.form("form_editar_campana", clear_on_submit=False):
         nombre = st.text_input("Nombre", value=camp.get("nombre") or "")
 
@@ -500,6 +565,13 @@ def _render_editar_campana(campana_id: str, camp: dict) -> None:
             key="edit_obs",
         )
 
+        section_header("Parámetros de laboratorio a analizar", "beaker")
+        params_lab_sel, params_lab_extra = _render_seleccion_parametros_lab(
+            key_prefix=f"edit_{campana_id}",
+            seleccionados_default=claves_actuales,
+            extras_default=extras_actuales,
+        )
+
         submitted = st.form_submit_button("Guardar cambios", type="primary")
 
     if submitted:
@@ -516,6 +588,13 @@ def _render_editar_campana(campana_id: str, camp: dict) -> None:
                 "responsable_laboratorio": resp_lab_sel,
                 "observaciones":           observaciones.strip() or None,
             })
+            sesion = st.session_state.get("sesion")
+            set_parametros_lab_campana(
+                campana_id,
+                params_lab_sel,
+                params_lab_extra,
+                usuario_id=sesion.uid if sesion else None,
+            )
             st.success("Campaña actualizada correctamente.")
             st.rerun()
         except Exception as exc:
@@ -614,6 +693,11 @@ def _render_formulario_nueva() -> None:
             default=list(opciones_puntos.keys()),  # todos por defecto
         )
 
+        section_header("Parámetros de laboratorio a analizar", "beaker")
+        params_lab_sel, params_lab_extra = _render_seleccion_parametros_lab(
+            key_prefix="new",
+        )
+
         observaciones = st.text_area(
             "Observaciones",
             placeholder="Notas sobre la campaña...",
@@ -658,12 +742,19 @@ def _render_formulario_nueva() -> None:
         with st.spinner("Creando campaña..."):
             try:
                 creada = crear_campana(datos, usuario_id=usuario_id)
+                set_parametros_lab_campana(
+                    creada["id"],
+                    params_lab_sel,
+                    params_lab_extra,
+                    usuario_id=usuario_id,
+                )
                 success_check_overlay(
                     f"Campaña {creada['codigo']} creada"
                 )
                 st.success(
                     f"Campaña **{creada['codigo']}** creada con "
-                    f"{len(puntos_ids)} punto(s) de muestreo."
+                    f"{len(puntos_ids)} punto(s) de muestreo y "
+                    f"{len(params_lab_sel) + len(params_lab_extra)} parámetro(s) de laboratorio."
                 )
             except Exception as exc:
                 st.error(f"Error al crear la campaña: {exc}")
