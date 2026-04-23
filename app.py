@@ -66,15 +66,32 @@ def _cerrar_sesion() -> None:
 # ─── pantalla de login ────────────────────────────────────────────────────────
 
 @st.cache_data(show_spinner=False)
-def _img_data_uri_cached(path: str) -> str:
-    """Lee un PNG del disco y lo convierte a data:URI base64. Cacheado
-    con @st.cache_data para que solo se ejecute una vez por sesión."""
+def _img_data_uri_cached(path: str, max_width: int = 400) -> str:
+    """Lee un PNG del disco, lo redimensiona a `max_width` preservando
+    la relación de aspecto, y lo convierte a data:URI base64. Cacheado
+    con @st.cache_data para que solo se ejecute una vez por sesión.
+
+    El resize evita que un PNG de varios MB (p. ej. logo_lvca.png ≈5.6 MB)
+    bloquee el render del login: el data URI resultante queda en ~15-40 KB.
+    """
     import base64
+    import io
     from pathlib import Path as _Path
+    from PIL import Image
     p = _Path(path)
     if not p.exists():
         return ""
-    b64 = base64.b64encode(p.read_bytes()).decode("ascii")
+    with Image.open(p) as img:
+        img = img.convert("RGBA")
+        if img.width > max_width:
+            ratio = max_width / img.width
+            img = img.resize(
+                (max_width, int(img.height * ratio)),
+                Image.LANCZOS,
+            )
+        buf = io.BytesIO()
+        img.save(buf, format="PNG", optimize=True)
+        b64 = base64.b64encode(buf.getvalue()).decode("ascii")
     return f"data:image/png;base64,{b64}"
 
 
@@ -98,6 +115,23 @@ def _pantalla_login() -> None:
             background: #f8fafc;
             max-width: 100% !important;
         }
+        /* Anti-flash: ocultar la card mientras el form nativo hidrata.
+           Streamlit stream-rendera banner HTML instantáneo pero st.form +
+           st.text_input tardan en montar sus componentes React, causando
+           el efecto escalonado "banner primero, form después".
+           Con :has() revelamos la card solo cuando el botón de submit ya
+           está en el DOM — señal de que el form terminó de renderizar.
+           Failsafe: animación con delay largo fuerza visible si :has()
+           no está soportado o algo falla. */
+        .st-key-lvca_login_card {
+            opacity: 0;
+            transition: opacity 0.18s ease-out;
+            animation: lvca-login-failsafe 0s 1.5s forwards;
+        }
+        .st-key-lvca_login_card:has([data-testid="stFormSubmitButton"] button) {
+            opacity: 1;
+        }
+        @keyframes lvca-login-failsafe { to { opacity: 1; } }
         /* El container con key="lvca_login_card" se convierte en card
            blanca con sombra y banner azul arriba. */
         .st-key-lvca_login_card {
