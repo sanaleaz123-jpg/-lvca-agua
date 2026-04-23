@@ -149,8 +149,18 @@ def convertir_a_especie_eca(
             "motivo": "Resultado de laboratorio no disponible",
         }
 
-    # Caso 2: ECA sin especie declarada → se asume comparación directa.
-    especie = expresado_como_eca or "sin_conversion"
+    # Caso 2: ECA sin especie declarada → comparación directa (sin conversión).
+    #         Esto aplica a los ECAs heredados antes de la migración 010 y a
+    #         parámetros donde no hay ambigüedad de especie (sulfatos, cloruros,
+    #         DBO, etc.). Evita falsos "no verificable" por falta de metadata.
+    if not expresado_como_eca:
+        return {
+            "valor_convertido": valor_lab,
+            "factor": 1.0,
+            "puede_comparar": True,
+            "motivo": "Comparación directa (ECA sin especie declarada — comparación por unidad tal cual)",
+        }
+    especie = expresado_como_eca
 
     # Caso 3: lookup de la forma en que el laboratorio reportó.
     forma_lab = UNIDAD_A_FORMA_LAB.get(unidad_simbolo)
