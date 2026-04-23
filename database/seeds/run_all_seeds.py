@@ -20,22 +20,30 @@ import sys, os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 from database.client import get_admin_client
-from database.seeds import seed_unidades, seed_parametros, seed_ecas, seed_puntos
+from database.seeds import (
+    seed_unidades,
+    seed_parametros,
+    seed_ecas,
+    seed_ecas_matriciales,
+    seed_puntos,
+)
 
 PASOS = [
-    ("1/4  Unidades de medida (150)",     seed_unidades.run),
-    ("2/4  Parametros (154)",             seed_parametros.run),
-    ("3/4  ECAs y valores limite (6)",    seed_ecas.run),
-    ("4/4  Puntos de muestreo (12)",      seed_puntos.run),
+    ("1/5  Unidades de medida (151)",               seed_unidades.run),
+    ("2/5  Parametros (24+)",                       seed_parametros.run),
+    ("3/5  ECAs y valores limite (6)",              seed_ecas.run),
+    ("4/5  ECA valores matriciales (Tabla N°1)",    seed_ecas_matriciales.run),
+    ("5/5  Puntos de muestreo (12)",                seed_puntos.run),
 ]
 
 # Verificacion final: tabla -> cantidad esperada
 TOTALES_ESPERADOS: dict[str, int] = {
-    "unidades_medida":    150,
-    "categorias_parametro": 5,
-    "parametros":         154,
-    "ecas":               6,
-    "puntos_muestreo":    12,
+    "unidades_medida":          151,
+    "categorias_parametro":       3,
+    "parametros":                24,
+    "ecas":                       6,
+    "eca_valores_matriciales":  112,  # 2 ECAs × 7 T × 8 pH (Tabla N°1)
+    "puntos_muestreo":           12,
 }
 
 

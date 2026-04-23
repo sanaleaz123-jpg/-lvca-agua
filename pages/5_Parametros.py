@@ -160,11 +160,18 @@ def _render_listado() -> None:
         cat = (p.get("categorias_parametro") or {}).get("nombre", "—")
         uni = (p.get("unidades_medida") or {}).get("simbolo", "—")
         cfg = get_param_config(p.get("codigo", ""))
+        # Metadata ECA (migraciones 010 y 012)
+        es_eca = p.get("es_eca", True)
+        forma = (p.get("forma_analitica") or "no_aplica")
+        tiene_obs = bool(p.get("observacion_tecnica"))
         filas.append({
             "Código":       p["codigo"],
             "Nombre":       p["nombre"],
             "Categoría":    cat,
             "Unidad":       uni,
+            "ECA":          "Sí" if es_eca else "No regulado",
+            "Forma":        {"total": "Total", "disuelta": "Disuelta", "no_aplica": "—"}.get(forma, forma),
+            "Nota técnica": "Sí" if tiene_obs else "—",
             "Preservante":  cfg.get("preservante", "—"),
             "Tipo frasco":  cfg.get("tipo_frasco", "—") or "—",
             "Método":       p.get("metodo_analitico") or "—",
@@ -192,6 +199,46 @@ def _render_listado() -> None:
     _render_editar(parametro_id)
 
 
+_FORMA_ETIQUETA = {
+    "total":     "Total",
+    "disuelta":  "Disuelta",
+    "no_aplica": "No aplica",
+}
+
+
+def _render_metadata_eca(param: dict) -> None:
+    """
+    Muestra la metadata ECA del parámetro (migraciones 010 y 012) en modo lectura:
+      - Badge "No regulado por ECA" si es_eca=False
+      - Chip de forma analítica
+      - Expander con observación técnica (nota oficial del DS o ECA_...xlsx)
+
+    Lectura pura: no modifica nada en BD. La edición de estos campos está fuera
+    del alcance actual (los setea el admin vía seed_parametros.py).
+    """
+    es_eca        = param.get("es_eca", True)
+    forma         = param.get("forma_analitica") or "no_aplica"
+    observacion   = (param.get("observacion_tecnica") or "").strip()
+
+    # Fila compacta de chips / badges
+    col_info, col_forma = st.columns([3, 1])
+    with col_info:
+        if not es_eca:
+            st.info(
+                "Parámetro **no regulado** por el DS 004-2017-MINAM. Se captura con "
+                "fines de caracterización pero no se compara contra ECA.",
+                icon=":material/block:",
+            )
+        else:
+            st.caption("Regulado por el DS 004-2017-MINAM.")
+    with col_forma:
+        st.caption(f"**Forma analítica:** {_FORMA_ETIQUETA.get(forma, forma)}")
+
+    if observacion:
+        with st.expander("Nota técnica oficial", icon=":material/info:"):
+            st.markdown(observacion)
+
+
 def _render_editar(parametro_id: str) -> None:
     """Formulario de edición de un parámetro existente."""
     param = get_parametro(parametro_id)
@@ -214,6 +261,9 @@ def _render_editar(parametro_id: str) -> None:
 
     # Configuración preservante/tipo_frasco
     cfg = get_param_config(codigo)
+
+    # ── Panel de metadata ECA (migraciones 010 y 012) ─────────────────────────
+    _render_metadata_eca(param)
 
     with st.form("form_editar_param", clear_on_submit=False):
         st.markdown(f"##### Editando: {param['codigo']}")
