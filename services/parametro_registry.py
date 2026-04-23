@@ -309,17 +309,29 @@ def get_parametros_lab_cadena() -> list[dict]:
     """
     Reemplazo dinámico de ``PARAMETROS_LAB_DEFAULT``.
     Retorna parámetros de laboratorio (no campo) para la cadena de custodia.
+
+    Deduplica por `nombre` de forma defensiva: si hay dos parámetros con el
+    mismo nombre activos en BD (p. ej. "Color verdadero" duplicado), se
+    conserva solo el primero por código — así la UI no muestra checkboxes
+    duplicados. La corrección definitiva debe hacerse desactivando la fila
+    duplicada en la página Parámetros.
     """
     params = get_parametros_activos()
-    result = []
+    result: list[dict] = []
+    nombres_vistos: set[str] = set()
     for p in params:
         cat = clasificar_categoria(p)
         if cat in _CATEGORIAS_EXCLUIDAS or cat == "Campo":
             continue
+        nombre = (p.get("nombre") or "").strip()
+        nombre_key = nombre.lower()
+        if nombre_key in nombres_vistos:
+            continue
+        nombres_vistos.add(nombre_key)
         codigo = p.get("codigo", "")
         result.append({
             "clave": codigo.lower(),
-            "nombre": p.get("nombre", ""),
+            "nombre": nombre,
             "codigo": codigo,
         })
     return result

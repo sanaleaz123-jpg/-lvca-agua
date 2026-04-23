@@ -24,7 +24,79 @@ from services.parametro_registry import (
     get_parametros_lab_cadena,
     get_parametros_campo_cadena,
     get_insitu_a_cadena_map,
+    get_all_param_configs,
 )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helpers compartidos por Excel y PDF — selección dinámica de parámetros
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _params_lab_seleccionados(cfg: dict, max_cols: int) -> list[dict]:
+    """
+    Filtra los parámetros de laboratorio a incluir como columnas del
+    documento, basándose en la selección guardada en la campaña.
+
+    Si la campaña no tiene selección guardada, devuelve todos los lab
+    disponibles (hasta ``max_cols``). Los parámetros adicionales escritos
+    por el usuario (``parametros_lab_extra``) se añaden al final como
+    entradas sin código — sin preservante ni tipo de frasco asociado.
+    """
+    all_lab = get_parametros_lab_cadena()
+    claves_seleccionadas = cfg.get("parametros_lab")
+    if claves_seleccionadas:
+        sel = set(claves_seleccionadas)
+        filtrados = [p for p in all_lab if p["clave"] in sel]
+    else:
+        filtrados = list(all_lab)
+
+    extras = cfg.get("parametros_lab_extra") or []
+    for extra in extras:
+        nombre = str(extra).strip()
+        if not nombre:
+            continue
+        filtrados.append({
+            "clave":  nombre.lower().replace(" ", "_"),
+            "nombre": nombre,
+            "codigo": "",
+        })
+    return filtrados[:max_cols]
+
+
+def _preservante_de_param(codigo: str, param_configs: dict) -> str:
+    """
+    Retorna el preservante configurado para un parámetro, o "S/P" si no tiene.
+    Normaliza: cualquier valor "Ninguno" o vacío se mapea a "S/P".
+    """
+    pres = (param_configs.get(codigo) or {}).get("preservante", "")
+    if not pres or pres == "Ninguno":
+        return "S/P"
+    return pres
+
+
+def _contar_botellas(lab_params: list[dict], param_configs: dict) -> tuple[int, int]:
+    """
+    Cuenta botellas V (vidrio) y P (plástico) necesarias para la muestra.
+
+    Agrupa por (preservante, tipo_frasco) para no contar múltiples parámetros
+    que comparten botella. Clasifica cada grupo:
+        - V: si el tipo_frasco contiene "Vidrio"
+        - P: el resto (Polipropileno u otro plástico)
+    """
+    grupos: set[tuple[str, str]] = set()
+    for p in lab_params:
+        codigo = p.get("codigo", "")
+        if not codigo:
+            continue  # parámetros extra no tienen botella definida
+        cfg_p = param_configs.get(codigo) or {}
+        tf = (cfg_p.get("tipo_frasco") or "").strip()
+        if not tf:
+            continue
+        pres = cfg_p.get("preservante") or "Ninguno"
+        grupos.add((pres, tf))
+    n_vidrio = sum(1 for _, tf in grupos if "vidrio" in tf.lower())
+    n_plastico = sum(1 for _, tf in grupos if "vidrio" not in tf.lower())
+    return n_vidrio, n_plastico
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -374,17 +446,14 @@ def generar_excel_cadena(campana_id: str, config: dict | None = None) -> bytes:
         for i in range(0, max(n_muestras, 1), _SLOTS_POR_HOJA)
     ] or [[]]
 
-    # Parámetros dinámicos — acotados a la capacidad del template
-    all_lab = _get_parametros_lab_default()
+    # Parámetros dinámicos — solo los seleccionados en la campaña aparecen
+    # como columnas. El template tiene 15 slots máximos de lab y 7 de campo.
     all_campo = _get_parametros_campo()
-    lab_params = all_lab[:_TEMPLATE_LAB_COUNT]      # máx 15
-    campo_params = all_campo[:_TEMPLATE_FIELD_COUNT]  # máx 7
+    lab_params = _params_lab_seleccionados(cfg, _TEMPLATE_LAB_COUNT)
+    campo_params = all_campo[:_TEMPLATE_FIELD_COUNT]
 
-    params_activos = set(
-        cfg.get("parametros_lab", [p["clave"] for p in lab_params])
-    )
-    for extra in cfg.get("parametros_lab_extra", []):
-        params_activos.add(extra.lower().replace(" ", "_"))
+    # Configuración preservante/tipo_frasco por código de parámetro
+    param_configs = get_all_param_configs()
 
     # Posiciones fijas del template — NO se insertan columnas
     col_field_start = _COL_LAB_START + _TEMPLATE_LAB_COUNT   # 41 (AO)
@@ -462,27 +531,21 @@ def generar_excel_cadena(campana_id: str, config: dict | None = None) -> bytes:
         for col in range(_COL_LAB_START, _COL_LAB_START + _TEMPLATE_LAB_COUNT):
             _set(row, col, None)
 
-    # Colocar marcas según config — por clave de parámetro
-    pres = cfg.get("preservacion", {})
-    preservante_claves = _get_preservante_claves()
+    # Colocar marcas de preservante en cada columna seleccionada, tomando el
+    # preservante desde la configuración del parámetro (data/parametros_config.json).
     for idx, p in enumerate(lab_params):
-        clave = p.get("clave", "").lower()
-        codigo = p.get("codigo", "").lower()
-        if clave not in params_activos:
-            continue
-        preservante_asignado = "S/P"
-        for pres_nombre, claves_set in preservante_claves.items():
-            if clave in claves_set or codigo in claves_set:
-                preservante_asignado = pres_nombre
-                break
-        if pres.get(preservante_asignado, True):
-            row_pres = _PRESERVANTE_ROW.get(preservante_asignado)
-            if row_pres:
-                _set(row_pres, _COL_LAB_START + idx, "X")
+        codigo = p.get("codigo", "")
+        preservante_asignado = _preservante_de_param(codigo, param_configs)
+        row_pres = _PRESERVANTE_ROW.get(preservante_asignado)
+        if row_pres:
+            _set(row_pres, _COL_LAB_START + idx, "X")
 
     # ══════════════════════════════════════════════════════════════════════
     # 3. DATOS DE MUESTRAS (filas 15–36: 11 slots × 2 filas) — multi-hoja
     # ══════════════════════════════════════════════════════════════════════
+
+    # Conteo de botellas: igual para todas las muestras de la campaña.
+    n_vidrio, n_plastico = _contar_botellas(lab_params, param_configs)
 
     for hoja_idx, muestras_chunk in enumerate(chunks):
       _ws_actual[0] = hojas[hoja_idx]
@@ -558,16 +621,15 @@ def generar_excel_cadena(campana_id: str, config: dict | None = None) -> bytes:
         _set(r2, 22, "Z: ")
         _set(r2, 23, pt.get("utm_zona", "19 L"))
 
-        # N° de frascos (X=24, Y=25, cada uno merged r1:r2)
-        has_fito = "p120" in params_activos
-        has_micro = "p091" in params_activos
-        _set(r1, 24, 1.0 if has_fito else 0)
-        _set(r1, 25, 4.0 if has_micro else 3.0)
+        # N° de frascos (X=24 vidrio, Y=25 plástico) — derivado del
+        # tipo_frasco de cada parámetro seleccionado (constante en la cadena).
+        _set(r1, 24, float(n_vidrio))
+        _set(r1, 25, float(n_plastico))
 
-        # Parámetros de laboratorio — "x" en columnas activas (máx 15)
-        for i, p in enumerate(lab_params):
-            if p["clave"] in params_activos:
-                _set(r1, _COL_LAB_START + i, "x")
+        # Parámetros de laboratorio — "x" en todas las columnas (todas están
+        # seleccionadas por construcción de lab_params).
+        for i, _p in enumerate(lab_params):
+            _set(r1, _COL_LAB_START + i, "x")
 
         # Parámetros de campo — valores numéricos con coma decimal (máx 7)
         for i, p in enumerate(campo_params):
@@ -681,17 +743,19 @@ def generar_pdf_cadena(campana_id: str, config: dict | None = None) -> bytes:
     campana = datos["campana"]
     muestras = datos["muestras"]
 
-    # Acotar parámetros a la misma estructura que el Excel (15 lab + 7 campo)
-    all_lab = _get_parametros_lab_default()
-    params_lab = list(all_lab[:_TEMPLATE_LAB_COUNT])
-    for extra in cfg.get("parametros_lab_extra", []):
-        params_lab.append({"clave": extra.lower().replace(" ", "_"), "nombre": extra})
+    # Solo los parámetros seleccionados en la campaña son columnas del PDF.
+    params_lab = _params_lab_seleccionados(cfg, _TEMPLATE_LAB_COUNT)
+    param_configs = get_all_param_configs()
 
-    params_activos = set(
-        cfg.get("parametros_lab", [p["clave"] for p in params_lab])
+    # Conteo de botellas (V/P) — se calcula una vez, común a toda la cadena.
+    n_vidrio, n_plastico = _contar_botellas(params_lab, param_configs)
+
+    # Preservantes activos según selección (para el bloque PRESERVACIÓN del header)
+    preservantes_usados = set(
+        _preservante_de_param(p.get("codigo", ""), param_configs)
+        for p in params_lab
+        if p.get("codigo")
     )
-    for extra in cfg.get("parametros_lab_extra", []):
-        params_activos.add(extra.lower().replace(" ", "_"))
 
     output = BytesIO()
     W, H = landscape(A4)
@@ -794,7 +858,11 @@ def generar_pdf_cadena(campana_id: str, config: dict | None = None) -> bytes:
 
     # ── Filas de datos del encabezado ─────────────────────────────────────
     rh = 4.5 * mm
-    pres = cfg.get("preservacion", {})
+
+    # Marcas de preservación: derivadas de los parámetros seleccionados,
+    # no de configuración manual. Si algún param usa HNO3, aparece con X.
+    def _pres_mark(nombre: str) -> str:
+        return "X" if nombre in preservantes_usados else "—"
 
     # Fila: Área + HNO3/H2SO4 + Código doc
     y -= rh
@@ -803,8 +871,8 @@ def generar_pdf_cadena(campana_id: str, config: dict | None = None) -> bytes:
 
     rect(pr_x, y, pr_w, rh, HexColor("#D5E8C0"))
     txt(pr_x + 3, y + 1.2 * mm,
-        f"HNO3: {'X' if pres.get('HNO3') else '—'}     "
-        f"H2SO4: {'X' if pres.get('H2SO4') else '—'}", "Helvetica", 5.5)
+        f"HNO3: {_pres_mark('HNO3')}     "
+        f"H2SO4: {_pres_mark('H2SO4')}", "Helvetica", 5.5)
 
     rev_h = rh * 3
     rect(pg_x, y - rh * 2, pg_w, rev_h, white)
@@ -822,10 +890,10 @@ def generar_pdf_cadena(campana_id: str, config: dict | None = None) -> bytes:
 
     rect(pr_x, y, pr_w, rh, HexColor("#D5E8C0"))
     txt(pr_x + 3, y + 1.2 * mm,
-        f"HCl: {'X' if pres.get('HCl') else '—'}     "
-        f"Lugol: {'X' if pres.get('Lugol') else '—'}     "
-        f"Formol: {'X' if pres.get('Formol') else '—'}     "
-        f"S/P: {'X' if pres.get('S/P') else '—'}", "Helvetica", 5.5)
+        f"HCl: {_pres_mark('HCl')}     "
+        f"Lugol: {_pres_mark('Lugol')}     "
+        f"Formol: {_pres_mark('Formol')}     "
+        f"S/P: {_pres_mark('S/P')}", "Helvetica", 5.5)
 
     # Fila: Institución + Urgencia
     y -= rh
@@ -967,8 +1035,8 @@ def generar_pdf_cadena(campana_id: str, config: dict | None = None) -> bytes:
             str(pt.get("utm_norte", "") or ""),
             str(pt.get("altitud_msnm", "") or ""),
             pt.get("utm_zona", "19L") or "",
-            "1",
-            str(int(4.0 if "p091" in params_activos else 3.0)),
+            str(n_vidrio),
+            str(n_plastico),
         ]
 
         x = ML
@@ -981,11 +1049,10 @@ def generar_pdf_cadena(campana_id: str, config: dict | None = None) -> bytes:
                 "Helvetica", 5, black, al)
             x += w
 
-        # Params lab — "x"
-        for p in params_lab:
+        # Params lab — "x" en todas las columnas (solo aparecen los seleccionados)
+        for _p in params_lab:
             rect(x, y, lab_col_w, drh, bg)
-            if p["clave"] in params_activos:
-                txt(x + lab_col_w / 2, y + 1.8 * mm, "x", "Helvetica", 5, black, "c")
+            txt(x + lab_col_w / 2, y + 1.8 * mm, "x", "Helvetica", 5, black, "c")
             x += lab_col_w
 
         # Params campo — valores
