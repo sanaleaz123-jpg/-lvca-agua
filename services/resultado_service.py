@@ -140,19 +140,21 @@ def get_muestras(campana_id: str, punto_id: str) -> list[dict]:
 def get_datos_muestra(muestra_id: str) -> dict:
     """
     Devuelve un dict con todo lo necesario para renderizar la página:
-        muestra   → info de la muestra + punto + ECA
-        parametros→ lista completa de parámetros activos (154)
-        limites   → {parametro_id: {valor_min, valor_max}}
-        resultados→ {parametro_id: {id, valor_numerico, valor_texto, observaciones}}
+        muestra       → info de la muestra + punto + ECA + mediciones in situ
+        parametros    → lista completa de parámetros activos con metadata ECA
+        limites       → {parametro_id: {valor_min, valor_max, expresado_como, forma_analitica}}
+        resultados    → {parametro_id: {id, valor_numerico, valor_texto, observaciones, ...}}
+        mediciones    → {parametro_text: valor}  (pH, T, etc. in situ)
+        excepciones   → {parametro_id: True}  (Art. 6 vigentes para el punto)
     """
     db = get_admin_client()
 
-    # 1. Muestra → punto → ECA
+    # 1. Muestra → punto (con flag Art. 7) → ECA
     m = (
         db.table("muestras")
         .select(
             "id, codigo, fecha_muestreo, estado, "
-            "puntos_muestreo(id, codigo, nombre, eca_id, "
+            "puntos_muestreo(id, codigo, nombre, eca_id, dentro_zona_mezcla, "
             "  ecas(id, codigo, nombre))"
         )
         .eq("id", muestra_id)
@@ -161,32 +163,62 @@ def get_datos_muestra(muestra_id: str) -> dict:
     )
     muestra = m.data
     punto = muestra.get("puntos_muestreo") or {}
+    eca_info = punto.get("ecas") or {}
     eca_id = punto.get("eca_id")
+    eca_codigo = eca_info.get("codigo")
+    punto_id = punto.get("id")
 
-    # 2. Límites ECA para este punto
+    # 2. Límites ECA para este punto (con metadata de migraciones 010 y 012)
     limites: dict[str, dict] = {}
     if eca_id:
-        lim_res = (
-            db.table("eca_valores")
-            .select("parametro_id, valor_minimo, valor_maximo")
-            .eq("eca_id", eca_id)
-            .execute()
-        )
+        try:
+            lim_res = (
+                db.table("eca_valores")
+                .select(
+                    "parametro_id, valor_minimo, valor_maximo, "
+                    "expresado_como, forma_analitica"
+                )
+                .eq("eca_id", eca_id)
+                .execute()
+            )
+        except Exception:
+            # Fallback pre-migración 010/012
+            lim_res = (
+                db.table("eca_valores")
+                .select("parametro_id, valor_minimo, valor_maximo")
+                .eq("eca_id", eca_id)
+                .execute()
+            )
         limites = {r["parametro_id"]: r for r in (lim_res.data or [])}
 
-    # 3. Todos los parámetros activos con unidad y categoría
+    # 3. Todos los parámetros activos con unidad, categoría y metadata ECA
     #    Excluir categorías que no se usan (Plaguicidas, Microbiologico)
-    par_res = (
-        db.table("parametros")
-        .select(
-            "id, codigo, nombre, "
-            "unidades_medida(simbolo), "
-            "categorias_parametro(nombre)"
+    try:
+        par_res = (
+            db.table("parametros")
+            .select(
+                "id, codigo, nombre, "
+                "es_eca, observacion_tecnica, forma_analitica, lmd, lcm, "
+                "unidades_medida(simbolo), "
+                "categorias_parametro(nombre)"
+            )
+            .eq("activo", True)
+            .order("codigo")
+            .execute()
         )
-        .eq("activo", True)
-        .order("codigo")
-        .execute()
-    )
+    except Exception:
+        # Fallback pre-migraciones 006/010/012
+        par_res = (
+            db.table("parametros")
+            .select(
+                "id, codigo, nombre, "
+                "unidades_medida(simbolo), "
+                "categorias_parametro(nombre)"
+            )
+            .eq("activo", True)
+            .order("codigo")
+            .execute()
+        )
     from services.parametro_registry import clasificar_categoria
     _CATEGORIAS_EXCLUIDAS = {"Plaguicidas", "Microbiologico"}
     par_data = []
@@ -217,12 +249,53 @@ def get_datos_muestra(muestra_id: str) -> dict:
         )
     resultados = {r["parametro_id"]: r for r in (res_res.data or [])}
 
+    # 5. Mediciones in situ (pH, T, etc.) — necesarias para NH3 Cat 4
+    mediciones: dict[str, float] = {}
+    try:
+        ins_res = (
+            db.table("mediciones_insitu")
+            .select("parametro, valor")
+            .eq("muestra_id", muestra_id)
+            .execute()
+        )
+        for r in (ins_res.data or []):
+            key = (r.get("parametro") or "").lower().strip()
+            if r.get("valor") is not None:
+                mediciones[key] = float(r["valor"])
+    except Exception:
+        pass  # tabla existe desde v1, pero defensivo
+
+    # 6. Excepciones Art. 6 vigentes para este punto
+    excepciones: dict[str, bool] = {}
+    if punto_id:
+        try:
+            exc_res = (
+                db.table("excepciones_art6")
+                .select("parametro_id, fecha_vencimiento")
+                .eq("punto_muestreo_id", punto_id)
+                .eq("vigente", True)
+                .execute()
+            )
+            from datetime import date as _date
+            hoy = _date.today().isoformat()
+            for r in (exc_res.data or []):
+                venc = r.get("fecha_vencimiento")
+                if venc is None or venc >= hoy:
+                    excepciones[r["parametro_id"]] = True
+        except Exception:
+            pass  # migración 013 aún no aplicada en entornos antiguos
+
     return {
-        "muestra":    muestra,
-        "eca_id":     eca_id,
-        "limites":    limites,
-        "parametros": par_data,
-        "resultados": resultados,
+        "muestra":     muestra,
+        "eca_id":      eca_id,
+        "eca_codigo":  eca_codigo,
+        "punto_id":    punto_id,
+        "dentro_zona_mezcla": bool(punto.get("dentro_zona_mezcla")),
+        "limites":     limites,
+        "parametros":  par_data,
+        "resultados":  resultados,
+        "mediciones":  mediciones,
+        "excepciones": excepciones,
     }
 
 
@@ -707,3 +780,83 @@ def _get_usuario_interno_id(auth_id: str) -> Optional[str]:
         return res.data["id"] if res.data else None
     except Exception:
         return None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Evaluación ECA por resultado — pega el motor con los datos cargados en
+# get_datos_muestra(). Devuelve un VeredictoECA listo para renderizar en la UI.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _buscar_medicion_insitu(mediciones: dict[str, float], *claves) -> Optional[float]:
+    """
+    Retorna el primer valor de mediciones cuyo nombre coincide (case-insensitive)
+    con alguna de las claves provistas. Tolera variantes ('pH', 'ph', 'temperatura',
+    'temperatura del agua', 'temp', etc.).
+    """
+    if not mediciones:
+        return None
+    for clave in claves:
+        c = clave.lower().strip()
+        if c in mediciones:
+            return mediciones[c]
+        for k, v in mediciones.items():
+            if k.startswith(c) or c in k:
+                return v
+    return None
+
+
+def evaluar_resultado_ctx(datos: dict, parametro_id: str,
+                          valor_lab: Optional[float] = None,
+                          cualificador: Optional[str] = None):
+    """
+    Construye el ContextoEvaluacion con los datos de get_datos_muestra() y ejecuta
+    el motor de cumplimiento. Permite pasar valor_lab/cualificador en memoria
+    (sin leer de BD) para refrescar el veredicto en tiempo real mientras el
+    usuario edita un input en la página.
+
+    Retorna el VeredictoECA (ver services/cumplimiento_service.py).
+    """
+    from services.cumplimiento_service import evaluar, ContextoEvaluacion
+
+    param = next(
+        (p for p in datos.get("parametros", []) if p.get("id") == parametro_id),
+        None,
+    )
+    if not param:
+        return None
+
+    limite = datos.get("limites", {}).get(parametro_id, {}) or {}
+    resultado = datos.get("resultados", {}).get(parametro_id, {}) or {}
+    mediciones = datos.get("mediciones", {}) or {}
+    excepciones = datos.get("excepciones", {}) or {}
+
+    # Valor y cualificador: privilegiar lo que venga del input en vivo,
+    # si no hay, caer a lo guardado.
+    v = valor_lab if valor_lab is not None else resultado.get("valor_numerico")
+    q = cualificador if cualificador is not None else resultado.get("cualificador")
+
+    unidad = (param.get("unidades_medida") or {}).get("simbolo", "")
+
+    ctx = ContextoEvaluacion(
+        valor_lab=v,
+        cualificador=q,
+        parametro_codigo=param.get("codigo", ""),
+        parametro_nombre=param.get("nombre", ""),
+        parametro_es_eca=bool(param.get("es_eca", True)),
+        parametro_unidad_simbolo=unidad,
+        parametro_lmd=param.get("lmd"),
+        parametro_lcm=param.get("lcm"),
+        parametro_forma_analitica=param.get("forma_analitica") or "no_aplica",
+        eca_codigo=datos.get("eca_codigo"),
+        eca_valor_minimo=limite.get("valor_minimo"),
+        eca_valor_maximo=limite.get("valor_maximo"),
+        eca_expresado_como=limite.get("expresado_como"),
+        eca_forma_analitica=limite.get("forma_analitica") or "no_aplica",
+        ph=_buscar_medicion_insitu(mediciones, "ph"),
+        temperatura_celsius=_buscar_medicion_insitu(
+            mediciones, "temperatura", "temp", "temperatura_agua", "temperatura del agua"
+        ),
+        dentro_zona_mezcla=bool(datos.get("dentro_zona_mezcla")),
+        tiene_excepcion_art6=bool(excepciones.get(parametro_id)),
+    )
+    return evaluar(ctx)
