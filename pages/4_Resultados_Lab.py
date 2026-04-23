@@ -5,8 +5,8 @@ Ingreso de resultados de laboratorio con semáforo ECA en tiempo real.
 Flujo:
     1. Seleccionar campaña → punto de muestreo → muestra
     2. Editar parámetros (valor, observaciones) con inputs individuales
-    3. Semáforo automático en tiempo real: 🟢 cumple / 🔴 excede
-       Parámetros sin ECA o sin valor no muestran indicador.
+    3. Veredicto ECA en tiempo real con 5 estados: cumple, excede, excede_art6,
+       no_verificable, no_aplica (motor services/cumplimiento_service.py).
     4. Guardar → upsert en resultados_laboratorio
 
 Acceso mínimo: visualizador
@@ -30,7 +30,9 @@ from services.resultado_service import (
     guardar_resultados_lote,
     eliminar_resultados_muestra,
     _get_usuario_interno_id,
+    evaluar_resultado_ctx,
 )
+from services.cumplimiento_service import EstadoECA
 
 # ─── Constantes de visualización ─────────────────────────────────────────────
 
@@ -46,8 +48,8 @@ _BG_ROJO = "#f8d7da"
 
 def _semaforo_eca(valor, lim_min, lim_max) -> tuple[str, str]:
     """
-    Retorna (emoji, color_fondo) para el valor y límites ECA dados.
-    Cadenas vacías cuando no hay indicador que mostrar.
+    (legacy) Compara valor vs rango ECA fijo. Ahora se usa el motor de
+    cumplimiento (_chip_veredicto_eca). Se conserva por si otros módulos la llaman.
     """
     if valor is None or (lim_max is None and lim_min is None):
         return "", ""
@@ -56,8 +58,49 @@ def _semaforo_eca(valor, lim_min, lim_max) -> tuple[str, str]:
         or (lim_min is not None and valor < lim_min)
     )
     if excede:
-        return "🔴", _BG_ROJO
-    return "🟢", _BG_VERDE
+        return "excede", _BG_ROJO
+    return "cumple", _BG_VERDE
+
+
+# Chip de veredicto con 5 estados (motor de cumplimiento).
+# Paleta alineada con SSDH/ANA: verde cumple, rojo excede, amarillo excepción,
+# gris no verificable, lila no aplica.
+_CHIP_ESTADOS: dict[str, dict] = {
+    EstadoECA.CUMPLE:                {"bg": "#d4edda", "fg": "#155724", "label": "Cumple"},
+    EstadoECA.EXCEDE:                {"bg": "#f8d7da", "fg": "#721c24", "label": "Excede"},
+    EstadoECA.EXCEDE_EXCEPCION_ART6: {"bg": "#fff3cd", "fg": "#856404", "label": "Art. 6"},
+    EstadoECA.NO_VERIFICABLE:        {"bg": "#e2e3e5", "fg": "#383d41", "label": "No verif."},
+    EstadoECA.NO_APLICA:             {"bg": "#ede7f6", "fg": "#4527a0", "label": "No aplica"},
+}
+
+
+def _chip_veredicto_eca(veredicto) -> str:
+    """
+    Retorna HTML de un chip compacto con el estado del veredicto ECA. El motivo
+    se expone via title= (tooltip nativo del navegador).
+    """
+    if veredicto is None:
+        return ""
+    est = _CHIP_ESTADOS.get(veredicto.estado)
+    if est is None:
+        return ""
+
+    # Añadir % excedido cuando aplica (excede / excede_art6)
+    label = est["label"]
+    if veredicto.estado in (EstadoECA.EXCEDE, EstadoECA.EXCEDE_EXCEPCION_ART6) \
+            and veredicto.valor_comparado is not None \
+            and veredicto.eca_valor_maximo is not None \
+            and veredicto.eca_valor_maximo > 0 \
+            and veredicto.valor_comparado > veredicto.eca_valor_maximo:
+        pct = (veredicto.valor_comparado / veredicto.eca_valor_maximo - 1) * 100
+        label = f"{label} +{pct:.0f}%"
+
+    motivo = (veredicto.motivo or "").replace('"', "'")
+    return (
+        f'<div title="{motivo}" style="background:{est["bg"]};color:{est["fg"]};'
+        f'padding:2px 8px;border-radius:10px;text-align:center;font-size:0.82em;'
+        f'font-weight:500;white-space:nowrap">{label}</div>'
+    )
 
 
 def _preparar_filas(datos: dict) -> list[dict]:
@@ -149,10 +192,17 @@ def _render_categoria(
     filas_cat: list[dict],
     key_prefix: str,
     saved_params: set[str],
+    datos: dict | None = None,
 ) -> dict[str, dict]:
     """
-    Renderiza inputs individuales por parámetro con semáforo ECA en tiempo real.
-    Retorna {parametro_id: {valor, observaciones}}.
+    Renderiza inputs individuales por parámetro con veredicto ECA en tiempo real.
+    Si `datos` (dict completo de get_datos_muestra) se pasa, usa el motor de
+    cumplimiento para evaluar con 5 estados (cumple, excede, excede_art6,
+    no_verificable, no_aplica) aplicando conversión de especies, matricial NH3,
+    cualificadores, forma analítica, zona mezcla y excepciones Art. 6.
+    Si `datos=None`, hace fallback a la comparación simple lim_min/lim_max.
+
+    Retorna {parametro_id: {valor, observaciones, cualificador}}.
     """
     con_datos = sum(1 for f in filas_cat if f["valor_numerico"] is not None)
     cs = st.columns(3)
@@ -167,7 +217,11 @@ def _render_categoria(
             or (f["lim_min"] is not None and f["valor_numerico"] < f["lim_min"])
         )
     )
-    cs[2].caption(f"🔴 Exceden: **{n_exc}**")
+    cs[2].markdown(
+        f'<span style="font-size:0.85em">:material/warning: Exceden estimados: '
+        f'<b>{n_exc}</b></span>',
+        unsafe_allow_html=True,
+    )
 
     # Encabezado
     hcols = st.columns([3, 1.6, 1.1, 0.7, 1, 0.6, 0.5])
@@ -196,7 +250,10 @@ def _render_categoria(
         # Nombre del parámetro (con candado si está validado)
         nombre = fila["parametro"]
         if is_validado:
-            cols[0].markdown(f"🔒 **{nombre}**", help="Resultado validado — bloqueado")
+            cols[0].markdown(
+                f":material/lock: **{nombre}**",
+                help="Resultado validado — bloqueado",
+            )
         else:
             cols[0].markdown(f"**{nombre}**")
 
@@ -237,40 +294,31 @@ def _render_categoria(
         else:
             cols[4].caption("—")
 
-        # Pill ECA: "Excede +X%" / "Cumple" minimalista
-        from components.ui_styles import excede_pill as _ex_pill
-        if val is not None and (lim_max is not None or lim_min is not None):
-            pct = None
-            if lim_max is not None and val > lim_max and lim_max > 0:
-                pct = (val / lim_max - 1) * 100
-            elif lim_min is not None and val < lim_min and lim_min > 0:
-                pct = (1 - val / lim_min) * 100
-            cols[5].markdown(_ex_pill(pct), unsafe_allow_html=True)
-        # Mantener emoji compacto como fallback en otros casos
-        emoji, bg = _semaforo_eca(val, lim_min, lim_max)
-        if False and emoji:
-            cols[5].markdown(
-                f'<div style="background:{bg};padding:2px 8px;border-radius:4px;'
-                f'text-align:center;font-size:1.1em">{emoji}</div>',
-                unsafe_allow_html=True,
-            )
+        # Veredicto ECA via motor de cumplimiento (5 estados). Fallback al pill
+        # antiguo si no hay contexto completo (ej. página embebida sin datos).
+        if datos is not None:
+            ver = evaluar_resultado_ctx(datos, pid, valor_lab=val, cualificador=(cualif or None))
+            cols[5].markdown(_chip_veredicto_eca(ver), unsafe_allow_html=True)
+        else:
+            from components.ui_styles import excede_pill as _ex_pill
+            if val is not None and (lim_max is not None or lim_min is not None):
+                pct = None
+                if lim_max is not None and val > lim_max and lim_max > 0:
+                    pct = (val / lim_max - 1) * 100
+                elif lim_min is not None and val < lim_min and lim_min > 0:
+                    pct = (1 - val / lim_min) * 100
+                cols[5].markdown(_ex_pill(pct), unsafe_allow_html=True)
 
         # Badge de estado: validado tiene prioridad sobre guardado
         if is_validado:
-            cols[6].markdown(
-                '<div style="text-align:center" title="Validado">🛡️</div>',
-                unsafe_allow_html=True,
-            )
+            cols[6].markdown(":material/verified_user:", help="Validado")
         elif pid in saved_params:
-            cols[6].markdown(
-                '<div style="text-align:center" title="Guardado">✅</div>',
-                unsafe_allow_html=True,
-            )
+            cols[6].markdown(":material/check_circle:", help="Guardado")
 
         valores[pid] = {"valor": val, "observaciones": "", "cualificador": cualif or None}
 
     # Observaciones en sección colapsable
-    with st.expander("📝 Observaciones", expanded=False):
+    with st.expander("Observaciones", icon=":material/edit_note:", expanded=False):
         for fila in filas_cat:
             pid = fila["parametro_id"]
             existing_obs = fila.get("observaciones", "") or ""
@@ -301,7 +349,7 @@ def main() -> None:
     page_header("Resultados de Laboratorio", "Ingreso y validación con semáforo ECA &middot; D.S. N° 004-2017-MINAM")
 
     # ── Selección en cascada ─────────────────────────────────────────────────
-    with st.expander("📋 Seleccionar muestra", expanded=True):
+    with st.expander("Seleccionar muestra", icon=":material/list:", expanded=True):
         campana_id, punto_id, muestra_id = _panel_seleccion()
 
     if not muestra_id:
@@ -370,23 +418,40 @@ def main() -> None:
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Total parámetros", total)
     m2.metric("Con valor", con_valor)
-    m3.metric("🔴 Exceden ECA", exceden_db)
-    m4.metric("🟢 Cumplen ECA", cumplen_db)
+    m3.metric("Exceden ECA", exceden_db)
+    m4.metric("Cumplen ECA", cumplen_db)
 
     if exceden_db > 0:
         st.error(
-            f"⚠️ **{exceden_db} parámetro(s) exceden el límite ECA** "
-            f"({eca.get('codigo','')}) para este punto de muestreo."
+            f"**{exceden_db} parámetro(s) exceden el límite ECA** "
+            f"({eca.get('codigo','')}) para este punto de muestreo.",
+            icon=":material/warning:",
         )
 
     st.divider()
 
-    # ── Leyenda del semáforo ──────────────────────────────────────────────────
-    with st.expander("Leyenda del semáforo ECA"):
+    # ── Leyenda de estados ECA (motor de cumplimiento) ────────────────────────
+    with st.expander("Leyenda de estados ECA", icon=":material/help:"):
         lc1, lc2, lc3 = st.columns(3)
-        lc1.markdown("🟢 **Cumple** — valor dentro del límite ECA")
-        lc2.markdown("🔴 **Excede** — valor supera el límite ECA")
-        lc3.markdown("Sin indicador — parámetro sin ECA asignado o sin valor")
+        lc1.markdown(
+            "**Cumple** — valor dentro del rango ECA aplicable, convertido a la "
+            "especie oficial del DS cuando corresponde."
+        )
+        lc1.markdown(
+            "**Excede** — valor supera el umbral. Se indica el % de excedencia."
+        )
+        lc2.markdown(
+            "**Art. 6** — excede, pero hay excepción aprobada por ANA "
+            "(condición natural no antrópica)."
+        )
+        lc2.markdown(
+            "**No verif.** — no se puede emitir juicio: LC>ECA, falta pH/T para "
+            "NH₃ Cat 4, zona de mezcla, o discrepancia total/disuelta."
+        )
+        lc3.markdown(
+            "**No aplica** — parámetro sin ECA en el DS 004-2017-MINAM para la "
+            "categoría del punto (ej. fosfatos, o P-total en Cat 3)."
+        )
 
     # ── Ingreso por categoría (tabs) ─────────────────────────────────────────
     st.subheader("Ingreso de resultados por categoría")
@@ -403,7 +468,7 @@ def main() -> None:
     all_valores: dict[str, dict] = {}
     for tab_widget, cat in zip(tabs, cats_ordenadas):
         with tab_widget:
-            cat_vals = _render_categoria(cats[cat], key_prefix, saved_params)
+            cat_vals = _render_categoria(cats[cat], key_prefix, saved_params, datos=datos)
             all_valores.update(cat_vals)
 
     # ── Botón de guardado ─────────────────────────────────────────────────────
@@ -411,7 +476,8 @@ def main() -> None:
     col_btn, col_space = st.columns([2, 5])
     with col_btn:
         guardar = st.button(
-            "💾 Guardar resultados",
+            "Guardar resultados",
+            icon=":material/save:",
             type="primary",
             use_container_width=True,
         )
@@ -447,8 +513,9 @@ def main() -> None:
 
             if bloqueados:
                 st.warning(
-                    f"🔒 {len(bloqueados)} resultado(s) están **validados** y no se sobreescribieron. "
-                    "Un administrador debe desvalidarlos primero para poder editar."
+                    f"{len(bloqueados)} resultado(s) están **validados** y no se sobreescribieron. "
+                    "Un administrador debe desvalidarlos primero para poder editar.",
+                    icon=":material/lock:",
                 )
             if errores:
                 st.error(f"Se guardaron {ok}/{len(cambios)} resultados. Errores:")
@@ -473,7 +540,8 @@ def main() -> None:
         n_validados = sum(1 for f in filas if f.get("validado"))
         n_no_validados = sum(1 for f in filas if not f.get("validado") and f["valor_numerico"] is not None)
         with st.expander(
-            f"🛡️ Validar resultados ({n_validados} validados, {n_no_validados} pendientes)",
+            f"Validar resultados ({n_validados} validados, {n_no_validados} pendientes)",
+            icon=":material/verified_user:",
             expanded=False,
         ):
             st.caption(
@@ -506,7 +574,7 @@ def main() -> None:
                     st.rerun()
 
     # ── Carga masiva desde Excel / CSV ────────────────────────────────────────
-    with st.expander("📥 Carga masiva desde Excel / CSV", expanded=False):
+    with st.expander("Carga masiva desde Excel / CSV", icon=":material/upload_file:", expanded=False):
         st.caption(
             "Sube un archivo con dos columnas: **codigo** (P001, P019, ...) y **valor** "
             "(numérico, opcional). Una columna **cualificador** (opcional) acepta "
@@ -663,7 +731,8 @@ def main() -> None:
     if excedencias_rt:
         st.divider()
         with st.expander(
-            f"🔴 Detalle de excedencias ({len(excedencias_rt)} parámetros)",
+            f"Detalle de excedencias ({len(excedencias_rt)} parámetros)",
+            icon=":material/error:",
             expanded=True,
         ):
             df_exc = pd.DataFrame(excedencias_rt)
