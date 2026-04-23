@@ -48,48 +48,21 @@ from services.campana_service import (
 # Constantes / helpers del módulo
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Fallback si no hay usuarios cargados aún en la BD (primera instalación)
-_RESPONSABLES_CAMPO_FALLBACK = [
-    "Adrian Llacho",
-    "Alexis Vilcapaza",
+# Lista fija de responsables de campo autorizados (máx. 4 en simultáneo).
+_RESPONSABLES_CAMPO = [
+    "Victor Llacho",
     "Alfonso Torres",
-    "J. Pierre Madariaga",
+    "Jean Pierre Llerena",
+    "Alexis Vilcapaza",
 ]
-_RESPONSABLE_LAB_FALLBACK = "Ing. Ana Lucía Paz Alcázar"
+# Responsable de laboratorio fijo — siempre será esta persona.
+_RESPONSABLE_LAB = "Ing. Ana Lucía Paz Alcázar"
+_MAX_RESP_CAMPO = 4
 
 
 def _opciones_responsables_campo() -> list[str]:
-    """Lista de nombres elegibles como responsable de campo, leídos de usuarios."""
-    try:
-        from services.muestra_service import get_usuarios_campo
-        usuarios = get_usuarios_campo()
-        nombres = [
-            f"{u.get('nombre', '').strip()} {u.get('apellido', '').strip()}".strip()
-            for u in usuarios
-        ]
-        nombres = [n for n in nombres if n]
-        if nombres:
-            return nombres
-    except Exception:
-        pass
-    return _RESPONSABLES_CAMPO_FALLBACK
-
-
-def _opciones_responsable_lab() -> list[str]:
-    """Lista de nombres elegibles como responsable de laboratorio."""
-    try:
-        from services.muestra_service import get_responsables_lab
-        usuarios = get_responsables_lab()
-        nombres = [
-            f"{u.get('nombre', '').strip()} {u.get('apellido', '').strip()}".strip()
-            for u in usuarios
-        ]
-        nombres = [n for n in nombres if n]
-        if nombres:
-            return nombres
-    except Exception:
-        pass
-    return [_RESPONSABLE_LAB_FALLBACK]
+    """Nombres elegibles como responsable de campo (lista fija)."""
+    return list(_RESPONSABLES_CAMPO)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -505,22 +478,21 @@ def _render_editar_campana(campana_id: str, camp: dict) -> None:
                 if r.strip() in opciones_resp
             ]
             resp_campo_sel = st.multiselect(
-                "Responsable de campo (máx. 2)",
+                f"Responsable de campo (máx. {_MAX_RESP_CAMPO})",
                 opciones_resp,
                 default=default_resp,
-                max_selections=2,
+                max_selections=_MAX_RESP_CAMPO,
                 key="edit_resp_campo",
             )
 
-        opciones_resp_lab = _opciones_responsable_lab()
-        resp_lab_actual = camp.get("responsable_laboratorio") or opciones_resp_lab[0]
-        idx_lab = opciones_resp_lab.index(resp_lab_actual) if resp_lab_actual in opciones_resp_lab else 0
-        resp_lab_sel = st.selectbox(
+        st.text_input(
             "Responsable de laboratorio",
-            opciones_resp_lab,
-            index=idx_lab,
-            key="edit_resp_lab",
+            value=_RESPONSABLE_LAB,
+            disabled=True,
+            key="edit_resp_lab_display",
+            help="Responsable de laboratorio fijo para todas las campañas.",
         )
+        resp_lab_sel = _RESPONSABLE_LAB
 
         observaciones = st.text_area(
             "Observaciones",
@@ -621,19 +593,20 @@ def _render_formulario_nueva() -> None:
             )
         with fc4:
             responsable_campo_sel = st.multiselect(
-                "Responsable de campo (máx. 2)",
+                f"Responsable de campo (máx. {_MAX_RESP_CAMPO})",
                 _opciones_responsables_campo(),
-                max_selections=2,
+                max_selections=_MAX_RESP_CAMPO,
                 key="new_resp_campo",
             )
 
-        opciones_lab_new = _opciones_responsable_lab()
-        responsable_lab_sel = st.selectbox(
+        st.text_input(
             "Responsable de laboratorio",
-            opciones_lab_new,
-            index=0,
-            key="new_resp_lab",
+            value=_RESPONSABLE_LAB,
+            disabled=True,
+            key="new_resp_lab_display",
+            help="Responsable de laboratorio fijo para todas las campañas.",
         )
+        responsable_lab_sel = _RESPONSABLE_LAB
 
         puntos_sel = st.multiselect(
             "Puntos de muestreo incluidos *",
