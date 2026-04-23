@@ -111,12 +111,17 @@ ECAS: list[dict] = [
 # VALORES LIMITE POR ECA  (fuente: D.S. N 004-2017-MINAM Anexo I)
 #
 # Campos:
-#   eca_codigo    str   codigo del ECA (clave foranea resuelta por codigo)
-#   param_codigo  str   codigo del parametro (clave foranea resuelta por codigo)
-#   valor_minimo  float valor minimo permitido (None si no aplica)
-#   valor_maximo  float valor maximo permitido (None si no aplica)
-#   valor_limite  str   valor cualitativo ("Ausencia", "<LMD", etc.)
-#   observacion   str   nota aclaratoria
+#   eca_codigo      str  codigo del ECA (clave foranea resuelta por codigo)
+#   param_codigo    str  codigo del parametro (clave foranea resuelta por codigo)
+#   valor_minimo    float valor minimo permitido (None si no aplica)
+#   valor_maximo    float valor maximo permitido (None si no aplica)
+#   observacion     str  nota aclaratoria
+#   expresado_como  str  especie quimica oficial del DS (migracion 010). Determina
+#                        el factor de conversion al comparar con resultado lab.
+#                        Valores validos: ver services/conversion_especies.py:
+#                        ion_NO3, ion_NO2, N_NO3, N_NO2, suma_NO3N_NO2N_como_N,
+#                        NH3_libre, N_amoniacal_total, P_total,
+#                        metal_total, metal_disuelto, ion, sin_conversion.
 # ─────────────────────────────────────────────────────────────────────────────
 ECA_VALORES: list[dict] = [
 
@@ -135,10 +140,10 @@ ECA_VALORES: list[dict] = [
     {"eca_codigo": "ECA-C1A1", "param_codigo": "P020", "valor_maximo": 10.0},
     {"eca_codigo": "ECA-C1A1", "param_codigo": "P028", "valor_maximo": 25.0},
     # Nutrientes
-    {"eca_codigo": "ECA-C1A1", "param_codigo": "P031", "valor_maximo": 13.0,  "observacion": "mg N-NO3/L"},
-    {"eca_codigo": "ECA-C1A1", "param_codigo": "P032", "valor_maximo": 3.0,   "observacion": "mg N-NO2/L"},
-    {"eca_codigo": "ECA-C1A1", "param_codigo": "P033", "valor_maximo": 1.5,   "observacion": "mg N-NH4/L"},
-    {"eca_codigo": "ECA-C1A1", "param_codigo": "P036", "valor_maximo": 0.1,   "observacion": "mg P/L total"},
+    {"eca_codigo": "ECA-C1A1", "param_codigo": "P031", "valor_maximo": 13.0,  "observacion": "mg N-NO3/L",   "expresado_como": "ion_NO3"},
+    {"eca_codigo": "ECA-C1A1", "param_codigo": "P032", "valor_maximo": 3.0,   "observacion": "mg N-NO2/L",   "expresado_como": "ion_NO2"},
+    {"eca_codigo": "ECA-C1A1", "param_codigo": "P033", "valor_maximo": 1.5,   "observacion": "mg N-NH4/L",   "expresado_como": "N_amoniacal_total"},
+    {"eca_codigo": "ECA-C1A1", "param_codigo": "P036", "valor_maximo": 0.1,   "observacion": "mg P/L total", "expresado_como": "P_total"},
     {"eca_codigo": "ECA-C1A1", "param_codigo": "P040", "valor_maximo": 2.4,   "observacion": "mg B/L"},
     # Iones
     {"eca_codigo": "ECA-C1A1", "param_codigo": "P041", "valor_maximo": 250.0},
@@ -152,14 +157,14 @@ ECA_VALORES: list[dict] = [
     # Metales
     {"eca_codigo": "ECA-C1A1", "param_codigo": "P061", "valor_maximo": 0.2,   "observacion": "mg Al/L"},
     {"eca_codigo": "ECA-C1A1", "param_codigo": "P062", "valor_maximo": 0.006, "observacion": "mg Sb/L"},
-    {"eca_codigo": "ECA-C1A1", "param_codigo": "P063", "valor_maximo": 0.01,  "observacion": "mg As/L"},
+    {"eca_codigo": "ECA-C1A1", "param_codigo": "P063", "valor_maximo": 0.01,  "observacion": "mg As/L", "expresado_como": "metal_total"},
     {"eca_codigo": "ECA-C1A1", "param_codigo": "P064", "valor_maximo": 0.7,   "observacion": "mg Ba/L"},
     {"eca_codigo": "ECA-C1A1", "param_codigo": "P065", "valor_maximo": 0.04,  "observacion": "mg Be/L"},
     {"eca_codigo": "ECA-C1A1", "param_codigo": "P068", "valor_maximo": 0.003, "observacion": "mg Cd/L"},
     {"eca_codigo": "ECA-C1A1", "param_codigo": "P071", "valor_maximo": 0.05,  "observacion": "mg Cr VI/L"},
     {"eca_codigo": "ECA-C1A1", "param_codigo": "P072", "valor_maximo": 2.0,   "observacion": "mg Cu/L"},
-    {"eca_codigo": "ECA-C1A1", "param_codigo": "P074", "valor_maximo": 0.3,   "observacion": "mg Fe/L"},
-    {"eca_codigo": "ECA-C1A1", "param_codigo": "P077", "valor_maximo": 0.1,   "observacion": "mg Mn/L"},
+    {"eca_codigo": "ECA-C1A1", "param_codigo": "P074", "valor_maximo": 0.3,   "observacion": "mg Fe/L — DS exige TOTAL",  "expresado_como": "metal_total"},
+    {"eca_codigo": "ECA-C1A1", "param_codigo": "P077", "valor_maximo": 0.1,   "observacion": "mg Mn/L — DS exige TOTAL",  "expresado_como": "metal_total"},
     {"eca_codigo": "ECA-C1A1", "param_codigo": "P078", "valor_maximo": 0.001, "observacion": "mg Hg/L"},
     {"eca_codigo": "ECA-C1A1", "param_codigo": "P079", "valor_maximo": 0.07,  "observacion": "mg Mo/L"},
     {"eca_codigo": "ECA-C1A1", "param_codigo": "P080", "valor_maximo": 0.07,  "observacion": "mg Ni/L"},
@@ -182,10 +187,15 @@ ECA_VALORES: list[dict] = [
     {"eca_codigo": "ECA-C1A2", "param_codigo": "P019", "valor_maximo": 5.0},
     {"eca_codigo": "ECA-C1A2", "param_codigo": "P020", "valor_maximo": 20.0},
     {"eca_codigo": "ECA-C1A2", "param_codigo": "P028", "valor_maximo": 100.0},
-    {"eca_codigo": "ECA-C1A2", "param_codigo": "P031", "valor_maximo": 13.0},
-    {"eca_codigo": "ECA-C1A2", "param_codigo": "P032", "valor_maximo": 3.0},
-    {"eca_codigo": "ECA-C1A2", "param_codigo": "P033", "valor_maximo": 1.5},
-    {"eca_codigo": "ECA-C1A2", "param_codigo": "P036", "valor_maximo": 0.2},
+    # P031 Cat 1-A2: DS oficial = 50 mg NO3-/L (ion). Corregido contra Excel oficial
+    # (valor previo 13,0 era arrastre del límite Cat 4). Helper aplica ×4,43 al lab.
+    {"eca_codigo": "ECA-C1A2", "param_codigo": "P031", "valor_maximo": 50.0,  "expresado_como": "ion_NO3"},
+    # P032 Cat 1-A2: DS oficial = 3 mg NO2-/L (ion). Valor correcto. Helper aplica ×3,28 al lab.
+    {"eca_codigo": "ECA-C1A2", "param_codigo": "P032", "valor_maximo": 3.0,   "expresado_como": "ion_NO2"},
+    # P033 Cat 1-A2: DS = 1,5 mg N/L "Amoniaco-N" (N amoniacal total). Método Nessler mide esto.
+    {"eca_codigo": "ECA-C1A2", "param_codigo": "P033", "valor_maximo": 1.5,   "expresado_como": "N_amoniacal_total"},
+    # P036 Cat 1-A2: DS oficial = 0,15 mg P/L total. Corregido contra Excel oficial (valor previo 0,2).
+    {"eca_codigo": "ECA-C1A2", "param_codigo": "P036", "valor_maximo": 0.15,  "expresado_como": "P_total"},
     {"eca_codigo": "ECA-C1A2", "param_codigo": "P040", "valor_maximo": 2.4},
     {"eca_codigo": "ECA-C1A2", "param_codigo": "P041", "valor_maximo": 300.0},
     {"eca_codigo": "ECA-C1A2", "param_codigo": "P042", "valor_maximo": 250.0},
@@ -196,13 +206,13 @@ ECA_VALORES: list[dict] = [
     {"eca_codigo": "ECA-C1A2", "param_codigo": "P053", "valor_maximo": 0.01},
     {"eca_codigo": "ECA-C1A2", "param_codigo": "P061", "valor_maximo": 0.9},
     {"eca_codigo": "ECA-C1A2", "param_codigo": "P062", "valor_maximo": 0.006},
-    {"eca_codigo": "ECA-C1A2", "param_codigo": "P063", "valor_maximo": 0.01},
+    {"eca_codigo": "ECA-C1A2", "param_codigo": "P063", "valor_maximo": 0.01,  "expresado_como": "metal_total"},
     {"eca_codigo": "ECA-C1A2", "param_codigo": "P064", "valor_maximo": 0.7},
     {"eca_codigo": "ECA-C1A2", "param_codigo": "P068", "valor_maximo": 0.01},
     {"eca_codigo": "ECA-C1A2", "param_codigo": "P071", "valor_maximo": 0.05},
     {"eca_codigo": "ECA-C1A2", "param_codigo": "P072", "valor_maximo": 2.0},
-    {"eca_codigo": "ECA-C1A2", "param_codigo": "P074", "valor_maximo": 1.0},
-    {"eca_codigo": "ECA-C1A2", "param_codigo": "P077", "valor_maximo": 0.4},
+    {"eca_codigo": "ECA-C1A2", "param_codigo": "P074", "valor_maximo": 1.0,   "expresado_como": "metal_total"},
+    {"eca_codigo": "ECA-C1A2", "param_codigo": "P077", "valor_maximo": 0.4,   "expresado_como": "metal_total"},
     {"eca_codigo": "ECA-C1A2", "param_codigo": "P078", "valor_maximo": 0.002},
     {"eca_codigo": "ECA-C1A2", "param_codigo": "P080", "valor_maximo": 0.07},
     {"eca_codigo": "ECA-C1A2", "param_codigo": "P081", "valor_maximo": 0.05},
@@ -220,14 +230,14 @@ ECA_VALORES: list[dict] = [
     {"eca_codigo": "ECA-C1A3", "param_codigo": "P019", "valor_maximo": 10.0},
     {"eca_codigo": "ECA-C1A3", "param_codigo": "P020", "valor_maximo": 30.0},
     {"eca_codigo": "ECA-C1A3", "param_codigo": "P028", "valor_maximo": 500.0},
-    {"eca_codigo": "ECA-C1A3", "param_codigo": "P031", "valor_maximo": 13.0},
-    {"eca_codigo": "ECA-C1A3", "param_codigo": "P033", "valor_maximo": 1.5},
-    {"eca_codigo": "ECA-C1A3", "param_codigo": "P036", "valor_maximo": 1.0},
+    {"eca_codigo": "ECA-C1A3", "param_codigo": "P031", "valor_maximo": 13.0,  "expresado_como": "ion_NO3"},
+    {"eca_codigo": "ECA-C1A3", "param_codigo": "P033", "valor_maximo": 1.5,   "expresado_como": "N_amoniacal_total"},
+    {"eca_codigo": "ECA-C1A3", "param_codigo": "P036", "valor_maximo": 1.0,   "expresado_como": "P_total"},
     {"eca_codigo": "ECA-C1A3", "param_codigo": "P040", "valor_maximo": 2.4},
-    {"eca_codigo": "ECA-C1A3", "param_codigo": "P063", "valor_maximo": 0.15},
+    {"eca_codigo": "ECA-C1A3", "param_codigo": "P063", "valor_maximo": 0.15,  "expresado_como": "metal_total"},
     {"eca_codigo": "ECA-C1A3", "param_codigo": "P068", "valor_maximo": 0.01},
     {"eca_codigo": "ECA-C1A3", "param_codigo": "P071", "valor_maximo": 0.05},
-    {"eca_codigo": "ECA-C1A3", "param_codigo": "P074", "valor_maximo": 5.0},
+    {"eca_codigo": "ECA-C1A3", "param_codigo": "P074", "valor_maximo": 5.0,   "expresado_como": "metal_total"},
     {"eca_codigo": "ECA-C1A3", "param_codigo": "P078", "valor_maximo": 0.002},
     {"eca_codigo": "ECA-C1A3", "param_codigo": "P081", "valor_maximo": 0.05},
 
@@ -240,9 +250,17 @@ ECA_VALORES: list[dict] = [
     {"eca_codigo": "ECA-C3D1", "param_codigo": "P006", "valor_maximo": 25.0},
     {"eca_codigo": "ECA-C3D1", "param_codigo": "P019", "valor_maximo": 15.0},
     {"eca_codigo": "ECA-C3D1", "param_codigo": "P028", "valor_maximo": 150.0},
-    {"eca_codigo": "ECA-C3D1", "param_codigo": "P031", "valor_maximo": 13.0},
-    {"eca_codigo": "ECA-C3D1", "param_codigo": "P033", "valor_maximo": 1.5},
-    {"eca_codigo": "ECA-C3D1", "param_codigo": "P036", "valor_maximo": 5.0},
+    # P031 Cat 3-D1: DS oficial = 100 mg/L como SUMA (NO3-N + NO2-N) como N.
+    # Corregido contra Excel oficial (valor previo 13,0 era arrastre del límite Cat 4).
+    {"eca_codigo": "ECA-C3D1", "param_codigo": "P031", "valor_maximo": 100.0, "expresado_como": "suma_NO3N_NO2N_como_N"},
+    # P033 Cat 3-D1: el DS 004-2017-MINAM NO regula amoniaco en Cat 3. Se fija valor_maximo=None
+    # para desactivar la comparación ECA. (Se mantiene la fila para idempotencia del UPSERT:
+    # si existe en BD, se sobrescribe el valor a NULL).
+    {"eca_codigo": "ECA-C3D1", "param_codigo": "P033", "valor_maximo": None,  "expresado_como": "N_amoniacal_total",
+     "observacion": "NO regulado en Cat 3 por el DS 004-2017-MINAM — parámetro se captura sin comparación ECA"},
+    # P036 Cat 3-D1: el DS NO regula Fósforo Total en Cat 3. valor_maximo=None (misma lógica).
+    {"eca_codigo": "ECA-C3D1", "param_codigo": "P036", "valor_maximo": None,  "expresado_como": "P_total",
+     "observacion": "NO regulado en Cat 3 por el DS 004-2017-MINAM — parámetro se captura sin comparación ECA"},
     {"eca_codigo": "ECA-C3D1", "param_codigo": "P040", "valor_maximo": 1.0,   "observacion": "Suelos sensibles. Suelos tolerantes: 4 mg B/L"},
     {"eca_codigo": "ECA-C3D1", "param_codigo": "P041", "valor_maximo": 300.0},
     {"eca_codigo": "ECA-C3D1", "param_codigo": "P042", "valor_maximo": 100.0},
@@ -253,16 +271,16 @@ ECA_VALORES: list[dict] = [
     {"eca_codigo": "ECA-C3D1", "param_codigo": "P060", "valor_maximo": 6.0,   "observacion": "RAS - relacion adsorcion sodio"},
     {"eca_codigo": "ECA-C3D1", "param_codigo": "P061", "valor_maximo": 5.0},
     {"eca_codigo": "ECA-C3D1", "param_codigo": "P062", "valor_maximo": 0.05},
-    {"eca_codigo": "ECA-C3D1", "param_codigo": "P063", "valor_maximo": 0.1},
+    {"eca_codigo": "ECA-C3D1", "param_codigo": "P063", "valor_maximo": 0.1,   "expresado_como": "metal_total"},
     {"eca_codigo": "ECA-C3D1", "param_codigo": "P064", "valor_maximo": 0.7},
     {"eca_codigo": "ECA-C3D1", "param_codigo": "P065", "valor_maximo": 0.1},
     {"eca_codigo": "ECA-C3D1", "param_codigo": "P068", "valor_maximo": 0.01},
     {"eca_codigo": "ECA-C3D1", "param_codigo": "P069", "valor_maximo": 0.05},
     {"eca_codigo": "ECA-C3D1", "param_codigo": "P070", "valor_maximo": 0.1},
     {"eca_codigo": "ECA-C3D1", "param_codigo": "P072", "valor_maximo": 0.2},
-    {"eca_codigo": "ECA-C3D1", "param_codigo": "P074", "valor_maximo": 5.0},
+    {"eca_codigo": "ECA-C3D1", "param_codigo": "P074", "valor_maximo": 5.0,   "expresado_como": "metal_total"},
     {"eca_codigo": "ECA-C3D1", "param_codigo": "P075", "valor_maximo": 2.5},
-    {"eca_codigo": "ECA-C3D1", "param_codigo": "P077", "valor_maximo": 0.2},
+    {"eca_codigo": "ECA-C3D1", "param_codigo": "P077", "valor_maximo": 0.2,   "expresado_como": "metal_total"},
     {"eca_codigo": "ECA-C3D1", "param_codigo": "P078", "valor_maximo": 0.001},
     {"eca_codigo": "ECA-C3D1", "param_codigo": "P079", "valor_maximo": 0.01},
     {"eca_codigo": "ECA-C3D1", "param_codigo": "P080", "valor_maximo": 0.2},
@@ -280,21 +298,29 @@ ECA_VALORES: list[dict] = [
     {"eca_codigo": "ECA-C4E1", "param_codigo": "P004", "valor_minimo": 5.0},
     {"eca_codigo": "ECA-C4E1", "param_codigo": "P006", "valor_maximo": 25.0},
     {"eca_codigo": "ECA-C4E1", "param_codigo": "P019", "valor_maximo": 5.0},
-    {"eca_codigo": "ECA-C4E1", "param_codigo": "P031", "valor_maximo": 13.0},
-    {"eca_codigo": "ECA-C4E1", "param_codigo": "P033", "valor_maximo": 0.02},
-    {"eca_codigo": "ECA-C4E1", "param_codigo": "P036", "valor_maximo": 0.035},
+    {"eca_codigo": "ECA-C4E1", "param_codigo": "P031", "valor_maximo": 13.0,  "expresado_como": "ion_NO3"},
+    # Cat 4-E1: el DS NO regula N amoniacal total (P033) — solo NH3 libre (P034, ver abajo).
+    # Se desvincula P033 del ECA Cat 4-E1 poniendo valor_maximo=None.
+    {"eca_codigo": "ECA-C4E1", "param_codigo": "P033", "valor_maximo": None,  "expresado_como": "N_amoniacal_total",
+     "observacion": "Cat 4 NO regula N amoniacal total — ver P034 (NH3 libre, Tabla N°1)"},
+    # P034 Cat 4-E1: ECA 'Amoniaco Total NH3' de Tabla N°1 (variable por pH y T).
+    # Valor 0,02 es placeholder hasta implementar lookup matricial (cambio #4 del plan).
+    # El helper conversion_especies bloquea la comparación mientras NH3_libre no sea calculable.
+    {"eca_codigo": "ECA-C4E1", "param_codigo": "P034", "valor_maximo": 0.02,  "expresado_como": "NH3_libre",
+     "observacion": "Placeholder — ECA real es matricial pH×T, ver Tabla N°1 DS 004-2017-MINAM"},
+    {"eca_codigo": "ECA-C4E1", "param_codigo": "P036", "valor_maximo": 0.035, "expresado_como": "P_total"},
     {"eca_codigo": "ECA-C4E1", "param_codigo": "P040", "valor_maximo": 0.5},
     {"eca_codigo": "ECA-C4E1", "param_codigo": "P044", "valor_maximo": 0.022},
     {"eca_codigo": "ECA-C4E1", "param_codigo": "P051", "valor_maximo": 0.5},
     {"eca_codigo": "ECA-C4E1", "param_codigo": "P053", "valor_maximo": 0.001},
     {"eca_codigo": "ECA-C4E1", "param_codigo": "P062", "valor_maximo": 0.006},
-    {"eca_codigo": "ECA-C4E1", "param_codigo": "P063", "valor_maximo": 0.15,  "observacion": "mg As/L ecosistema acuatico"},
+    {"eca_codigo": "ECA-C4E1", "param_codigo": "P063", "valor_maximo": 0.15,  "observacion": "mg As/L ecosistema acuatico", "expresado_como": "metal_total"},
     {"eca_codigo": "ECA-C4E1", "param_codigo": "P064", "valor_maximo": 0.7},
     {"eca_codigo": "ECA-C4E1", "param_codigo": "P068", "valor_maximo": 0.004},
     {"eca_codigo": "ECA-C4E1", "param_codigo": "P071", "valor_maximo": 0.011},
     {"eca_codigo": "ECA-C4E1", "param_codigo": "P072", "valor_maximo": 0.1},
-    {"eca_codigo": "ECA-C4E1", "param_codigo": "P074", "valor_maximo": 1.0},
-    {"eca_codigo": "ECA-C4E1", "param_codigo": "P077", "valor_maximo": 0.1},
+    {"eca_codigo": "ECA-C4E1", "param_codigo": "P074", "valor_maximo": 1.0,   "expresado_como": "metal_total"},
+    {"eca_codigo": "ECA-C4E1", "param_codigo": "P077", "valor_maximo": 0.1,   "expresado_como": "metal_total"},
     {"eca_codigo": "ECA-C4E1", "param_codigo": "P078", "valor_maximo": 0.0001},
     {"eca_codigo": "ECA-C4E1", "param_codigo": "P080", "valor_maximo": 0.052},
     {"eca_codigo": "ECA-C4E1", "param_codigo": "P081", "valor_maximo": 1.0},
@@ -313,21 +339,25 @@ ECA_VALORES: list[dict] = [
     {"eca_codigo": "ECA-C4E2", "param_codigo": "P006", "valor_maximo": 25.0},
     {"eca_codigo": "ECA-C4E2", "param_codigo": "P019", "valor_maximo": 10.0},
     {"eca_codigo": "ECA-C4E2", "param_codigo": "P028", "valor_maximo": 400.0},
-    {"eca_codigo": "ECA-C4E2", "param_codigo": "P031", "valor_maximo": 13.0},
-    {"eca_codigo": "ECA-C4E2", "param_codigo": "P033", "valor_maximo": 0.02},
-    {"eca_codigo": "ECA-C4E2", "param_codigo": "P036", "valor_maximo": 0.05},
+    {"eca_codigo": "ECA-C4E2", "param_codigo": "P031", "valor_maximo": 13.0,  "expresado_como": "ion_NO3"},
+    # Cat 4-E2: ídem E1. P033 desvinculado del ECA; P034 con valor placeholder de Tabla N°1.
+    {"eca_codigo": "ECA-C4E2", "param_codigo": "P033", "valor_maximo": None,  "expresado_como": "N_amoniacal_total",
+     "observacion": "Cat 4 NO regula N amoniacal total — ver P034 (NH3 libre, Tabla N°1)"},
+    {"eca_codigo": "ECA-C4E2", "param_codigo": "P034", "valor_maximo": 0.02,  "expresado_como": "NH3_libre",
+     "observacion": "Placeholder — ECA real es matricial pH×T, ver Tabla N°1 DS 004-2017-MINAM"},
+    {"eca_codigo": "ECA-C4E2", "param_codigo": "P036", "valor_maximo": 0.05,  "expresado_como": "P_total"},
     {"eca_codigo": "ECA-C4E2", "param_codigo": "P040", "valor_maximo": 0.5},
     {"eca_codigo": "ECA-C4E2", "param_codigo": "P044", "valor_maximo": 0.022},
     {"eca_codigo": "ECA-C4E2", "param_codigo": "P051", "valor_maximo": 0.5},
     {"eca_codigo": "ECA-C4E2", "param_codigo": "P053", "valor_maximo": 0.001},
     {"eca_codigo": "ECA-C4E2", "param_codigo": "P062", "valor_maximo": 0.006},
-    {"eca_codigo": "ECA-C4E2", "param_codigo": "P063", "valor_maximo": 0.15,  "observacion": "mg As/L proteccion vida acuatica"},
+    {"eca_codigo": "ECA-C4E2", "param_codigo": "P063", "valor_maximo": 0.15,  "observacion": "mg As/L proteccion vida acuatica", "expresado_como": "metal_total"},
     {"eca_codigo": "ECA-C4E2", "param_codigo": "P064", "valor_maximo": 0.7},
     {"eca_codigo": "ECA-C4E2", "param_codigo": "P068", "valor_maximo": 0.004},
     {"eca_codigo": "ECA-C4E2", "param_codigo": "P071", "valor_maximo": 0.011},
     {"eca_codigo": "ECA-C4E2", "param_codigo": "P072", "valor_maximo": 0.1},
-    {"eca_codigo": "ECA-C4E2", "param_codigo": "P074", "valor_maximo": 1.0},
-    {"eca_codigo": "ECA-C4E2", "param_codigo": "P077", "valor_maximo": 0.1},
+    {"eca_codigo": "ECA-C4E2", "param_codigo": "P074", "valor_maximo": 1.0,   "expresado_como": "metal_total"},
+    {"eca_codigo": "ECA-C4E2", "param_codigo": "P077", "valor_maximo": 0.1,   "expresado_como": "metal_total"},
     {"eca_codigo": "ECA-C4E2", "param_codigo": "P078", "valor_maximo": 0.0001},
     {"eca_codigo": "ECA-C4E2", "param_codigo": "P080", "valor_maximo": 0.052},
     {"eca_codigo": "ECA-C4E2", "param_codigo": "P081", "valor_maximo": 1.0,   "observacion": "mg Pb/L"},
@@ -367,10 +397,13 @@ def run() -> None:
             sin_param.append(f"{v['eca_codigo']}/{v['param_codigo']}")
             continue
         filas_v.append({
-            "eca_id":       eca_id,
-            "parametro_id": param_id,
-            "valor_minimo": v.get("valor_minimo"),
-            "valor_maximo": v.get("valor_maximo"),
+            "eca_id":         eca_id,
+            "parametro_id":   param_id,
+            "valor_minimo":   v.get("valor_minimo"),
+            "valor_maximo":   v.get("valor_maximo"),
+            # Metadata ECA (migración 010): especie química oficial del DS.
+            # None = sin especificar → conversion_especies.py asume "sin_conversion".
+            "expresado_como": v.get("expresado_como"),
         })
 
     if sin_eca:

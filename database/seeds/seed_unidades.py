@@ -40,6 +40,7 @@ UNIDADES: list[dict] = [
     {"simbolo": "mg N-NO3/L",   "nombre": "Miligramos de nitrogeno nitrico por litro"},
     {"simbolo": "mg N-NO2/L",   "nombre": "Miligramos de nitrogeno nitroso por litro"},
     {"simbolo": "mg N-NH4/L",   "nombre": "Miligramos de nitrogeno amoniacal por litro"},
+    {"simbolo": "mg NH3/L",     "nombre": "Miligramos de amoniaco no ionizado por litro"},
     {"simbolo": "mg P-PO4/L",   "nombre": "Miligramos de fosforo como ortofosfato por litro"},
     {"simbolo": "mg O2/L",      "nombre": "Miligramos de oxigeno por litro"},
     {"simbolo": "mg CaCO3/L",   "nombre": "Miligramos de carbonato de calcio por litro"},
@@ -189,7 +190,7 @@ UNIDADES: list[dict] = [
 
 
 def run() -> None:
-    assert len(UNIDADES) == 150, f"ERROR: se esperan 150 unidades, hay {len(UNIDADES)}"
+    assert len(UNIDADES) == 151, f"ERROR: se esperan 151 unidades, hay {len(UNIDADES)}"
     db = get_admin_client()
     filas = [
         {"simbolo": u["simbolo"], "nombre": u["nombre"],

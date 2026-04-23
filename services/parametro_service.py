@@ -42,6 +42,8 @@ def get_parametros(
         db.table("parametros")
         .select(
             "id, codigo, nombre, descripcion, metodo_analitico, activo, "
+            "es_eca, observacion_tecnica, "   # migración 010
+            "forma_analitica, "               # migración 012
             "categorias_parametro(id, nombre), "
             "unidades_medida(id, simbolo, nombre)"
         )
@@ -80,6 +82,8 @@ def get_parametro(parametro_id: str) -> dict | None:
         .select(
             "id, codigo, nombre, descripcion, metodo_analitico, activo, "
             "categoria_id, unidad_id, "
+            "es_eca, observacion_tecnica, "   # migración 010
+            "forma_analitica, "               # migración 012
             "categorias_parametro(id, nombre), "
             "unidades_medida(id, simbolo, nombre)"
         )
@@ -289,7 +293,9 @@ def get_valores_eca(eca_id: str) -> list[dict]:
         db.table("eca_valores")
         .select(
             "id, parametro_id, valor_minimo, valor_maximo, "
-            "parametros(codigo, nombre, unidades_medida(simbolo))"
+            "expresado_como, "                # migración 010
+            "forma_analitica, "               # migración 012
+            "parametros(codigo, nombre, es_eca, forma_analitica, unidades_medida(simbolo))"
         )
         .eq("eca_id", eca_id)
         .execute()
@@ -298,13 +304,17 @@ def get_valores_eca(eca_id: str) -> list[dict]:
     for r in (res.data or []):
         prm = r.get("parametros") or {}
         items.append({
-            "id":               r["id"],
-            "parametro_id":     r["parametro_id"],
-            "valor_minimo":     r["valor_minimo"],
-            "valor_maximo":     r["valor_maximo"],
-            "parametro_codigo": prm.get("codigo", ""),
-            "parametro_nombre": prm.get("nombre", ""),
-            "unidad":           (prm.get("unidades_medida") or {}).get("simbolo", ""),
+            "id":                      r["id"],
+            "parametro_id":            r["parametro_id"],
+            "valor_minimo":            r["valor_minimo"],
+            "valor_maximo":            r["valor_maximo"],
+            "expresado_como":          r.get("expresado_como"),
+            "eca_forma_analitica":     r.get("forma_analitica"),
+            "parametro_codigo":        prm.get("codigo", ""),
+            "parametro_nombre":        prm.get("nombre", ""),
+            "parametro_es_eca":        prm.get("es_eca", True),
+            "parametro_forma_analitica": prm.get("forma_analitica"),
+            "unidad":                  (prm.get("unidades_medida") or {}).get("simbolo", ""),
         })
     items.sort(key=lambda x: x["parametro_codigo"])
     return items
