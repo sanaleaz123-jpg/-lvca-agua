@@ -80,6 +80,10 @@ class ContextoEvaluacion:
     ph:               Optional[float] = None
     temperatura_celsius: Optional[float] = None
 
+    # Contexto temporal/espacial — requerido para evaluación Δ3 de Temperatura
+    fecha_muestreo:   Optional[str]   = None   # ISO yyyy-mm-dd o date-like
+    punto_id:         Optional[str]   = None
+
     # Flags de excepción (cambio #7 — pendiente; por ahora siempre False)
     dentro_zona_mezcla:       bool = False
     tiene_excepcion_art6:     bool = False
@@ -128,15 +132,19 @@ def evaluar(ctx: ContextoEvaluacion) -> VeredictoECA:
         )
 
     # ── 2. Sin eca aplicable para este (param, eca).
-    #       Excepción: los ECAs matriciales (NH3_libre via Tabla N°1) no usan
-    #       valor_minimo/maximo de eca_valores — el umbral lo aporta la
-    #       conversión. Por eso sólo descartamos cuando tampoco hay especie
-    #       matricial conocida.
+    #       Excepciones que NO requieren valor_minimo/maximo en eca_valores:
+    #         - ECAs matriciales (NH3 libre via Tabla N°1) — umbral desde matriz
+    #         - Temperatura (P002) con contexto temporal/espacial — umbral Δ3
+    #           se calcula desde línea base multianual del punto
     especie_matricial = ctx.eca_expresado_como in {"NH3_libre"}
+    es_temperatura_delta = (
+        ctx.parametro_codigo == "P002" and ctx.punto_id and ctx.fecha_muestreo
+    )
     if (
         ctx.eca_valor_minimo is None
         and ctx.eca_valor_maximo is None
         and not especie_matricial
+        and not es_temperatura_delta
     ):
         return VeredictoECA(
             estado=EstadoECA.NO_APLICA,
@@ -193,6 +201,14 @@ def evaluar(ctx: ContextoEvaluacion) -> VeredictoECA:
             eca_valor_maximo=ctx.eca_valor_maximo,
             detalles=detalles,
         )
+
+    # ── 3b. Temperatura Δ3 (P002): el DS no usa valor absoluto — compara
+    #         contra promedio mensual multianual por punto (Nota 8 del Excel).
+    if ctx.parametro_codigo == "P002" and ctx.valor_lab is not None \
+            and ctx.punto_id and ctx.fecha_muestreo:
+        vered_t = _evaluar_delta_temperatura(ctx, detalles)
+        if vered_t is not None:
+            return vered_t
 
     # ── 4. Manejo de cualificadores (<LMD, <LCM, Ausencia, etc.) ────────────
     vered = _evaluar_cualificador(ctx, detalles)
@@ -303,6 +319,101 @@ def evaluar(ctx: ContextoEvaluacion) -> VeredictoECA:
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers privados
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _evaluar_delta_temperatura(ctx: ContextoEvaluacion, detalles: dict) -> Optional[VeredictoECA]:
+    """
+    Aplica el criterio Δ3 del DS 004-2017-MINAM para el parámetro Temperatura
+    (P002). Consulta la línea base multianual del punto para el mes de la
+    muestra y evalúa la variación contra el umbral ±3 °C.
+
+    Retorna un veredicto completo. None solo si por alguna razón no puede
+    delegarse al helper (no debería ocurrir si el ContextoEvaluacion fue
+    validado previamente).
+    """
+    from services.linea_base_service import evaluar_delta_temperatura
+
+    try:
+        r = evaluar_delta_temperatura(
+            punto_id=ctx.punto_id,
+            fecha_muestreo=ctx.fecha_muestreo,
+            temperatura_c=float(ctx.valor_lab),
+        )
+    except Exception as exc:
+        return VeredictoECA(
+            estado=EstadoECA.NO_VERIFICABLE,
+            motivo=f"Error al evaluar Δ3 de temperatura: {exc}",
+            valor_lab_original=ctx.valor_lab,
+            valor_comparado=None,
+            unidad_comparada="°C",
+            eca_valor_minimo=None,
+            eca_valor_maximo=None,
+            detalles=detalles,
+        )
+
+    detalles["delta_temperatura"] = {
+        "linea_base":      r.get("linea_base"),
+        "delta_c":         r.get("delta_c"),
+        "umbral_c":        r.get("umbral_c"),
+        "mes":             r.get("mes"),
+    }
+
+    if not r["puede_comparar"]:
+        # Sin línea base histórica → no verificable
+        return VeredictoECA(
+            estado=EstadoECA.NO_VERIFICABLE,
+            motivo=r["motivo"],
+            valor_lab_original=ctx.valor_lab,
+            valor_comparado=None,
+            unidad_comparada="°C",
+            eca_valor_minimo=None,
+            eca_valor_maximo=None,
+            detalles=detalles,
+        )
+
+    # Con línea base, se expresan "eca_min/max" como los bordes del rango
+    # permitido por Δ3 para que la UI pueda mostrarlos como referencia.
+    lb = r["linea_base"] or {}
+    prom = float(lb.get("promedio_multianual_c") or 0.0)
+    umbral = float(r.get("umbral_c") or 3.0)
+    rango_min = prom - umbral
+    rango_max = prom + umbral
+
+    if r["cumple"]:
+        return VeredictoECA(
+            estado=EstadoECA.CUMPLE,
+            motivo=r["motivo"],
+            valor_lab_original=ctx.valor_lab,
+            valor_comparado=ctx.valor_lab,
+            unidad_comparada="°C",
+            eca_valor_minimo=round(rango_min, 2),
+            eca_valor_maximo=round(rango_max, 2),
+            detalles=detalles,
+        )
+
+    # Excede. Diferenciar si hay excepción Art. 6 para Temperatura
+    if ctx.tiene_excepcion_art6:
+        return VeredictoECA(
+            estado=EstadoECA.EXCEDE_EXCEPCION_ART6,
+            motivo=f"{r['motivo']} Con excepción Art. 6 aprobada para este punto.",
+            valor_lab_original=ctx.valor_lab,
+            valor_comparado=ctx.valor_lab,
+            unidad_comparada="°C",
+            eca_valor_minimo=round(rango_min, 2),
+            eca_valor_maximo=round(rango_max, 2),
+            detalles=detalles,
+        )
+
+    return VeredictoECA(
+        estado=EstadoECA.EXCEDE,
+        motivo=r["motivo"],
+        valor_lab_original=ctx.valor_lab,
+        valor_comparado=ctx.valor_lab,
+        unidad_comparada="°C",
+        eca_valor_minimo=round(rango_min, 2),
+        eca_valor_maximo=round(rango_max, 2),
+        detalles=detalles,
+    )
+
 
 def _evaluar_cualificador(ctx: ContextoEvaluacion, detalles: dict) -> Optional[VeredictoECA]:
     """

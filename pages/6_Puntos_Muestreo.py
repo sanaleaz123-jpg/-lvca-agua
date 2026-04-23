@@ -35,6 +35,14 @@ from services.excepciones_service import (
     registrar_excepcion_art6,
     revocar_excepcion_art6,
 )
+from services.linea_base_service import (
+    listar_linea_base,
+    registrar_linea_base,
+    eliminar_linea_base,
+    calcular_linea_base_desde_historico,
+    guardar_linea_base_desde_historico,
+    UMBRAL_DELTA_C,
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -222,6 +230,254 @@ def _render_excepciones_art6(punto_id: str, punto_codigo: str) -> None:
                     st.rerun()
                 except Exception as exc_err:
                     st.error(f"Error al registrar: {exc_err}")
+
+
+_MESES_NOMBRES = [
+    "", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+    "Julio", "Agosto", "Setiembre", "Octubre", "Noviembre", "Diciembre",
+]
+
+
+def _render_linea_base_temperatura(punto_id: str, punto_codigo: str) -> None:
+    """
+    Gestión de la línea base multianual de temperatura para el criterio Δ3
+    del DS 004-2017-MINAM. Ofrece:
+      - Vista de los 12 meses (con datos o vacíos)
+      - Cálculo automático desde las muestras históricas del punto
+      - Edición manual / borrado individual
+    """
+    import pandas as pd
+
+    section_header(
+        f"Línea base de temperatura (Δ{int(UMBRAL_DELTA_C)} °C)",
+        "thermostat",
+    )
+    st.caption(
+        "El DS 004-2017-MINAM exige comparar la temperatura medida contra el "
+        "promedio mensual multianual del punto (serie 1-5 años) y respetar "
+        f"una variación máxima de ±{UMBRAL_DELTA_C} °C. Sin esta línea base, "
+        "el parámetro Temperatura se reporta como 'No verificable'."
+    )
+
+    lb_actual = listar_linea_base(punto_id) or []
+    lb_map = {int(r["mes"]): r for r in lb_actual}
+
+    # ── Vista compacta de los 12 meses ────────────────────────────────
+    filas = []
+    for m in range(1, 13):
+        r = lb_map.get(m)
+        if r:
+            prom = float(r["promedio_multianual_c"])
+            filas.append({
+                "Mes":         f"{m:02d} · {_MESES_NOMBRES[m]}",
+                "Promedio °C": prom,
+                "Rango Δ3":    f"[{prom - UMBRAL_DELTA_C:.1f} ; {prom + UMBRAL_DELTA_C:.1f}]",
+                "Años":        r.get("n_anos") or "—",
+                "Serie":       f"{r.get('anio_inicio') or '?'}-{r.get('anio_fin') or '?'}",
+                "Observación": (r.get("observacion") or "")[:70],
+            })
+        else:
+            filas.append({
+                "Mes":         f"{m:02d} · {_MESES_NOMBRES[m]}",
+                "Promedio °C": None,
+                "Rango Δ3":    "—",
+                "Años":        "—",
+                "Serie":       "—",
+                "Observación": "(sin línea base)",
+            })
+
+    cobertura = sum(1 for f in filas if f["Promedio °C"] is not None)
+    st.caption(f"Cobertura actual: **{cobertura}/12 meses** con línea base registrada.")
+
+    st.dataframe(
+        pd.DataFrame(filas),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    # ── Cálculo automático desde histórico ─────────────────────────────
+    col_a, col_b = st.columns([2, 1])
+    with col_a:
+        st.markdown(
+            "**Cálculo automático** a partir de las temperaturas in situ "
+            "registradas en muestras históricas de este punto."
+        )
+    with col_b:
+        sobrescribir = st.checkbox(
+            "Sobrescribir meses ya registrados",
+            value=False,
+            key=f"lb_sobrescribir_{punto_id[:8]}",
+            help="Si está desmarcado, solo se calcularán meses vacíos.",
+        )
+
+    bc1, bc2 = st.columns([1, 1])
+    with bc1:
+        if st.button(
+            "Previsualizar cálculo",
+            icon=":material/preview:",
+            key=f"lb_preview_{punto_id[:8]}",
+            use_container_width=True,
+        ):
+            calc = calcular_linea_base_desde_historico(punto_id) or {}
+            if not calc:
+                st.warning(
+                    "No se encontraron muestras con mediciones in situ de "
+                    "temperatura para este punto. Registra al menos algunas "
+                    "muestras con temperatura antes de calcular."
+                )
+            else:
+                preview = []
+                for m in range(1, 13):
+                    c = calc.get(m)
+                    if c:
+                        preview.append({
+                            "Mes":             f"{m:02d} · {_MESES_NOMBRES[m]}",
+                            "Promedio °C":     c["promedio_multianual_c"],
+                            "Desv. std":       c["desviacion_std_c"],
+                            "N mediciones":    c["n_mediciones"],
+                            "N años":          c["n_anos"],
+                            "Serie":           f"{c['anio_inicio']}-{c['anio_fin']}",
+                            "Ya registrado":   "Sí" if m in lb_map else "No",
+                        })
+                st.dataframe(
+                    pd.DataFrame(preview),
+                    use_container_width=True, hide_index=True,
+                )
+                n_nuevos = sum(1 for m in calc if m not in lb_map)
+                n_pisa = sum(1 for m in calc if m in lb_map)
+                if sobrescribir:
+                    st.caption(
+                        f"Al aplicar: **{len(calc)}** meses se escribirán "
+                        f"(de los cuales {n_pisa} sobrescriben registros previos)."
+                    )
+                else:
+                    st.caption(
+                        f"Al aplicar: **{n_nuevos}** meses nuevos se escribirán. "
+                        f"{n_pisa} meses ya registrados quedarán intactos "
+                        "(marca la casilla 'Sobrescribir' si quieres pisarlos)."
+                    )
+    with bc2:
+        if st.button(
+            "Calcular y guardar",
+            icon=":material/auto_fix_high:",
+            key=f"lb_calcular_{punto_id[:8]}",
+            type="primary",
+            use_container_width=True,
+        ):
+            try:
+                r = guardar_linea_base_desde_historico(
+                    punto_id=punto_id,
+                    sobrescribir=sobrescribir,
+                )
+                if r["guardados"] == 0 and r["calculados"] == 0:
+                    st.warning(
+                        "No hay temperaturas históricas para este punto — "
+                        "no se guardó nada."
+                    )
+                else:
+                    msg = (
+                        f"Línea base actualizada: {r['guardados']} mes(es) "
+                        f"guardados de {r['calculados']} calculados."
+                    )
+                    if r["omitidos"]:
+                        nombres = ", ".join(_MESES_NOMBRES[m] for m in r["omitidos"])
+                        msg += f" Omitidos (ya registrados): {nombres}."
+                    st.success(msg)
+                    st.rerun()
+            except Exception as exc:
+                st.error(f"Error al calcular línea base: {exc}")
+
+    # ── Edición manual mes a mes ───────────────────────────────────────
+    with st.expander(
+        "Editar / agregar manualmente",
+        icon=":material/edit:",
+        expanded=False,
+    ):
+        st.caption(
+            "Usa este formulario para registrar un mes con datos que no estén "
+            "en las muestras del sistema (p. ej. serie histórica externa)."
+        )
+        with st.form(f"form_lb_manual_{punto_id[:8]}", clear_on_submit=True):
+            cfm1, cfm2, cfm3 = st.columns(3)
+            with cfm1:
+                sel_mes_label = st.selectbox(
+                    "Mes *",
+                    [f"{m:02d} · {_MESES_NOMBRES[m]}" for m in range(1, 13)],
+                )
+                sel_mes = int(sel_mes_label.split(" ")[0])
+            with cfm2:
+                promedio = st.number_input(
+                    "Promedio °C *",
+                    min_value=-5.0, max_value=45.0, value=15.0, step=0.1,
+                    format="%.2f",
+                )
+            with cfm3:
+                n_anos = st.number_input(
+                    "N años", min_value=1, max_value=20, value=1, step=1,
+                )
+            cfm4, cfm5, cfm6 = st.columns(3)
+            with cfm4:
+                desv = st.number_input(
+                    "Desv. std °C (opcional)", min_value=0.0, max_value=20.0,
+                    value=0.0, step=0.1, format="%.2f",
+                )
+            with cfm5:
+                anio_inicio = st.number_input(
+                    "Año inicio", min_value=1990, max_value=2100, value=2020,
+                )
+            with cfm6:
+                anio_fin = st.number_input(
+                    "Año fin", min_value=1990, max_value=2100, value=2024,
+                )
+            obs_lb = st.text_input(
+                "Observación",
+                placeholder="Ej: serie histórica provista por SENAMHI estación XYZ",
+            )
+            submit_lb = st.form_submit_button(
+                "Guardar mes", icon=":material/save:", type="primary",
+            )
+
+        if submit_lb:
+            try:
+                registrar_linea_base(
+                    punto_id=punto_id,
+                    mes=sel_mes,
+                    promedio_multianual_c=float(promedio),
+                    desviacion_std_c=float(desv) if desv > 0 else None,
+                    n_anos=int(n_anos),
+                    anio_inicio=int(anio_inicio),
+                    anio_fin=int(anio_fin),
+                    observacion=obs_lb.strip(),
+                )
+                st.success(f"Línea base guardada para {_MESES_NOMBRES[sel_mes]}.")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Error al guardar: {exc}")
+
+    # ── Borrado mes a mes ───────────────────────────────────────────────
+    if lb_map:
+        with st.expander(
+            "Eliminar un mes",
+            icon=":material/delete:",
+            expanded=False,
+        ):
+            opciones = {
+                f"{m:02d} · {_MESES_NOMBRES[m]} ({lb_map[m]['promedio_multianual_c']} °C)": m
+                for m in sorted(lb_map)
+            }
+            sel_del = st.selectbox(
+                "Mes a eliminar",
+                list(opciones.keys()),
+                key=f"lb_del_sel_{punto_id[:8]}",
+            )
+            if st.button(
+                "Eliminar este mes",
+                icon=":material/delete_forever:",
+                key=f"lb_del_btn_{punto_id[:8]}",
+            ):
+                eliminar_linea_base(punto_id, opciones[sel_del])
+                st.warning(f"Eliminada línea base de {sel_del}.")
+                st.rerun()
 
 
 def _render_editar(punto_id: str) -> None:
@@ -436,6 +692,10 @@ def _render_editar(punto_id: str) -> None:
     # ── Excepciones Art. 6 (condiciones naturales aprobadas por ANA) ─────────
     st.divider()
     _render_excepciones_art6(punto_id, punto.get("codigo", ""))
+
+    # ── Línea base de temperatura para evaluación Δ3 ─────────────────────────
+    st.divider()
+    _render_linea_base_temperatura(punto_id, punto.get("codigo", ""))
 
     # ── Croquis del punto ──────────────────────────────────────────────
     st.divider()

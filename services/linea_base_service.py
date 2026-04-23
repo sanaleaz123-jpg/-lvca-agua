@@ -116,6 +116,133 @@ def eliminar_linea_base(punto_id: str, mes: int) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Cálculo automático a partir de muestras históricas
+# ─────────────────────────────────────────────────────────────────────────────
+
+_ALIAS_TEMPERATURA = (
+    "temperatura", "temperatura_agua", "temperatura del agua", "temp", "t", "t_agua",
+)
+
+
+def calcular_linea_base_desde_historico(punto_id: str) -> dict[int, dict]:
+    """
+    Lee todas las muestras del punto que tengan una medición in situ de
+    temperatura, agrupa por mes calendario y calcula promedio multianual,
+    desviación estándar y número de años distintos cubiertos.
+
+    Retorna:
+        { mes (1-12): {
+              "mes": int,
+              "promedio_multianual_c": float,
+              "desviacion_std_c":       float,
+              "n_mediciones":           int,
+              "n_anos":                 int,
+              "anio_inicio":            int,
+              "anio_fin":               int,
+          } }
+
+    No persiste nada. Para guardar el resultado llamar a registrar_linea_base()
+    con los valores que el usuario confirme.
+    """
+    db = get_admin_client()
+    muestras = (
+        db.table("muestras")
+        .select("id, fecha_muestreo, mediciones_insitu(parametro, valor)")
+        .eq("punto_muestreo_id", punto_id)
+        .execute()
+        .data or []
+    )
+
+    por_mes: dict[int, list[tuple[float, int]]] = {}
+    for m in muestras:
+        fecha_str = m.get("fecha_muestreo")
+        if not fecha_str:
+            continue
+        try:
+            fecha = datetime.fromisoformat(str(fecha_str)[:10]).date()
+        except Exception:
+            continue
+        for med in (m.get("mediciones_insitu") or []):
+            parametro = (med.get("parametro") or "").lower().strip()
+            if parametro in _ALIAS_TEMPERATURA and med.get("valor") is not None:
+                try:
+                    por_mes.setdefault(fecha.month, []).append((float(med["valor"]), fecha.year))
+                except (TypeError, ValueError):
+                    pass
+                break
+
+    resultado: dict[int, dict] = {}
+    for mes in range(1, 13):
+        datos = por_mes.get(mes)
+        if not datos:
+            continue
+        valores = [d[0] for d in datos]
+        anos = sorted({d[1] for d in datos})
+        mean = sum(valores) / len(valores)
+        if len(valores) > 1:
+            var = sum((v - mean) ** 2 for v in valores) / (len(valores) - 1)
+            std = var ** 0.5
+        else:
+            std = 0.0
+        resultado[mes] = {
+            "mes":                   mes,
+            "promedio_multianual_c": round(mean, 2),
+            "desviacion_std_c":      round(std, 2),
+            "n_mediciones":          len(valores),
+            "n_anos":                len(anos),
+            "anio_inicio":           anos[0] if anos else None,
+            "anio_fin":              anos[-1] if anos else None,
+        }
+    return resultado
+
+
+def guardar_linea_base_desde_historico(punto_id: str,
+                                       sobrescribir: bool = False,
+                                       registrado_por: Optional[str] = None) -> dict:
+    """
+    Helper de alto nivel: calcula + guarda en una sola llamada.
+    Por defecto NO sobrescribe meses ya registrados (protege ajustes manuales).
+
+    Retorna:
+        {
+            "calculados":   int,   # meses encontrados en histórico
+            "guardados":    int,   # meses efectivamente UPSERT
+            "omitidos":     list,  # meses saltados por sobrescribir=False
+        }
+    """
+    calculado = calcular_linea_base_desde_historico(punto_id)
+    existentes = {lb["mes"] for lb in listar_linea_base(punto_id)}
+
+    guardados = 0
+    omitidos: list[int] = []
+    for mes, datos in calculado.items():
+        if not sobrescribir and mes in existentes:
+            omitidos.append(mes)
+            continue
+        registrar_linea_base(
+            punto_id=punto_id,
+            mes=mes,
+            promedio_multianual_c=datos["promedio_multianual_c"],
+            desviacion_std_c=datos["desviacion_std_c"],
+            n_anos=datos["n_anos"],
+            anio_inicio=datos["anio_inicio"],
+            anio_fin=datos["anio_fin"],
+            observacion=(
+                f"Calculado automáticamente desde {datos['n_mediciones']} "
+                f"mediciones in situ entre {datos['anio_inicio']} y {datos['anio_fin']}."
+            ),
+            registrado_por=registrado_por,
+        )
+        guardados += 1
+
+    return {
+        "calculados": len(calculado),
+        "guardados":  guardados,
+        "omitidos":   omitidos,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Evaluación Δ3
 # ─────────────────────────────────────────────────────────────────────────────
 

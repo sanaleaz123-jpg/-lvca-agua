@@ -837,6 +837,7 @@ def evaluar_resultado_ctx(datos: dict, parametro_id: str,
 
     unidad = (param.get("unidades_medida") or {}).get("simbolo", "")
 
+    muestra = datos.get("muestra") or {}
     ctx = ContextoEvaluacion(
         valor_lab=v,
         cualificador=q,
@@ -856,6 +857,9 @@ def evaluar_resultado_ctx(datos: dict, parametro_id: str,
         temperatura_celsius=_buscar_medicion_insitu(
             mediciones, "temperatura", "temp", "temperatura_agua", "temperatura del agua"
         ),
+        # Contexto temporal/espacial — requerido para evaluación Δ3 de Temperatura
+        fecha_muestreo=muestra.get("fecha_muestreo"),
+        punto_id=datos.get("punto_id"),
         dentro_zona_mezcla=bool(datos.get("dentro_zona_mezcla")),
         tiene_excepcion_art6=bool(excepciones.get(parametro_id)),
     )
