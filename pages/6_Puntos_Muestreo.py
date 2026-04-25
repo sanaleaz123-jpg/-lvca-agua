@@ -680,7 +680,7 @@ def _render_editar(punto_id: str) -> None:
             return
 
         datos = {
-            "codigo":               codigo_edit.strip().upper(),
+            "codigo":               codigo_edit.strip(),
             "nombre":               nombre.strip(),
             "descripcion":          descripcion.strip(),
             "tipo":                 tipo.lower(),
@@ -872,7 +872,7 @@ def _render_nuevo() -> None:
             return
 
         datos = {
-            "codigo":               codigo.strip().upper(),
+            "codigo":               codigo.strip(),
             "nombre":               nombre.strip(),
             "descripcion":          descripcion.strip() or None,
             "tipo":                 tipo.lower(),
