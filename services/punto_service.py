@@ -25,6 +25,45 @@ from services.cache import cached
 # Tipos válidos de punto
 TIPOS_PUNTO = ["rio", "laguna", "canal", "manantial", "pozo", "embalse", "bocatoma", "desarenador", "otro"]
 
+# Cuencas canónicas — únicas oficialmente válidas en la plataforma.
+# Cualquier otra grafía (con/sin espacios, con/sin tildes) se normaliza
+# a una de estas en lectura y escritura para evitar duplicados visuales.
+CUENCAS_CANONICAS: list[str] = [
+    "Quilca-Chili-Vitor",
+    "Colca-Camaná",
+]
+
+
+def _slug_cuenca(raw: str) -> str:
+    """Clave de comparación: minúsculas, sin tildes, sin espacios ni guiones."""
+    if not raw:
+        return ""
+    s = raw.strip().lower()
+    repl = (("á", "a"), ("é", "e"), ("í", "i"), ("ó", "o"), ("ú", "u"), ("ñ", "n"))
+    for a, b in repl:
+        s = s.replace(a, b)
+    for ch in (" ", "-", "_", ".", "/"):
+        s = s.replace(ch, "")
+    return s
+
+
+_CUENCA_SLUG_MAP = {_slug_cuenca(c): c for c in CUENCAS_CANONICAS}
+
+
+def normalizar_cuenca(raw: str | None) -> str | None:
+    """
+    Devuelve la grafía canónica de una cuenca si coincide con alguna conocida
+    (ignorando mayúsculas, espacios, guiones y tildes). Si no coincide,
+    retorna el valor con strip(); permite registrar cuencas nuevas sin perder
+    el texto que ingresó el usuario.
+    """
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s:
+        return None
+    return _CUENCA_SLUG_MAP.get(_slug_cuenca(s), s)
+
 
 def _coords_invalidas(v) -> bool:
     """True si el valor de lat/lon debe considerarse vacío (None o ~0)."""
@@ -126,12 +165,20 @@ def get_puntos(
 
     if solo_activos:
         query = query.eq("activo", True)
-    if filtro_cuenca:
-        query = query.eq("cuenca", filtro_cuenca)
     if filtro_tipo:
         query = query.eq("tipo", filtro_tipo)
 
     data = query.execute().data or []
+
+    # Normalizar cuenca antes de filtrar para que las grafías mixtas en BD
+    # (p.ej. "Quilca - Chili - Vitor" vs "Quilca-Chili-Vitor") agrupen igual.
+    for p in data:
+        if p.get("cuenca"):
+            p["cuenca"] = normalizar_cuenca(p["cuenca"])
+
+    if filtro_cuenca:
+        cuenca_norm = normalizar_cuenca(filtro_cuenca)
+        data = [p for p in data if p.get("cuenca") == cuenca_norm]
 
     if busqueda:
         term = busqueda.lower()
@@ -169,7 +216,11 @@ def get_punto(punto_id: str) -> dict | None:
         .maybe_single()
         .execute()
     )
-    return completar_latlon_desde_utm(res.data) if res.data else None
+    if not res.data:
+        return None
+    if res.data.get("cuenca"):
+        res.data["cuenca"] = normalizar_cuenca(res.data["cuenca"])
+    return completar_latlon_desde_utm(res.data)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -310,14 +361,25 @@ def eliminar_punto(punto_id: str) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def get_cuencas() -> list[str]:
-    """Valores únicos de cuenca existentes en la tabla."""
+    """
+    Cuencas únicas para selectores. Combina las canónicas con las existentes
+    en BD (normalizadas), ordenadas: primero las canónicas en orden fijo,
+    luego cualquier cuenca custom adicional.
+    """
     db = get_admin_client()
     res = (
         db.table("puntos_muestreo")
         .select("cuenca")
         .execute()
     )
-    return sorted({r["cuenca"] for r in (res.data or []) if r.get("cuenca")})
+    en_bd = {
+        normalizar_cuenca(r["cuenca"])
+        for r in (res.data or [])
+        if r.get("cuenca")
+    }
+    en_bd.discard(None)
+    extras = sorted(en_bd - set(CUENCAS_CANONICAS))
+    return list(CUENCAS_CANONICAS) + extras
 
 
 def get_tipos() -> list[str]:
@@ -348,6 +410,10 @@ def _build_fila(datos: dict) -> dict:
     for c in campos_texto:
         if c in datos:
             fila[c] = datos[c].strip() if datos[c] else None
+
+    # Cuenca: aplicar normalización canónica si coincide con una conocida
+    if fila.get("cuenca"):
+        fila["cuenca"] = normalizar_cuenca(fila["cuenca"])
 
     campos_num = ("utm_este", "utm_norte", "latitud", "longitud", "altitud_msnm")
     for c in campos_num:
