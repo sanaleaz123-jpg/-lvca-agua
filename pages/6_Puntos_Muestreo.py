@@ -528,6 +528,11 @@ def _render_editar(punto_id: str) -> None:
             sistema_hidrico = st.text_input("Sistema Hídrico", value=punto.get("sistema_hidrico") or punto.get("subcuenca") or "", key=f"edit_sh_{kp}")
 
         section_header("Coordenadas", "map_pin")
+        st.caption(
+            "Ingresa las coordenadas UTM (zona 19S, WGS84). Latitud/longitud "
+            "se calculan automáticamente al guardar para mostrar el punto en "
+            "el Geoportal."
+        )
         co1, co2, co3 = st.columns(3)
         with co1:
             utm_este = st.number_input(
@@ -548,13 +553,17 @@ def _render_editar(punto_id: str) -> None:
         co4, co5 = st.columns(2)
         with co4:
             latitud = st.number_input(
-                "Latitud (WGS84)", value=punto.get("latitud") or 0.0,
+                "Latitud (WGS84) — auto desde UTM",
+                value=punto.get("latitud") or 0.0,
                 format="%.8f", key=f"edit_lat_{kp}",
+                help="Se completa automáticamente al guardar si dejas 0.",
             )
         with co5:
             longitud = st.number_input(
-                "Longitud (WGS84)", value=punto.get("longitud") or 0.0,
+                "Longitud (WGS84) — auto desde UTM",
+                value=punto.get("longitud") or 0.0,
                 format="%.8f", key=f"edit_lon_{kp}",
+                help="Se completa automáticamente al guardar si dejas 0.",
             )
 
         sel_eca = st.selectbox("ECA asignado", eca_labels, index=eca_idx, key=f"edit_eca_{kp}")
@@ -765,6 +774,11 @@ def _render_nuevo() -> None:
             n_sistema_hidrico = st.text_input("Sistema Hídrico", placeholder="Chili Regulado")
 
         section_header("Coordenadas", "map_pin")
+        st.caption(
+            "Ingresa las coordenadas UTM (zona 19S, WGS84). Latitud/longitud "
+            "se calculan automáticamente al guardar para mostrar el punto en "
+            "el Geoportal."
+        )
         co1, co2, co3 = st.columns(3)
         with co1:
             utm_este = st.number_input("UTM Este", value=0.0, format="%.1f")
@@ -775,9 +789,17 @@ def _render_nuevo() -> None:
 
         co4, co5 = st.columns(2)
         with co4:
-            latitud = st.number_input("Latitud (WGS84)", value=0.0, format="%.8f")
+            latitud = st.number_input(
+                "Latitud (WGS84) — auto desde UTM",
+                value=0.0, format="%.8f",
+                help="Déjalo en 0 para que se calcule automáticamente desde UTM.",
+            )
         with co5:
-            longitud = st.number_input("Longitud (WGS84)", value=0.0, format="%.8f")
+            longitud = st.number_input(
+                "Longitud (WGS84) — auto desde UTM",
+                value=0.0, format="%.8f",
+                help="Déjalo en 0 para que se calcule automáticamente desde UTM.",
+            )
 
         sel_eca = st.selectbox("ECA asignado", list(eca_opciones.keys()))
         entidad = st.text_input(
