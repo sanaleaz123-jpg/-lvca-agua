@@ -269,8 +269,15 @@ def crear_unidad(simbolo: str, nombre: str) -> dict:
 # ECAs y valores límite
 # ─────────────────────────────────────────────────────────────────────────────
 
-def get_ecas() -> list[dict]:
-    """ECAs activos."""
+def get_ecas(incluir_legacy: bool = False) -> list[dict]:
+    """
+    ECAs activos.
+
+    Por defecto excluye códigos legacy (los que empiezan con 'ECA-C…',
+    duplicados antiguos del seed). La plataforma usa solo los 4 ECAs
+    canónicos: '1 A2', '3 D1', '4 E1', '4 E2' (D.S. 004-2017-MINAM).
+    Los seeds o scripts internos pueden pedir incluir_legacy=True.
+    """
     db = get_admin_client()
     res = (
         db.table("ecas")
@@ -279,7 +286,10 @@ def get_ecas() -> list[dict]:
         .order("codigo")
         .execute()
     )
-    return res.data or []
+    data = res.data or []
+    if not incluir_legacy:
+        data = [e for e in data if not (e.get("codigo") or "").upper().startswith("ECA-")]
+    return data
 
 
 def get_valores_eca(eca_id: str) -> list[dict]:

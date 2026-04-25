@@ -491,13 +491,23 @@ def _render_editar(punto_id: str) -> None:
     kp = punto_id[:8]
 
     ecas = get_ecas()
+    # Si el punto está enlazado a un ECA legacy (ej. 'ECA-C4E1') que ya no
+    # aparece en la lista canónica, lo añadimos temporalmente para que la
+    # asignación actual no se pierda al guardar sin tocar este campo.
+    eca_punto = punto.get("ecas") or {}
+    if eca_punto.get("id") and eca_punto["id"] not in {e["id"] for e in ecas}:
+        ecas = list(ecas) + [{
+            "id":     eca_punto["id"],
+            "codigo": f"{eca_punto.get('codigo', '?')} (legacy)",
+            "nombre": eca_punto.get("nombre", ""),
+        }]
     eca_opciones = {"Sin ECA asignado": None}
     eca_opciones.update({f"{e['codigo']} — {e['nombre']}": e["id"] for e in ecas})
     eca_labels = list(eca_opciones.keys())
-    eca_actual = (punto.get("ecas") or {}).get("codigo", "")
+    eca_actual_id = eca_punto.get("id")
     eca_idx = 0
     for i, label in enumerate(eca_labels):
-        if label.startswith(eca_actual + " "):
+        if eca_opciones[label] == eca_actual_id:
             eca_idx = i
             break
 
