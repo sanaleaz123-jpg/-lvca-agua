@@ -14,6 +14,7 @@ Funciones públicas:
 
 from __future__ import annotations
 
+import re
 from typing import Optional
 
 from database.client import get_admin_client
@@ -23,6 +24,37 @@ from services.cache import cached
 
 # Tipos válidos de punto
 TIPOS_PUNTO = ["rio", "laguna", "canal", "manantial", "pozo", "embalse", "bocatoma", "desarenador", "otro"]
+
+
+def _utm_a_latlon(
+    utm_este: float | None,
+    utm_norte: float | None,
+    utm_zona: str | None = "19S",
+) -> tuple[float | None, float | None]:
+    """
+    Convierte coordenadas UTM (WGS84) a (latitud, longitud) decimales.
+    Convención usada en LVCA: la zona se nota como '18S', '19S', '19N', etc.
+    'S' = hemisferio sur (Perú); por defecto se asume sur.
+    Retorna (None, None) si la conversión no es posible.
+    """
+    if utm_este in (None, 0) or utm_norte in (None, 0):
+        return None, None
+    try:
+        from pyproj import Transformer
+        zona_str = (utm_zona or "19S").strip().upper()
+        m = re.match(r"(\d+)\s*([A-Z]?)", zona_str)
+        if not m:
+            return None, None
+        zone_num = int(m.group(1))
+        letra = m.group(2) or "S"
+        # En el uso peruano "S" = Sur (hemisferio sur). Solo "N" explícito = norte.
+        es_sur = letra != "N"
+        epsg = (32700 if es_sur else 32600) + zone_num
+        tr = Transformer.from_crs(epsg, 4326, always_xy=True)
+        lon, lat = tr.transform(float(utm_este), float(utm_norte))
+        return float(lat), float(lon)
+    except Exception:
+        return None, None
 
 
 def _invalidar_cache() -> None:
@@ -272,6 +304,17 @@ def _build_fila(datos: dict) -> dict:
     for c in campos_num:
         if c in datos:
             fila[c] = datos[c] if datos[c] is not None else None
+
+    # Auto-conversión UTM → WGS84 cuando se entregan UTM y no lat/lon.
+    # Permite que los mapas (Geoportal, mapa de puntos) muestren puntos
+    # ingresados solo con coordenadas UTM.
+    if fila.get("utm_este") and fila.get("utm_norte"):
+        if not fila.get("latitud") or not fila.get("longitud"):
+            zona = fila.get("utm_zona") or datos.get("utm_zona") or "19S"
+            lat, lon = _utm_a_latlon(fila["utm_este"], fila["utm_norte"], zona)
+            if lat is not None and lon is not None:
+                fila["latitud"] = lat
+                fila["longitud"] = lon
 
     if "eca_id" in datos:
         fila["eca_id"] = datos["eca_id"] or None
