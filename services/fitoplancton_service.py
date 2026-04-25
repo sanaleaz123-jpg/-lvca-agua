@@ -22,6 +22,7 @@ from datetime import datetime
 from typing import Optional
 
 from database.client import get_admin_client
+from services.audit_service import registrar_cambio
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -130,6 +131,15 @@ def calcular_densidad_sedgewick_rafter(
         raise ValueError(
             "El volumen de muestra (Vs), el área del campo (A), el número de "
             "campos (F) y la profundidad de la cámara (D) no pueden ser cero."
+        )
+
+    # Restricción física: la concentración reduce el volumen, no lo aumenta.
+    # Un Vc > Vs implicaría un dato mal capturado y daría densidades infladas.
+    if vol_concentrado_ml > vol_muestra_ml:
+        raise ValueError(
+            f"El volumen concentrado (Vc={vol_concentrado_ml} mL) no puede "
+            f"ser mayor al volumen original de muestra (Vs={vol_muestra_ml} mL). "
+            "Si la muestra se leyó directa sin concentrar, usa Vc = Vs."
         )
 
     resultados: dict[str, dict[str, float | int]] = {}
@@ -279,6 +289,73 @@ def total_cel_ml_filo(
     return float(sum(float(v.get("cel_ml", 0.0) or 0.0) for v in especies.values()))
 
 
+# ─── Cruce con clorofila-a (parámetro P124) ──────────────────────────────────
+# OMS 1999 ofrece umbrales paralelos en clorofila-a cuando hay dominancia de
+# cianobacterias en el fitoplancton. Estos umbrales NO se aplican aisladamente
+# (clorofila-a es un proxy de biomasa total, no específica de cianobacterias):
+# se reportan junto al conteo celular para corroborar el nivel de alerta.
+
+CLOROFILA_PARAM_CODIGO: str = "P124"
+
+# Umbrales WHO 1999 para clorofila-a en presencia de dominancia cianobacteriana
+# (µg/L). Fuente: Chorus & Bartram 1999, capítulo 6.
+NIVELES_OMS_CLOROFILA_UG_L: list[dict] = [
+    {"nivel": "alerta_2",           "label": "Alerta 2",           "umbral_min": 50.0},
+    {"nivel": "alerta_1",           "label": "Alerta 1",           "umbral_min": 10.0},
+    {"nivel": "vigilancia_inicial", "label": "Vigilancia inicial", "umbral_min": 1.0},
+]
+
+
+def evaluar_alerta_oms_clorofila(clorofila_ug_l: Optional[float]) -> Optional[dict]:
+    """
+    Aplica los umbrales OMS 1999 para clorofila-a (en presencia de dominancia
+    cianobacteriana). Retorna None si el valor es nulo o < 1 µg/L.
+    """
+    if clorofila_ug_l is None or clorofila_ug_l < 1.0:
+        return None
+    for nivel in NIVELES_OMS_CLOROFILA_UG_L:
+        if clorofila_ug_l >= nivel["umbral_min"]:
+            return nivel
+    return None
+
+
+def get_clorofila_de_muestra(muestra_id: str) -> Optional[dict]:
+    """
+    Lee el resultado de Clorofila A (P124) para la muestra. Retorna
+    {valor, unidad, fecha_analisis, validado} o None si no hay resultado.
+    """
+    db = get_admin_client()
+    try:
+        res = (
+            db.table("resultados_laboratorio")
+            .select(
+                "valor_numerico, fecha_analisis, validado, "
+                "parametros!inner(codigo, unidades_medida(simbolo))"
+            )
+            .eq("muestra_id", muestra_id)
+            .eq("parametros.codigo", CLOROFILA_PARAM_CODIGO)
+            .limit(1)
+            .execute()
+        )
+        if not res.data:
+            return None
+        fila = res.data[0]
+        valor = fila.get("valor_numerico")
+        if valor is None:
+            return None
+        unidad = (
+            (fila.get("parametros") or {}).get("unidades_medida") or {}
+        ).get("simbolo", "µg/L")
+        return {
+            "valor":          float(valor),
+            "unidad":         unidad,
+            "fecha_analisis": fila.get("fecha_analisis"),
+            "validado":       bool(fila.get("validado") or False),
+        }
+    except Exception:
+        return None
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Persistencia (Supabase — JSONB en muestras.datos_fitoplancton)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -312,7 +389,44 @@ def guardar_analisis_fitoplancton(
         "resultados": resultados_por_filo,
     }
     db = get_admin_client()
+
+    # Detecta si es upsert sobre análisis previo (audit accion='actualizar')
+    # o un primer guardado (audit accion='crear').
+    accion = "crear"
+    try:
+        previo = (
+            db.table("muestras")
+            .select("datos_fitoplancton")
+            .eq("id", muestra_id)
+            .single()
+            .execute()
+        )
+        if (previo.data or {}).get("datos_fitoplancton") is not None:
+            accion = "actualizar"
+    except Exception:
+        pass
+
     db.table("muestras").update({"datos_fitoplancton": documento}).eq("id", muestra_id).execute()
+
+    # Resumen del cambio para el audit log: total cianobacterias + nº especies.
+    total_cyano = total_cel_ml_filo(resultados_por_filo, CYANOBACTERIA_FILO)
+    n_especies = sum(len(esp) for esp in resultados_por_filo.values())
+    resumen = (
+        f"fitoplancton {accion}: {n_especies} especie(s) registrada(s); "
+        f"cianobacterias = {total_cyano:.2f} cél/mL"
+    )
+    try:
+        registrar_cambio(
+            tabla="muestras",
+            registro_id=muestra_id,
+            accion=accion,
+            campo="datos_fitoplancton",
+            valor_nuevo=resumen,
+            usuario_id=analista_id,
+        )
+    except Exception:
+        # El audit no debe romper el guardado si falla.
+        pass
 
 
 def get_analisis_fitoplancton(muestra_id: str) -> Optional[dict]:
@@ -334,7 +448,121 @@ def get_analisis_fitoplancton(muestra_id: str) -> Optional[dict]:
         return None
 
 
-def borrar_analisis_fitoplancton(muestra_id: str) -> None:
-    """Limpia el análisis de fitoplancton de la muestra (set NULL)."""
+def borrar_analisis_fitoplancton(
+    muestra_id: str,
+    usuario_id: Optional[str] = None,
+) -> None:
+    """Limpia el análisis de fitoplancton de la muestra (set NULL) y audita."""
     db = get_admin_client()
     db.table("muestras").update({"datos_fitoplancton": None}).eq("id", muestra_id).execute()
+    try:
+        registrar_cambio(
+            tabla="muestras",
+            registro_id=muestra_id,
+            accion="eliminar",
+            campo="datos_fitoplancton",
+            valor_nuevo="análisis de fitoplancton eliminado",
+            usuario_id=usuario_id,
+        )
+    except Exception:
+        pass
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Histórico por punto (serie temporal de cianobacterias)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def get_historico_cianobacterias_por_punto(
+    punto_muestreo_id: str,
+    limite: int = 50,
+) -> list[dict]:
+    """
+    Devuelve la serie histórica de densidad de cianobacterias para un punto,
+    ordenada cronológicamente (más antigua → más reciente).
+
+    Cada elemento incluye: muestra_id, codigo_muestra, fecha_muestreo,
+    total_cyano_cel_ml, nivel_oms (label o None), color_bg.
+    """
+    db = get_admin_client()
+    res = (
+        db.table("muestras")
+        .select("id, codigo, fecha_muestreo, datos_fitoplancton")
+        .eq("punto_muestreo_id", punto_muestreo_id)
+        .not_.is_("datos_fitoplancton", "null")
+        .order("fecha_muestreo", desc=False)
+        .limit(limite)
+        .execute()
+    )
+    serie: list[dict] = []
+    for fila in res.data or []:
+        doc = fila.get("datos_fitoplancton") or {}
+        resultados = doc.get("resultados") or {}
+        total = total_cel_ml_filo(resultados, CYANOBACTERIA_FILO)
+        nivel = evaluar_alerta_oms_cianobacterias(total)
+        serie.append({
+            "muestra_id":         fila["id"],
+            "codigo_muestra":     fila.get("codigo"),
+            "fecha_muestreo":     fila.get("fecha_muestreo"),
+            "total_cyano_cel_ml": total,
+            "nivel_oms":          (nivel["label"] if nivel else "Sin alerta"),
+            "nivel_codigo":       (nivel["nivel"] if nivel else None),
+            "color_bg":           (nivel["color_bg"] if nivel else "#e2e3e5"),
+            "color_borde":        (nivel["color_borde"] if nivel else "#6c757d"),
+        })
+    return serie
+
+
+def get_historico_cianobacterias_por_muestra(muestra_id: str) -> list[dict]:
+    """
+    Wrapper de conveniencia: dado un muestra_id, deduce el punto_muestreo_id
+    y devuelve el histórico de cianobacterias en ese punto. La muestra actual
+    se incluye en la serie si ya tiene datos guardados.
+    """
+    db = get_admin_client()
+    try:
+        res = (
+            db.table("muestras")
+            .select("punto_muestreo_id")
+            .eq("id", muestra_id)
+            .single()
+            .execute()
+        )
+        pid = (res.data or {}).get("punto_muestreo_id")
+    except Exception:
+        return []
+    if not pid:
+        return []
+    return get_historico_cianobacterias_por_punto(pid)
+
+
+def get_alertas_oms_por_punto() -> dict[str, dict]:
+    """
+    Para uso del geoportal: devuelve {punto_muestreo_id: {ultima_fecha,
+    total_cyano_cel_ml, nivel_oms, color_borde}} con el ÚLTIMO análisis
+    por punto. Solo incluye puntos con al menos un análisis fitoplancton.
+    """
+    db = get_admin_client()
+    res = (
+        db.table("muestras")
+        .select("punto_muestreo_id, fecha_muestreo, datos_fitoplancton")
+        .not_.is_("datos_fitoplancton", "null")
+        .order("fecha_muestreo", desc=True)
+        .execute()
+    )
+    salida: dict[str, dict] = {}
+    for fila in res.data or []:
+        pid = fila.get("punto_muestreo_id")
+        if not pid or pid in salida:  # solo el más reciente
+            continue
+        doc = fila.get("datos_fitoplancton") or {}
+        total = total_cel_ml_filo(doc.get("resultados") or {}, CYANOBACTERIA_FILO)
+        nivel = evaluar_alerta_oms_cianobacterias(total)
+        salida[pid] = {
+            "ultima_fecha":       fila.get("fecha_muestreo"),
+            "total_cyano_cel_ml": total,
+            "nivel_oms":          (nivel["label"] if nivel else "Sin alerta"),
+            "nivel_codigo":       (nivel["nivel"] if nivel else "sin_alerta"),
+            "color_bg":           (nivel["color_bg"] if nivel else "#e2e3e5"),
+            "color_borde":        (nivel["color_borde"] if nivel else "#6c757d"),
+        }
+    return salida
