@@ -73,7 +73,11 @@ from services.cadena_custodia_service import (
     guardar_config_persistida,
     registrar_equipo,
 )
-from services.storage_service import upload_foto_campo
+from services.storage_service import (
+    delete_foto_campo,
+    get_fotos_campo,
+    upload_foto_campo,
+)
 from services.ficha_campo_service import generar_docx_fichas
 
 
@@ -480,6 +484,31 @@ def _render_registro() -> None:
         key="reg_modo_muestreo",
     )
 
+    # ── Fotos ya guardadas del punto (FUERA del form para permitir eliminar) ─
+    if es_edicion:
+        muestra_id_existente = existente["id"]
+        fotos_guardadas = get_fotos_campo(muestra_id_existente)
+        if fotos_guardadas:
+            section_header(
+                f"Fotos guardadas de este punto ({len(fotos_guardadas)})",
+                "image",
+            )
+            st.caption(
+                "Fotos ya registradas para esta muestra. Usa el botón para "
+                "eliminar una foto específica."
+            )
+            cols_gal = st.columns(min(len(fotos_guardadas), 5))
+            for idx, foto in enumerate(fotos_guardadas):
+                with cols_gal[idx % len(cols_gal)]:
+                    st.image(foto["url"], use_container_width=True)
+                    if st.button(
+                        "Eliminar",
+                        key=f"del_foto__{muestra_id_existente}__{foto['name']}",
+                        use_container_width=True,
+                    ):
+                        delete_foto_campo(muestra_id_existente, foto["name"])
+                        st.rerun()
+
     with st.form("form_muestra", clear_on_submit=False):
         # ── Tipo ─────────────────────────────────────────────────────────
         tipo = st.selectbox(
@@ -594,11 +623,18 @@ def _render_registro() -> None:
         )
 
         # ── Fotos de campo ───────────────────────────────────────────────
-        section_header("Fotos iniciales (opcional, máx. 5)", "eye")
-        st.caption(
-            "Sube hasta 5 fotos al registrar la muestra. La primera se usa "
-            "en la Ficha de Campo."
-        )
+        if es_edicion:
+            section_header("Agregar más fotos (opcional, máx. 5)", "eye")
+            st.caption(
+                "Selecciona fotos adicionales para sumarlas a las ya "
+                "guardadas. Se subirán al presionar **Actualizar muestra**."
+            )
+        else:
+            section_header("Fotos iniciales (opcional, máx. 5)", "eye")
+            st.caption(
+                "Sube hasta 5 fotos al registrar la muestra. La primera se "
+                "usa en la Ficha de Campo."
+            )
         fotos_subidas = st.file_uploader(
             "Seleccionar fotos JPG/PNG",
             type=["jpg", "jpeg", "png"],
