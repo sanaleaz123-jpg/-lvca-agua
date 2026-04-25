@@ -26,7 +26,39 @@ from services.cache import cached
 TIPOS_PUNTO = ["rio", "laguna", "canal", "manantial", "pozo", "embalse", "bocatoma", "desarenador", "otro"]
 
 
-def _utm_a_latlon(
+def _coords_invalidas(v) -> bool:
+    """True si el valor de lat/lon debe considerarse vacío (None o ~0)."""
+    if v is None:
+        return True
+    try:
+        return abs(float(v)) < 1e-8
+    except (TypeError, ValueError):
+        return True
+
+
+def completar_latlon_desde_utm(punto: dict) -> dict:
+    """
+    Si el punto tiene UTM pero no lat/lon (o están en 0), calcula lat/lon
+    desde UTM y los rellena en el dict. Mutación in-place + retorna el dict.
+    No persiste en BD: los mapas reciben coordenadas válidas aunque la fila
+    de la BD aún tenga lat/lon = 0.
+    """
+    if not punto:
+        return punto
+    if punto.get("utm_este") and punto.get("utm_norte"):
+        if _coords_invalidas(punto.get("latitud")) or _coords_invalidas(punto.get("longitud")):
+            lat, lon = utm_a_latlon(
+                punto.get("utm_este"),
+                punto.get("utm_norte"),
+                punto.get("utm_zona") or "19S",
+            )
+            if lat is not None and lon is not None:
+                punto["latitud"] = lat
+                punto["longitud"] = lon
+    return punto
+
+
+def utm_a_latlon(
     utm_este: float | None,
     utm_norte: float | None,
     utm_zona: str | None = "19S",
@@ -110,6 +142,9 @@ def get_puntos(
             or term in (p.get("descripcion") or "").lower()
         ]
 
+    for p in data:
+        completar_latlon_desde_utm(p)
+
     return data
 
 
@@ -134,7 +169,7 @@ def get_punto(punto_id: str) -> dict | None:
         .maybe_single()
         .execute()
     )
-    return res.data
+    return completar_latlon_desde_utm(res.data) if res.data else None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -311,7 +346,7 @@ def _build_fila(datos: dict) -> dict:
     if fila.get("utm_este") and fila.get("utm_norte"):
         if not fila.get("latitud") or not fila.get("longitud"):
             zona = fila.get("utm_zona") or datos.get("utm_zona") or "19S"
-            lat, lon = _utm_a_latlon(fila["utm_este"], fila["utm_norte"], zona)
+            lat, lon = utm_a_latlon(fila["utm_este"], fila["utm_norte"], zona)
             if lat is not None and lon is not None:
                 fila["latitud"] = lat
                 fila["longitud"] = lon
