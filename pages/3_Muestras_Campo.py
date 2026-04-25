@@ -603,7 +603,7 @@ def _render_registro() -> None:
             "Seleccionar fotos JPG/PNG",
             type=["jpg", "jpeg", "png"],
             accept_multiple_files=True,
-            key="reg_fotos_upload",
+            key=f"reg_fotos_upload__{campana_id}__{punto_id}",
         )
         # Feedback inmediato del conteo de fotos para evitar errores tardíos
         if fotos_subidas:
