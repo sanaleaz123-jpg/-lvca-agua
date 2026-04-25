@@ -33,6 +33,7 @@ from services.resultado_service import (
     evaluar_resultado_ctx,
 )
 from services.cumplimiento_service import EstadoECA
+from components.fitoplancton_form import render_subseccion_fitoplancton
 
 # ─── Constantes de visualización ─────────────────────────────────────────────
 
@@ -460,16 +461,43 @@ def main() -> None:
     for f in filas:
         cats[f["categoria"]].append(f)
 
+    # Forzar la presencia del tab Hidrobiologico aunque no haya parámetros hidro
+    # en la muestra, para que la subsección Fitoplancton (Sedgewick-Rafter) esté
+    # siempre accesible.
+    cats.setdefault("Hidrobiologico", [])
+
     cats_ordenadas = [c for c in CATEGORIAS_ORDEN if c in cats]
     cats_ordenadas += [c for c in cats if c not in CATEGORIAS_ORDEN]
 
     tabs = st.tabs([f"{cat} ({len(cats[cat])})" for cat in cats_ordenadas])
 
+    analista_id_actual = _get_usuario_interno_id(sesion.uid)
+
     all_valores: dict[str, dict] = {}
     for tab_widget, cat in zip(tabs, cats_ordenadas):
         with tab_widget:
-            cat_vals = _render_categoria(cats[cat], key_prefix, saved_params, datos=datos)
-            all_valores.update(cat_vals)
+            if cat == "Hidrobiologico":
+                # Sub-tabs: parámetros estándar + Fitoplancton (Sedgewick-Rafter)
+                sub_param, sub_fito = st.tabs([
+                    f":material/science: Parámetros ({len(cats[cat])})",
+                    ":material/biotech: Fitoplancton (Sedgewick-Rafter)",
+                ])
+                with sub_param:
+                    if cats[cat]:
+                        cat_vals = _render_categoria(
+                            cats[cat], key_prefix, saved_params, datos=datos
+                        )
+                        all_valores.update(cat_vals)
+                    else:
+                        st.caption(
+                            "Sin parámetros hidrobiológicos del DS 004-2017-MINAM "
+                            "en esta muestra."
+                        )
+                with sub_fito:
+                    render_subseccion_fitoplancton(muestra_id, analista_id_actual)
+            else:
+                cat_vals = _render_categoria(cats[cat], key_prefix, saved_params, datos=datos)
+                all_valores.update(cat_vals)
 
     # ── Botón de guardado ─────────────────────────────────────────────────────
     st.divider()
