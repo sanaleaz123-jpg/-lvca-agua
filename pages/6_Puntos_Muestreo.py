@@ -26,6 +26,7 @@ from services.punto_service import (
     eliminar_punto,
     get_cuencas,
     get_tipos,
+    CUENCAS_CANONICAS,
     TIPOS_PUNTO,
 )
 from services.parametro_service import get_ecas
@@ -542,7 +543,30 @@ def _render_editar(punto_id: str) -> None:
                 key=f"edit_tipo_{kp}",
             )
         with ec2:
-            cuenca = st.text_input("Cuenca", value=punto.get("cuenca") or "", key=f"edit_cuenca_{kp}")
+            cuenca_actual = punto.get("cuenca") or ""
+            opciones_cuenca = list(CUENCAS_CANONICAS) + ["Otra (escribir nueva)"]
+            if cuenca_actual and cuenca_actual not in CUENCAS_CANONICAS:
+                # Cuenca custom ya guardada: la agregamos como opción extra
+                opciones_cuenca = list(CUENCAS_CANONICAS) + [cuenca_actual, "Otra (escribir nueva)"]
+            try:
+                idx_cuenca = opciones_cuenca.index(cuenca_actual) if cuenca_actual else 0
+            except ValueError:
+                idx_cuenca = 0
+            cuenca_sel = st.selectbox(
+                "Cuenca",
+                opciones_cuenca,
+                index=idx_cuenca,
+                key=f"edit_cuenca_sel_{kp}",
+            )
+            if cuenca_sel == "Otra (escribir nueva)":
+                cuenca = st.text_input(
+                    "Nueva cuenca",
+                    value="",
+                    key=f"edit_cuenca_otra_{kp}",
+                    placeholder="Ej: Tambo-Moquegua",
+                )
+            else:
+                cuenca = cuenca_sel
         with ec3:
             sistema_hidrico = st.text_input("Sistema Hídrico", value=punto.get("sistema_hidrico") or punto.get("subcuenca") or "", key=f"edit_sh_{kp}")
 
@@ -801,7 +825,20 @@ def _render_nuevo() -> None:
                 [t.capitalize() for t in TIPOS_PUNTO],
             )
         with nc4:
-            cuenca = st.text_input("Cuenca *", placeholder="Chili")
+            cuenca_sel_n = st.selectbox(
+                "Cuenca *",
+                list(CUENCAS_CANONICAS) + ["Otra (escribir nueva)"],
+                help="Las cuencas oficiales del programa son Quilca-Chili-Vitor "
+                     "y Colca-Camaná. Selecciona 'Otra' para registrar una nueva.",
+            )
+            if cuenca_sel_n == "Otra (escribir nueva)":
+                cuenca = st.text_input(
+                    "Nueva cuenca *",
+                    placeholder="Ej: Tambo-Moquegua",
+                    key="new_cuenca_otra",
+                )
+            else:
+                cuenca = cuenca_sel_n
         with nc5:
             n_sistema_hidrico = st.text_input("Sistema Hídrico", placeholder="Chili Regulado")
 
