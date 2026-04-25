@@ -16,13 +16,69 @@ import streamlit as st
 
 from components.ui_styles import success_check_overlay, toast
 from services.fitoplancton_service import (
+    CYANOBACTERIA_FILO,
     ICONOS_FILO,
+    OMS_FUENTE,
     TAXONOMIA_FITOPLANCTON,
     borrar_analisis_fitoplancton,
     calcular_y_agrupar_por_filo,
+    evaluar_alerta_oms_cianobacterias,
     get_analisis_fitoplancton,
     guardar_analisis_fitoplancton,
+    total_cel_ml_filo,
 )
+
+
+def _render_alerta_oms(total_cyano_cel_ml: float) -> None:
+    """
+    Banner OMS para cianobacterias según la Tabla por células/mL. Solo se
+    muestra cuando total_cel_ml >= 200; bajo ese umbral no hay nivel definido.
+    """
+    nivel = evaluar_alerta_oms_cianobacterias(total_cyano_cel_ml)
+    if nivel is None:
+        st.caption(
+            f":material/check_circle: Cianobacterias: "
+            f"{total_cyano_cel_ml:,.0f} cél/mL — por debajo del umbral OMS 1999 "
+            f"de vigilancia inicial (200 cél/mL)."
+        )
+        return
+
+    rango = (
+        f"≥ {nivel['umbral_min_cel_ml']:,.0f} cél/mL"
+        if nivel["umbral_max_cel_ml"] is None
+        else f"{nivel['umbral_min_cel_ml']:,.0f} – {nivel['umbral_max_cel_ml']:,.0f} cél/mL"
+    )
+    st.markdown(
+        f"""
+        <div style="
+            background:{nivel['color_bg']};
+            color:{nivel['color_fg']};
+            border-left:6px solid {nivel['color_borde']};
+            padding:12px 16px;
+            border-radius:6px;
+            margin:8px 0;
+            font-size:0.92em;
+            line-height:1.45;
+        ">
+            <div style="font-weight:700;font-size:1.05em;margin-bottom:4px">
+                <span class="material-symbols-rounded" style="vertical-align:-5px;font-size:1.3em">
+                    {nivel['icono']}
+                </span>
+                Cianobacterias — {nivel['label']} · {total_cyano_cel_ml:,.0f} cél/mL
+            </div>
+            <div style="opacity:0.92;margin-bottom:6px">
+                <b>Umbral:</b> {rango} &nbsp;·&nbsp; {nivel['descripcion']}
+            </div>
+            <div style="opacity:0.7;font-size:0.85em">
+                Fuente: {OMS_FUENTE}.
+                La OMS 2021 (2da ed.) introduce una tabla complementaria por
+                biovolumen (mm³/L) que requiere volumen celular específico — no
+                aplicable con los datos del recuento Sedgewick-Rafter.
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def _key(muestra_id: str, filo: str, especie: str) -> str:
@@ -93,6 +149,12 @@ def render_subseccion_fitoplancton(muestra_id: str, analista_id: str | None) -> 
             f":material/check_circle: Análisis previo guardado el "
             f"{(doc_existente.get('metadatos') or {}).get('fecha_analisis', '—')}."
         )
+        # Banner OMS sobre el análisis ya guardado (si tiene cianobacterias).
+        resultados_guardados = (doc_existente.get("resultados") or {})
+        if CYANOBACTERIA_FILO in resultados_guardados:
+            total_cyano_prev = total_cel_ml_filo(resultados_guardados, CYANOBACTERIA_FILO)
+            if total_cyano_prev > 0:
+                _render_alerta_oms(total_cyano_prev)
 
     # ── 1. Metadatos del recuento ────────────────────────────────────────────
     st.markdown("###### Metadatos del recuento")
@@ -224,6 +286,12 @@ def render_subseccion_fitoplancton(muestra_id: str, analista_id: str | None) -> 
         m1.metric("Especies registradas", len(df))
         m2.metric("Densidad total (cel/mL)", f"{total_cel_ml:,.2f}")
         m3.metric("Densidad total (cel/L)", f"{total_cel_ml * 1000:,.0f}")
+
+        # Alerta OMS para cianobacterias (sobre el cálculo recién realizado).
+        if CYANOBACTERIA_FILO in resultados:
+            total_cyano = total_cel_ml_filo(resultados, CYANOBACTERIA_FILO)
+            if total_cyano > 0:
+                _render_alerta_oms(total_cyano)
 
         st.dataframe(df, use_container_width=True, hide_index=True)
 
