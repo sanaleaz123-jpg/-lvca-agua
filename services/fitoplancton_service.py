@@ -181,6 +181,105 @@ def calcular_y_agrupar_por_filo(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Alerta OMS para cianobacterias — Tabla por células/mL
+#
+# Fuente:  WHO (1999) — "Toxic Cyanobacteria in Water: A guide to their public
+#          health consequences, monitoring and management" (Chorus & Bartram,
+#          1ra edición). Drinking-water Alert Levels Framework, capítulo 6.
+#
+# Nota:    La 2da edición de la guía OMS (Chorus & Welker, 2021) introduce una
+#          tabla complementaria expresada en biovolumen (mm³/L) — vigilancia
+#          >10 colonias·mL⁻¹ o >50 filamentos·mL⁻¹ / Alerta 1 ≥0,3 mm³·L⁻¹ /
+#          Alerta 2 ≥4,0 mm³·L⁻¹. Esa tabla NO se aplica aquí porque requiere
+#          el biovolumen específico por especie (volumen celular promedio),
+#          dato no recolectado en este formulario. La tabla por células/mL de
+#          1999 sigue siendo citada en la edición 2021 para escenarios de
+#          agua potable.
+# ─────────────────────────────────────────────────────────────────────────────
+
+OMS_FUENTE: str = "OMS 1999 — Tabla por cél/mL (agua potable, Drinking-water Alert Levels Framework)"
+
+CYANOBACTERIA_FILO: str = "Cyanobacteria"
+
+# Niveles ordenados de mayor a menor severidad — la evaluación recorre la lista
+# y devuelve el primero que cumpla el umbral mínimo.
+NIVELES_OMS_CIANOBACTERIAS: list[dict] = [
+    {
+        "nivel":             "alerta_2",
+        "label":             "Alerta 2",
+        "umbral_min_cel_ml": 100_000.0,
+        "umbral_max_cel_ml": None,
+        "color_bg":          "#f8d7da",
+        "color_fg":          "#721c24",
+        "color_borde":       "#dc3545",
+        "icono":             "dangerous",
+        "descripcion": (
+            "Floración de cianobacterias establecida en el cuerpo de agua "
+            "con elevado riesgo de toxicidad."
+        ),
+    },
+    {
+        "nivel":             "alerta_1",
+        "label":             "Alerta 1",
+        "umbral_min_cel_ml": 2_000.0,
+        "umbral_max_cel_ml": 100_000.0,
+        "color_bg":          "#fff3cd",
+        "color_fg":          "#856404",
+        "color_borde":       "#ffc107",
+        "icono":             "warning",
+        "descripcion": (
+            "Concentraciones que traen riesgos asociados a cianotoxinas. "
+            "Comunicar a las autoridades pertinentes para evaluar manejo "
+            "operacional o tratamiento de agua."
+        ),
+    },
+    {
+        "nivel":             "vigilancia_inicial",
+        "label":             "Vigilancia inicial",
+        "umbral_min_cel_ml": 200.0,
+        "umbral_max_cel_ml": 2_000.0,
+        "color_bg":          "#d4edda",
+        "color_fg":          "#155724",
+        "color_borde":       "#28a745",
+        "icono":             "monitoring",
+        "descripcion": (
+            "Posible etapa inicial del desarrollo de una floración: "
+            "cianobacterias detectadas en muestras de agua cruda no concentrada."
+        ),
+    },
+]
+
+
+def evaluar_alerta_oms_cianobacterias(total_cel_ml: float) -> Optional[dict]:
+    """
+    Aplica los umbrales OMS por densidad celular al total de cianobacterias.
+
+    Parámetros:
+        total_cel_ml: suma de cel/mL de todas las especies del filo Cyanobacteria.
+
+    Retorna:
+        dict con {nivel, label, color_bg, color_fg, color_borde, icono,
+                  descripcion, umbral_min_cel_ml, umbral_max_cel_ml}
+        o None si total_cel_ml < 200 (sin alerta).
+    """
+    if total_cel_ml is None or total_cel_ml < 200.0:
+        return None
+    for nivel in NIVELES_OMS_CIANOBACTERIAS:
+        if total_cel_ml >= nivel["umbral_min_cel_ml"]:
+            return nivel
+    return None
+
+
+def total_cel_ml_filo(
+    resultados_por_filo: dict[str, dict[str, dict[str, float | int]]],
+    filo: str,
+) -> float:
+    """Suma cel/mL de todas las especies de un filo en el resultado del cálculo."""
+    especies = resultados_por_filo.get(filo) or {}
+    return float(sum(float(v.get("cel_ml", 0.0) or 0.0) for v in especies.values()))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Persistencia (Supabase — JSONB en muestras.datos_fitoplancton)
 # ─────────────────────────────────────────────────────────────────────────────
 
