@@ -706,6 +706,15 @@ def _render_editar(punto_id: str) -> None:
         }
         try:
             actualizar_punto(punto_id, datos)
+            # Limpiar el session_state de los inputs del formulario para que
+            # tras el rerun el formulario muestre los valores reales de BD
+            # (sin esto, Streamlit preserva los valores tipeados y oculta
+            # si el guardado realmente persistió).
+            for k in list(st.session_state.keys()):
+                if isinstance(k, str) and k.endswith(f"_{kp}") and k.startswith("edit_"):
+                    del st.session_state[k]
+            # Forzar refresco del selector del listado por si cambió el código
+            st.session_state.pop("sel_detalle_pt", None)
             st.success("Punto actualizado correctamente.")
             st.rerun()
         except Exception as exc:
