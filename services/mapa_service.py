@@ -17,6 +17,7 @@ from typing import Optional
 
 from database.client import get_admin_client
 from services.cache import cached
+from services.punto_service import completar_latlon_desde_utm
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -58,6 +59,10 @@ def get_puntos_geoportal(
         .execute()
     )
     puntos = pts.data or []
+
+    # Completar lat/lon desde UTM para puntos que solo tienen coordenadas UTM
+    for _p in puntos:
+        completar_latlon_desde_utm(_p)
 
     # Filtrar puntos por campaña si se indicó
     if campana_id:
