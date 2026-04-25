@@ -506,7 +506,16 @@ def _render_editar(punto_id: str) -> None:
     with st.form(f"form_editar_pt_{kp}", clear_on_submit=False):
         st.markdown(f"##### Editando: {punto['codigo']}")
 
-        nombre = st.text_input("Nombre *", value=punto.get("nombre", ""), key=f"edit_nom_{kp}")
+        cc1, cc2 = st.columns([1, 2])
+        with cc1:
+            codigo_edit = st.text_input(
+                "Código *",
+                value=punto.get("codigo", ""),
+                key=f"edit_cod_{kp}",
+                help="Identificador único del punto. Debe ser único en toda la BD.",
+            )
+        with cc2:
+            nombre = st.text_input("Nombre *", value=punto.get("nombre", ""), key=f"edit_nom_{kp}")
         descripcion = st.text_area(
             "Descripción",
             value=punto.get("descripcion") or "",
@@ -666,8 +675,12 @@ def _render_editar(punto_id: str) -> None:
         if not nombre.strip():
             st.error("El nombre es obligatorio.")
             return
+        if not codigo_edit.strip():
+            st.error("El código es obligatorio.")
+            return
 
         datos = {
+            "codigo":               codigo_edit.strip().upper(),
             "nombre":               nombre.strip(),
             "descripcion":          descripcion.strip(),
             "tipo":                 tipo.lower(),

@@ -199,7 +199,7 @@ def actualizar_punto(punto_id: str, datos: dict) -> dict:
     # Leer valores anteriores para auditoría
     anterior = (
         db.table("puntos_muestreo")
-        .select("nombre, descripcion, tipo, cuenca, sistema_hidrico, lugar_muestreo, "
+        .select("codigo, nombre, descripcion, tipo, cuenca, sistema_hidrico, lugar_muestreo, "
                 "utm_este, utm_norte, utm_zona, latitud, longitud, altitud_msnm, "
                 "departamento, provincia, distrito, accesibilidad, representatividad, "
                 "finalidad, eca_id, entidad_responsable")
@@ -209,7 +209,21 @@ def actualizar_punto(punto_id: str, datos: dict) -> dict:
     ).data or {}
 
     campos = _build_fila(datos)
-    campos.pop("codigo", None)
+
+    # Si se intenta cambiar el código, verificar que no esté en uso por otro punto
+    nuevo_cod = campos.get("codigo")
+    if nuevo_cod and nuevo_cod != anterior.get("codigo"):
+        dup = (
+            db.table("puntos_muestreo")
+            .select("id")
+            .eq("codigo", nuevo_cod)
+            .neq("id", punto_id)
+            .limit(1)
+            .execute()
+        ).data or []
+        if dup:
+            raise ValueError(f"Ya existe otro punto con código '{nuevo_cod}'.")
+
     res = (
         db.table("puntos_muestreo")
         .update(campos)
