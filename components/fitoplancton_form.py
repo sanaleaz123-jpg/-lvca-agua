@@ -23,24 +23,158 @@ from services.fitoplancton_service import (
     borrar_analisis_fitoplancton,
     calcular_y_agrupar_por_filo,
     evaluar_alerta_oms_cianobacterias,
+    evaluar_alerta_oms_clorofila,
     get_analisis_fitoplancton,
+    get_clorofila_de_muestra,
+    get_historico_cianobacterias_por_muestra,
     guardar_analisis_fitoplancton,
     total_cel_ml_filo,
 )
 
 
-def _render_alerta_oms(total_cyano_cel_ml: float) -> None:
+def _render_historico_cianobacterias(muestra_id: str) -> None:
     """
-    Banner OMS para cianobacterias según la Tabla por células/mL. Solo se
-    muestra cuando total_cel_ml >= 200; bajo ese umbral no hay nivel definido.
+    Expander con la serie temporal de densidad de cianobacterias en el punto
+    al que pertenece esta muestra. Una barra por análisis previo, coloreada
+    según el nivel OMS 1999, con la fecha en el eje X.
+    """
+    serie = get_historico_cianobacterias_por_muestra(muestra_id)
+    if not serie:
+        return  # sin histórico que mostrar (primer análisis del punto)
+
+    with st.expander(
+        f"Histórico de cianobacterias en este punto ({len(serie)} análisis)",
+        icon=":material/timeline:",
+        expanded=False,
+    ):
+        df = pd.DataFrame([
+            {
+                "Fecha":         s["fecha_muestreo"],
+                "Muestra":       s["codigo_muestra"],
+                "cél/mL":        s["total_cyano_cel_ml"],
+                "Nivel OMS":     s["nivel_oms"],
+                "_color":        s["color_borde"],
+            }
+            for s in serie
+        ])
+        df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce")
+        df = df.sort_values("Fecha")
+
+        # Gráfico de barras coloreadas por nivel.
+        try:
+            import altair as alt
+            chart = (
+                alt.Chart(df)
+                .mark_bar(size=22)
+                .encode(
+                    x=alt.X("Fecha:T", title="Fecha de muestreo"),
+                    y=alt.Y("cél/mL:Q", title="Cianobacterias (cél/mL)",
+                            scale=alt.Scale(type="log", clamp=True)),
+                    color=alt.Color(
+                        "Nivel OMS:N",
+                        scale=alt.Scale(
+                            domain=["Alerta 2", "Alerta 1", "Vigilancia inicial", "Sin alerta"],
+                            range=["#dc3545", "#ffc107", "#28a745", "#6c757d"],
+                        ),
+                        legend=alt.Legend(title="Nivel OMS 1999"),
+                    ),
+                    tooltip=["Fecha:T", "Muestra:N", "cél/mL:Q", "Nivel OMS:N"],
+                )
+                .properties(height=240)
+            )
+            st.altair_chart(chart, use_container_width=True)
+        except Exception:
+            # Fallback a tabla si Altair falla por cualquier razón.
+            st.dataframe(df.drop(columns=["_color"]), use_container_width=True, hide_index=True)
+
+        st.caption(
+            "Eje Y en escala logarítmica para que niveles vigilancia inicial y "
+            "alertas convivan en un mismo gráfico. Pasa el cursor sobre cada "
+            "barra para ver código de muestra y valor exacto."
+        )
+
+
+def _coincide_alerta(nivel_cyano: dict | None, nivel_clf: dict | None) -> str:
+    """
+    Compara el nivel disparado por cianobacterias con el de clorofila-a.
+    Retorna texto corto para mostrar al usuario:
+      - "" si no hay clorofila para corroborar.
+      - "coincide" si ambos disparan el mismo nivel.
+      - "discrepancia: ..." si una dispara y la otra no, o difieren niveles.
+    """
+    if nivel_clf is None and nivel_cyano is None:
+        return ""
+    if nivel_clf is None:
+        return "Sin clorofila-a registrada para corroborar."
+    if nivel_cyano is None:
+        return (
+            f"Discrepancia: clorofila-a indica {nivel_clf['label']} pero "
+            "el conteo celular está por debajo del umbral. Posible lisis "
+            "celular o dominancia no cianobacteriana — revisar."
+        )
+    if nivel_clf["nivel"] == nivel_cyano["nivel"]:
+        return f"Corroborado por clorofila-a ({nivel_clf['label']})."
+    return (
+        f"Discrepancia: conteo indica {nivel_cyano['label']}, "
+        f"clorofila-a indica {nivel_clf['label']}."
+    )
+
+
+def _render_alerta_oms(total_cyano_cel_ml: float, muestra_id: str) -> None:
+    """
+    Banner OMS para cianobacterias (Tabla por cél/mL, WHO 1999) corroborado
+    con clorofila-a (P124) cuando esté disponible en la misma muestra.
     """
     nivel = evaluar_alerta_oms_cianobacterias(total_cyano_cel_ml)
-    if nivel is None:
-        st.caption(
-            f":material/check_circle: Cianobacterias: "
-            f"{total_cyano_cel_ml:,.0f} cél/mL — por debajo del umbral OMS 1999 "
-            f"de vigilancia inicial (200 cél/mL)."
+    clorofila = get_clorofila_de_muestra(muestra_id)
+    nivel_clf = (
+        evaluar_alerta_oms_clorofila(clorofila["valor"]) if clorofila else None
+    )
+
+    # Línea de clorofila-a (siempre que haya valor) para mostrar en cualquier rama.
+    if clorofila is not None:
+        clf_label = nivel_clf["label"] if nivel_clf else "sin alerta"
+        clf_line = (
+            f"<b>Clorofila-a:</b> {clorofila['valor']:.2f} {clorofila['unidad']} "
+            f"&nbsp;·&nbsp; {clf_label} (umbrales OMS 1999: ≥1 / ≥10 / ≥50 µg/L)"
         )
+    else:
+        clf_line = (
+            "<b>Clorofila-a:</b> no registrada para esta muestra "
+            "(parámetro P124 sin resultado en laboratorio)."
+        )
+
+    if nivel is None:
+        # Sin alerta por cianobacterias — pero si la clorofila dispara algo,
+        # se muestra como discrepancia (banner amarillo informativo).
+        if nivel_clf is not None:
+            st.markdown(
+                f"""
+                <div style="background:#fff3cd;color:#856404;
+                    border-left:6px solid #ffc107;padding:12px 16px;
+                    border-radius:6px;margin:8px 0;font-size:0.92em;line-height:1.45">
+                    <div style="font-weight:700;margin-bottom:4px">
+                        <span class="material-symbols-rounded" style="vertical-align:-5px;font-size:1.3em">warning</span>
+                        Discrepancia: clorofila-a {nivel_clf['label']} sin
+                        cianobacterias detectadas
+                    </div>
+                    <div style="opacity:0.92;margin-bottom:6px">
+                        Conteo celular: {total_cyano_cel_ml:,.0f} cél/mL — por
+                        debajo del umbral OMS 1999 de vigilancia inicial.
+                        Posible lisis celular previa, dominancia no
+                        cianobacteriana, o resultado incongruente.
+                    </div>
+                    <div style="opacity:0.85;font-size:0.9em">{clf_line}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        else:
+            st.caption(
+                f":material/check_circle: Cianobacterias: "
+                f"{total_cyano_cel_ml:,.0f} cél/mL — por debajo del umbral OMS "
+                f"1999 de vigilancia inicial (200 cél/mL). {clf_line.replace('<b>','').replace('</b>','')}"
+            )
         return
 
     rango = (
@@ -48,6 +182,7 @@ def _render_alerta_oms(total_cyano_cel_ml: float) -> None:
         if nivel["umbral_max_cel_ml"] is None
         else f"{nivel['umbral_min_cel_ml']:,.0f} – {nivel['umbral_max_cel_ml']:,.0f} cél/mL"
     )
+    confirm = _coincide_alerta(nivel, nivel_clf)
     st.markdown(
         f"""
         <div style="
@@ -69,7 +204,13 @@ def _render_alerta_oms(total_cyano_cel_ml: float) -> None:
             <div style="opacity:0.92;margin-bottom:6px">
                 <b>Umbral:</b> {rango} &nbsp;·&nbsp; {nivel['descripcion']}
             </div>
-            <div style="opacity:0.7;font-size:0.85em">
+            <div style="opacity:0.85;font-size:0.9em;margin-bottom:4px">
+                {clf_line}
+            </div>
+            <div style="opacity:0.85;font-size:0.85em;font-style:italic;margin-bottom:4px">
+                {confirm}
+            </div>
+            <div style="opacity:0.65;font-size:0.8em">
                 Fuente: {OMS_FUENTE}.
                 La OMS 2021 (2da ed.) introduce una tabla complementaria por
                 biovolumen (mm³/L) que requiere volumen celular específico — no
@@ -154,7 +295,10 @@ def render_subseccion_fitoplancton(muestra_id: str, analista_id: str | None) -> 
         if CYANOBACTERIA_FILO in resultados_guardados:
             total_cyano_prev = total_cel_ml_filo(resultados_guardados, CYANOBACTERIA_FILO)
             if total_cyano_prev > 0:
-                _render_alerta_oms(total_cyano_prev)
+                _render_alerta_oms(total_cyano_prev, muestra_id)
+
+    # Histórico del punto (independiente de tener análisis cargado en esta muestra).
+    _render_historico_cianobacterias(muestra_id)
 
     # ── 1. Metadatos del recuento ────────────────────────────────────────────
     st.markdown("###### Metadatos del recuento")
@@ -190,6 +334,15 @@ def render_subseccion_fitoplancton(muestra_id: str, analista_id: str | None) -> 
         key=_meta_key(muestra_id, "num_campos"),
         help="Cantidad de campos revisados. Usa 1 si se leyó toda la cámara.",
     )
+
+    # Validación temprana Vc <= Vs (avisa antes de pulsar Calcular).
+    if vol_concentrado > 0 and vol_muestra > 0 and vol_concentrado > vol_muestra:
+        st.error(
+            f"El volumen concentrado ({vol_concentrado:g} mL) no puede ser mayor "
+            f"que el volumen original de muestra ({vol_muestra:g} mL). "
+            "Si la muestra no se concentró, usa el mismo valor en ambos.",
+            icon=":material/error:",
+        )
 
     st.divider()
 
@@ -291,7 +444,7 @@ def render_subseccion_fitoplancton(muestra_id: str, analista_id: str | None) -> 
         if CYANOBACTERIA_FILO in resultados:
             total_cyano = total_cel_ml_filo(resultados, CYANOBACTERIA_FILO)
             if total_cyano > 0:
-                _render_alerta_oms(total_cyano)
+                _render_alerta_oms(total_cyano, muestra_id)
 
         st.dataframe(df, use_container_width=True, hide_index=True)
 
@@ -315,7 +468,7 @@ def render_subseccion_fitoplancton(muestra_id: str, analista_id: str | None) -> 
     # ── Limpieza ─────────────────────────────────────────────────────────────
     if limpiar:
         try:
-            borrar_analisis_fitoplancton(muestra_id)
+            borrar_analisis_fitoplancton(muestra_id, usuario_id=analista_id)
             # Limpiar la marca de carga para que se rehidrate vacío
             st.session_state.pop(f"fito_loaded_{muestra_id}", None)
             toast("Análisis de fitoplancton eliminado", tipo="warn")

@@ -31,6 +31,7 @@ from services.mapa_service import (
     get_ultimos_resultados_punto,
 )
 from services.resultado_service import get_campanas
+from services.fitoplancton_service import get_alertas_oms_por_punto
 
 
 # ─── Constantes ──────────────────────────────────────────────────────────────
@@ -634,6 +635,49 @@ def _construir_mapa(puntos: list[dict], solo_excedencias: bool, mostrar_heatmap:
         ).add_to(fg_puntos)
 
     fg_puntos.add_to(m)
+
+    # ── Capa: Alerta OMS de cianobacterias (último análisis fitoplancton) ──
+    # Anillo coloreado encima del marcador ECA según el nivel OMS 1999. Solo
+    # se dibuja para puntos que tengan al menos un análisis Sedgewick-Rafter.
+    try:
+        alertas_cyano = get_alertas_oms_por_punto()
+    except Exception:
+        alertas_cyano = {}
+
+    if alertas_cyano:
+        fg_cyano = folium.FeatureGroup(name="Alerta OMS — Cianobacterias", show=False)
+        for p in pts_filtrados:
+            alerta = alertas_cyano.get(p["id"])
+            if not alerta:
+                continue
+            tooltip = (
+                f"{p['codigo']} — Cianobacterias: "
+                f"{alerta['total_cyano_cel_ml']:,.0f} cél/mL · "
+                f"{alerta['nivel_oms']} (OMS 1999)"
+            )
+            popup_html = (
+                f'<div style="font-family:sans-serif;min-width:200px">'
+                f'<div style="font-weight:700;color:#1a1a1a">{p["codigo"]}</div>'
+                f'<div style="color:#475569;font-size:12px;margin-bottom:6px">'
+                f'{p["nombre"]}</div>'
+                f'<div style="background:{alerta["color_bg"]};'
+                f'border-left:4px solid {alerta["color_borde"]};'
+                f'padding:6px 10px;border-radius:4px;font-size:12px">'
+                f'<b>{alerta["nivel_oms"]}</b><br>'
+                f'{alerta["total_cyano_cel_ml"]:,.0f} cél/mL<br>'
+                f'<span style="opacity:0.7">Último análisis: {alerta["ultima_fecha"]}</span>'
+                f'</div></div>'
+            )
+            folium.CircleMarker(
+                location=[p["latitud"], p["longitud"]],
+                radius=18,
+                color=alerta["color_borde"],
+                weight=3,
+                fill=False,
+                tooltip=tooltip,
+                popup=folium.Popup(popup_html, max_width=320),
+            ).add_to(fg_cyano)
+        fg_cyano.add_to(m)
 
     folium.LayerControl(collapsed=False).add_to(m)
 
