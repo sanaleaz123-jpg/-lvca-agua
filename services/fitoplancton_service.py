@@ -53,7 +53,7 @@ TAXONOMIA_FITOPLANCTON: dict[str, list[str]] = {
         "Stigeoclonium sp.", "Tetraedron sp.", "Tetraspora sp.", "Ulothrix sp.",
         "Volvox sp.",
     ],
-    "Miozoa": [
+    "Dinophyta": [
         "Ceratium sp.", "Peridinium sp.",
     ],
     "Euglenozoa": [
@@ -67,14 +67,20 @@ ICONOS_FILO: dict[str, str] = {
     "Bacillariophyta": "grain",
     "Charophyta":      "spa",
     "Chlorophyta":     "eco",
-    "Miozoa":          "scatter_plot",
+    "Dinophyta":       "scatter_plot",
     "Euglenozoa":      "blur_on",
 }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Cálculo (función pura — sin Streamlit, sin BD)
+# Fuente: APHA Standard Methods for the Examination of Water and Wastewater,
+# método Sedgewick-Rafter para enumeración de fitoplancton.
 # ─────────────────────────────────────────────────────────────────────────────
+
+# Profundidad de la cámara Sedgewick-Rafter (D). Constante por diseño de fábrica.
+PROFUNDIDAD_CAMARA_MM: float = 1.0
+
 
 def calcular_densidad_sedgewick_rafter(
     conteos_brutos:     dict[str, int],
@@ -82,44 +88,58 @@ def calcular_densidad_sedgewick_rafter(
     vol_concentrado_ml: float,
     area_campo_mm2:     float,
     num_campos:         int,
+    profundidad_mm:     float = PROFUNDIDAD_CAMARA_MM,
 ) -> dict[str, dict[str, float | int]]:
     """
-    Calcula densidad de fitoplancton (cel/mL, cel/L) por el método Sedgewick-Rafter.
+    Densidad de fitoplancton (cel/mL, cel/L) por el método Sedgewick-Rafter.
 
-    Fórmula:
-        factor_camara          = 1000 / (area_campo_mm2 · profundidad · num_campos)
-        factor_concentracion   = vol_concentrado_ml / vol_muestra_ml
-        cel/mL = conteo · factor_camara · factor_concentracion
-        cel/L  = cel/mL · 1000
+    Fórmula APHA Standard Methods:
 
-        La profundidad de la cámara S-R es constante: 1 mm.
+                     C × 1000      Vc
+        cel/mL  =  ───────────  ×  ──
+                    A × D × F      Vs
 
-    Parámetros:
-        conteos_brutos:     {especie: conteo_entero}
-        vol_muestra_ml:     volumen inicial de la muestra (mL)
-        vol_concentrado_ml: volumen al que se redujo la muestra (mL)
-        area_campo_mm2:     área del campo del microscopio (mm²); 1000 si toda la cámara
-        num_campos:         cantidad de campos revisados; 1 si toda la cámara
+        cel/L   =  cel/mL × 1000
+
+    Variables:
+        C    conteo bruto de la especie (células)            → conteos_brutos[especie]
+        1000 volumen total de la cámara S-R en mm³ (= 1 mL)  → constante
+        A    área del campo del microscopio (mm²)            → area_campo_mm2
+        D    profundidad de la cámara (mm), siempre 1        → profundidad_mm
+        F    número de campos leídos                         → num_campos
+        Vc   volumen al que se concentró la muestra (mL)     → vol_concentrado_ml
+        Vs   volumen original de muestra (mL)                → vol_muestra_ml
+
+    Convenciones de uso:
+        - Si se leyó toda la cámara: A=1000, F=1.
+        - Si la muestra se leyó directa (sin concentrar): Vc = Vs.
 
     Retorna:
         {especie: {"conteo_bruto": int, "cel_ml": float, "cel_l": float}}
         Sólo se incluyen especies con conteo > 0.
 
     Lanza:
-        ValueError si vol_muestra_ml, area_campo_mm2 o num_campos son cero.
+        ValueError si Vs, A, F o D son cero (división por cero).
     """
-    if vol_muestra_ml == 0 or area_campo_mm2 == 0 or num_campos == 0:
+    if (
+        vol_muestra_ml == 0
+        or area_campo_mm2 == 0
+        or num_campos == 0
+        or profundidad_mm == 0
+    ):
         raise ValueError(
-            "El volumen de muestra, el área del campo y el número de campos no pueden ser cero."
+            "El volumen de muestra (Vs), el área del campo (A), el número de "
+            "campos (F) y la profundidad de la cámara (D) no pueden ser cero."
         )
-
-    factor_camara = 1000.0 / (area_campo_mm2 * 1.0 * num_campos)
-    factor_concentracion = vol_concentrado_ml / vol_muestra_ml
 
     resultados: dict[str, dict[str, float | int]] = {}
     for especie, conteo in conteos_brutos.items():
         if conteo > 0:
-            cel_ml = (conteo * factor_camara) * factor_concentracion
+            cel_ml = (
+                (conteo * 1000.0)
+                / (area_campo_mm2 * profundidad_mm * num_campos)
+                * (vol_concentrado_ml / vol_muestra_ml)
+            )
             cel_l = cel_ml * 1000.0
             resultados[especie] = {
                 "conteo_bruto": int(conteo),
