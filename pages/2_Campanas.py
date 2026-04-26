@@ -187,132 +187,43 @@ def _render_listado() -> None:
         st.info("No se encontraron campañas con los filtros seleccionados.")
         return
 
-    # ── Tabla resumen ────────────────────────────────────────────────────────
+    # ── Tabla resumen (clickable) ────────────────────────────────────────────
     st.markdown(f"#### {len(campanas)} campaña(s) encontrada(s)")
+    st.caption("Haz clic en una fila para ver el detalle de la campaña.")
 
     df = pd.DataFrame(campanas)
     df["estado_label"] = df["estado"].apply(_badge_estado)
 
-    st.dataframe(
-        df[[
-            "codigo", "nombre", "fecha_inicio", "fecha_fin",
-            "estado_label", "frecuencia", "responsable_campo",
-        ]].rename(columns={
-            "codigo":            "Código",
-            "nombre":            "Nombre",
-            "fecha_inicio":      "Inicio",
-            "fecha_fin":         "Fin",
-            "estado_label":      "Estado",
-            "frecuencia":        "Frecuencia",
-            "responsable_campo": "Resp. campo",
-        }),
+    df_view = df[[
+        "codigo", "nombre", "fecha_inicio", "fecha_fin",
+        "estado_label", "frecuencia", "responsable_campo",
+    ]].rename(columns={
+        "codigo":            "Código",
+        "nombre":            "Nombre",
+        "fecha_inicio":      "Inicio",
+        "fecha_fin":         "Fin",
+        "estado_label":      "Estado",
+        "frecuencia":        "Frecuencia",
+        "responsable_campo": "Resp. campo",
+    })
+
+    event = st.dataframe(
+        df_view,
         use_container_width=True,
         hide_index=True,
+        on_select="rerun",
+        selection_mode="single-row",
+        key="tabla_campanas",
     )
 
-    # ── Archivar campaña (soft-delete, recomendado) ──────────────────────
+    # ── Detalle de la campaña seleccionada ───────────────────────────────────
+    sel_rows = getattr(event, "selection", {}).get("rows") if hasattr(event, "selection") else event.get("selection", {}).get("rows", [])
+    if not sel_rows:
+        st.info("Selecciona una campaña en la tabla para ver su detalle.")
+        return
+
+    campana_id = campanas[sel_rows[0]]["id"]
     st.divider()
-    with st.expander("📦 Archivar / restaurar campaña", expanded=False):
-        st.caption(
-            "Archivar oculta la campaña de los listados sin borrar datos. "
-            "Recomendado para campañas finalizadas que ya no se consultan."
-        )
-        opciones_archivar = {
-            f"{c['codigo']} — {c['nombre']} ({_badge_estado(c['estado'])})": c
-            for c in campanas
-        }
-        sel_archivar = st.selectbox(
-            "Seleccionar campaña",
-            list(opciones_archivar.keys()),
-            key="sel_archivar_camp",
-        )
-        camp_target = opciones_archivar[sel_archivar]
-        motivo = st.text_input(
-            "Motivo (opcional)",
-            placeholder="Ej. Campaña cerrada, datos consolidados en informe anual",
-            key="motivo_archivado_camp",
-        )
-        col_a, col_b = st.columns(2)
-        sesion = st.session_state.get("sesion")
-        usuario_id = sesion.uid if sesion else None
-        with col_a:
-            if camp_target["estado"] != "archivada":
-                if st.button("Archivar", key="btn_archivar_camp", type="primary", icon=":material/archive:"):
-                    try:
-                        archivar_campana(camp_target["id"], motivo=motivo, usuario_id=usuario_id)
-                        toast(f"Campaña {camp_target['codigo']} archivada", tipo="info")
-                        st.rerun()
-                    except Exception as exc:
-                        st.error(f"Error al archivar: {exc}")
-            else:
-                if st.button("Restaurar", key="btn_restaurar_camp", icon=":material/restore_from_trash:"):
-                    try:
-                        restaurar_campana(camp_target["id"])
-                        toast(f"Campaña {camp_target['codigo']} restaurada", tipo="success")
-                        st.rerun()
-                    except Exception as exc:
-                        st.error(f"Error al restaurar: {exc}")
-
-    # ── Eliminación PERMANENTE (solo casos extremos) ─────────────────────
-    if sesion and getattr(sesion, "rol", "") == "administrador":
-        with st.expander("⚠️ Eliminar permanentemente (irreversible)", expanded=False):
-            st.error(
-                "**ATENCIÓN:** El borrado físico destruye datos para siempre. "
-                "Para campañas con datos válidos usa **Archivar** en su lugar."
-            )
-            opciones_eliminar = {
-                f"{c['codigo']} — {c['nombre']} ({_badge_estado(c['estado'])})": c
-                for c in campanas
-            }
-            sel_eliminar = st.selectbox(
-                "Seleccionar campaña a eliminar permanentemente",
-                list(opciones_eliminar.keys()),
-                key="sel_eliminar_camp",
-            )
-            camp_eliminar = opciones_eliminar[sel_eliminar]
-            st.warning(
-                f"Se eliminará **{camp_eliminar['codigo']}** y **todos** sus datos: "
-                f"muestras, resultados, mediciones."
-            )
-            confirmar_codigo = st.text_input(
-                f"Escribe **{camp_eliminar['codigo']}** para confirmar:",
-                key="confirmar_codigo_elim",
-            )
-            st.markdown('<div class="lvca-danger">', unsafe_allow_html=True)
-            confirm_btn = st.button(
-                "Eliminar permanentemente",
-                key="btn_elim_camp_listado", type="primary",
-                icon=":material/delete_forever:",
-            )
-            st.markdown('</div>', unsafe_allow_html=True)
-            if confirm_btn:
-                if confirmar_codigo.strip() != camp_eliminar["codigo"]:
-                    st.error("El código no coincide.")
-                else:
-                    try:
-                        info = eliminar_campana(camp_eliminar["id"], forzar=True)
-                        toast(
-                            f"Campaña eliminada — {info['muestras']} muestras, "
-                            f"{info['resultados']} resultados",
-                            tipo="danger",
-                        )
-                        st.rerun()
-                    except Exception as exc:
-                        st.error(f"Error: {exc}")
-
-    # ── Selector de detalle ──────────────────────────────────────────────────
-    st.divider()
-    opciones_detalle = {
-        f"{c['codigo']} — {c['nombre']}": c["id"]
-        for c in campanas
-    }
-    sel_detalle = st.selectbox(
-        "Ver detalle de campaña",
-        list(opciones_detalle.keys()),
-        key="sel_detalle",
-    )
-    campana_id = opciones_detalle[sel_detalle]
-
     _render_detalle(campana_id)
 
 
@@ -406,12 +317,20 @@ def _render_detalle(campana_id: str) -> None:
 
     # ── Edición de campaña (admin) ───────────────────────────────────────────
     st.divider()
-    with st.expander("✏️ Editar datos de la campaña", expanded=False):
+    with st.expander(
+        "Editar datos de la campaña",
+        expanded=False,
+        icon=":material/edit:",
+    ):
         _render_editar_campana(campana_id, camp)
 
     # ── Puntos incluidos ─────────────────────────────────────────────────────
     st.divider()
-    with st.expander(f"📍 Puntos de muestreo incluidos ({len(puntos)})", expanded=True):
+    with st.expander(
+        f"Puntos de muestreo incluidos ({len(puntos)})",
+        expanded=True,
+        icon=":material/place:",
+    ):
         if puntos:
             df_pts = pd.DataFrame(puntos)
             st.dataframe(
@@ -432,8 +351,9 @@ def _render_detalle(campana_id: str) -> None:
 
     # ── Avance de análisis ───────────────────────────────────────────────────
     with st.expander(
-        f"🧪 Muestras y avance de análisis ({avance['porcentaje']:.1f}%)",
+        f"Muestras y avance de análisis ({avance['porcentaje']:.1f}%)",
         expanded=True,
+        icon=":material/science:",
     ):
         # Métricas globales
         ac1, ac2, ac3, ac4 = st.columns(4)
@@ -467,9 +387,63 @@ def _render_detalle(campana_id: str) -> None:
         else:
             st.caption("Aún no hay muestras registradas en esta campaña.")
 
-    # ── Eliminar campaña ──────────────────────────────────────────────────────
+    # ── Archivar / restaurar (soft-delete, recomendado) ──────────────────────
     st.divider()
-    with st.expander("🗑️ Eliminar campaña", expanded=False):
+    sesion = st.session_state.get("sesion")
+    usuario_id = sesion.uid if sesion else None
+    es_archivada = camp["estado"] == "archivada"
+
+    with st.expander(
+        "Archivar campaña" if not es_archivada else "Restaurar campaña archivada",
+        expanded=False,
+        icon=":material/archive:",
+    ):
+        st.caption(
+            "Archivar oculta la campaña de los listados sin borrar datos. "
+            "Recomendado para campañas finalizadas que ya no se consultan."
+        )
+        if not es_archivada:
+            motivo = st.text_input(
+                "Motivo (opcional)",
+                placeholder="Ej. Campaña cerrada, datos consolidados en informe anual",
+                key=f"motivo_archivado_{campana_id}",
+            )
+            if st.button(
+                "Archivar campaña",
+                key=f"btn_archivar_{campana_id}",
+                type="primary",
+                icon=":material/archive:",
+            ):
+                try:
+                    archivar_campana(campana_id, motivo=motivo, usuario_id=usuario_id)
+                    toast(f"Campaña {camp['codigo']} archivada", tipo="info")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Error al archivar: {exc}")
+        else:
+            st.info(f"Esta campaña está archivada. Restáurala para volver a operar sobre ella.")
+            if st.button(
+                "Restaurar campaña",
+                key=f"btn_restaurar_{campana_id}",
+                icon=":material/restore_from_trash:",
+            ):
+                try:
+                    restaurar_campana(campana_id)
+                    toast(f"Campaña {camp['codigo']} restaurada", tipo="success")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Error al restaurar: {exc}")
+
+    # ── Eliminar permanentemente (irreversible) ──────────────────────────────
+    with st.expander(
+        "Eliminar permanentemente",
+        expanded=False,
+        icon=":material/warning:",
+    ):
+        st.error(
+            "**ATENCIÓN:** El borrado físico destruye datos para siempre. "
+            "Para campañas con datos válidos usa **Archivar** en su lugar."
+        )
         st.warning(
             f"Se eliminará **{camp['codigo']}** y **todos** sus datos asociados "
             f"(muestras, resultados, mediciones in situ). Esta acción es irreversible."
@@ -478,7 +452,12 @@ def _render_detalle(campana_id: str) -> None:
             f"Escribe el código **{camp['codigo']}** para confirmar:",
             key="confirmar_eliminar_camp",
         )
-        if st.button("Eliminar campaña permanentemente", key="btn_eliminar_camp", type="primary"):
+        if st.button(
+            "Eliminar permanentemente",
+            key="btn_eliminar_camp",
+            type="primary",
+            icon=":material/delete_forever:",
+        ):
             if confirmar.strip() != camp["codigo"]:
                 st.error("El código ingresado no coincide.")
             else:
@@ -550,12 +529,9 @@ def _render_editar_campana(campana_id: str, camp: dict) -> None:
                 key="edit_resp_campo",
             )
 
-        st.text_input(
-            "Responsable de laboratorio",
-            value=_RESPONSABLE_LAB,
-            disabled=True,
-            key="edit_resp_lab_display",
-            help="Responsable de laboratorio fijo para todas las campañas.",
+        st.caption(
+            f":material/science: **Responsable de laboratorio:** {_RESPONSABLE_LAB} "
+            f"_(fijo para todas las campañas)_"
         )
         resp_lab_sel = _RESPONSABLE_LAB
 
@@ -648,7 +624,7 @@ def _render_formulario_nueva() -> None:
         for p in puntos
     }
 
-    with st.form("form_nueva_campana", clear_on_submit=True):
+    with st.form("form_nueva_campana", clear_on_submit=False):
         nombre = st.text_input(
             "Nombre de la campaña *",
             placeholder="Monitoreo mensual marzo 2025 — Cuenca Chili",
@@ -678,12 +654,9 @@ def _render_formulario_nueva() -> None:
                 key="new_resp_campo",
             )
 
-        st.text_input(
-            "Responsable de laboratorio",
-            value=_RESPONSABLE_LAB,
-            disabled=True,
-            key="new_resp_lab_display",
-            help="Responsable de laboratorio fijo para todas las campañas.",
+        st.caption(
+            f":material/science: **Responsable de laboratorio:** {_RESPONSABLE_LAB} "
+            f"_(fijo para todas las campañas)_"
         )
         responsable_lab_sel = _RESPONSABLE_LAB
 
@@ -774,7 +747,10 @@ def main() -> None:
         ambito="Cuenca Chili-Quilca",
     )
 
-    tab_lista, tab_nueva = st.tabs(["📋 Listado de campañas", "➕ Nueva campaña"])
+    tab_lista, tab_nueva = st.tabs([
+        ":material/list: Listado de campañas",
+        ":material/add: Nueva campaña",
+    ])
 
     with tab_lista:
         _render_listado()
