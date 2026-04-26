@@ -68,6 +68,37 @@ def _opciones_responsables_campo() -> list[str]:
     return list(_RESPONSABLES_CAMPO)
 
 
+def _normalizar_cuenca(valor: str | None) -> str:
+    """Normaliza el nombre de cuenca (colapsa espacios alrededor de guiones)."""
+    if not valor:
+        return "Sin cuenca"
+    # "Quilca - Chili - Vitor" → "Quilca-Chili-Vitor"
+    return " ".join(valor.replace(" - ", "-").split())
+
+
+def _preparar_duplicado(camp: dict, puntos: list[dict], campana_id: str) -> None:
+    """
+    Construye un borrador en session_state con los datos de una campaña existente
+    para pre-llenar el formulario "Nueva campaña". No copia código ni fechas.
+    """
+    sel_lab = get_parametros_lab_campana(campana_id)
+    resp_actual = camp.get("responsable_campo") or ""
+    resp_validos = [
+        r.strip() for r in resp_actual.split(",")
+        if r.strip() in _RESPONSABLES_CAMPO
+    ]
+    st.session_state["duplicar_camp"] = {
+        "origen_codigo":         camp["codigo"],
+        "origen_nombre":         camp.get("nombre") or "",
+        "frecuencia":            (camp.get("frecuencia") or "mensual").lower(),
+        "responsable_campo":     resp_validos,
+        "observaciones":         camp.get("observaciones") or "",
+        "puntos_ids":            [p["id"] for p in puntos],
+        "parametros_lab":        sel_lab.get("parametros_lab") or [],
+        "parametros_lab_extra":  sel_lab.get("parametros_lab_extra") or [],
+    }
+
+
 def _render_seleccion_parametros_lab(
     key_prefix: str,
     seleccionados_default: list[str] | None = None,
@@ -141,6 +172,52 @@ def _color_estado(estado: str) -> str:
         "completada":     "#198754",
         "anulada":        "#dc3545",
     }.get(estado, "#6c757d")
+
+
+def _render_atajo_flujo(camp: dict) -> None:
+    """
+    Botón de "siguiente paso" según el estado de la campaña.
+    Pre-selecciona la campaña en la página destino vía session_state.
+    """
+    estado = camp.get("estado")
+    codigo = camp["codigo"]
+    nombre = camp.get("nombre") or ""
+
+    if estado == "en_campo":
+        if st.button(
+            "Registrar muestras de campo",
+            key="atajo_muestras",
+            icon=":material/edit_note:",
+            type="secondary",
+            use_container_width=True,
+        ):
+            # Pre-selección en pages/3_Muestras_Campo.py (key="reg_camp")
+            st.session_state["reg_camp"] = f"{codigo} — {nombre}"
+            st.switch_page("pages/3_Muestras_Campo.py")
+
+    elif estado == "en_laboratorio":
+        if st.button(
+            "Capturar resultados de laboratorio",
+            key="atajo_resultados",
+            icon=":material/biotech:",
+            type="secondary",
+            use_container_width=True,
+        ):
+            # Pre-selección en pages/4_Resultados_Lab.py (key="sel_campana")
+            st.session_state["sel_campana"] = f"{nombre} ({estado})"
+            st.switch_page("pages/4_Resultados_Lab.py")
+
+    elif estado == "completada":
+        if st.button(
+            "Ver / generar informe",
+            key="atajo_informe",
+            icon=":material/description:",
+            type="secondary",
+            use_container_width=True,
+        ):
+            # Pre-selección en pages/8_Informes.py (key="inf_campana")
+            st.session_state["inf_campana"] = f"{codigo} — {nombre} ({estado})"
+            st.switch_page("pages/8_Informes.py")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -279,11 +356,11 @@ def _render_detalle(campana_id: str) -> None:
     if camp.get("observaciones"):
         st.caption(f"Observaciones: {camp['observaciones']}")
 
-    # ── Transición de estado ─────────────────────────────────────────────────
+    # ── Transición de estado y acciones ──────────────────────────────────────
     estado_actual = camp["estado"]
     st.divider()
 
-    bc1, bc2 = st.columns([3, 2])
+    bc1, bc2, bc3 = st.columns([3, 2, 2])
 
     with bc1:
         siguiente = TRANSICIONES_VALIDAS.get(estado_actual)
@@ -306,6 +383,20 @@ def _render_detalle(campana_id: str) -> None:
             st.error("Esta campaña fue anulada.")
 
     with bc2:
+        if st.button(
+            "Duplicar como nueva",
+            key="btn_duplicar",
+            icon=":material/content_copy:",
+            help="Crea una nueva campaña pre-llenada con los datos de esta (puntos, parámetros, responsables).",
+        ):
+            _preparar_duplicado(camp, puntos, campana_id)
+            toast(
+                f"Borrador listo desde {camp['codigo']}. Ve a la pestaña «Nueva campaña».",
+                tipo="info",
+            )
+            st.rerun()
+
+    with bc3:
         if estado_actual not in ("completada", "anulada"):
             if st.button("Anular campaña", key="btn_anular", icon=":material/cancel:"):
                 try:
@@ -314,6 +405,9 @@ def _render_detalle(campana_id: str) -> None:
                     st.rerun()
                 except TransicionInvalidaError as exc:
                     st.error(str(exc))
+
+    # ── Atajo al siguiente paso del flujo según estado ───────────────────────
+    _render_atajo_flujo(camp)
 
     # ── Edición de campaña (admin) ───────────────────────────────────────────
     st.divider()
@@ -624,10 +718,119 @@ def _render_formulario_nueva() -> None:
         for p in puntos
     }
 
+    # ── Borrador desde "Duplicar campaña" ────────────────────────────────────
+    borrador = st.session_state.get("duplicar_camp")
+    borrador_codigo = (borrador or {}).get("origen_codigo")
+    borrador_aplicado = st.session_state.get("duplicar_camp_aplicado")
+
+    # Si entra un borrador nuevo, limpiar widget-state previo para que los
+    # defaults del duplicado se apliquen (Streamlit ignora `default=` cuando
+    # ya existe un valor en session_state).
+    if borrador and borrador_codigo != borrador_aplicado:
+        keys_a_limpiar = [
+            "new_nombre", "new_frecuencia", "new_resp_campo",
+            "new_puntos_sel", "new_obs", "new_plab_extras",
+        ]
+        for p in get_parametros_lab_cadena():
+            keys_a_limpiar.append(f"new_plab_{p['clave']}")
+        for k in keys_a_limpiar:
+            st.session_state.pop(k, None)
+        st.session_state["duplicar_camp_aplicado"] = borrador_codigo
+
+    if borrador:
+        bn1, bn2 = st.columns([4, 1])
+        with bn1:
+            st.info(
+                f":material/content_copy: **Duplicando desde {borrador['origen_codigo']}** — "
+                f"{borrador['origen_nombre']}. Ajusta nombre y fechas; el resto ya está pre-llenado."
+            )
+        with bn2:
+            if st.button(
+                "Descartar borrador",
+                key="btn_descartar_dup",
+                icon=":material/close:",
+            ):
+                st.session_state.pop("duplicar_camp", None)
+                st.session_state.pop("duplicar_camp_aplicado", None)
+                # Limpiar widgets pre-llenados
+                for k in [
+                    "new_nombre", "new_frecuencia", "new_resp_campo",
+                    "new_puntos_sel", "new_obs", "new_plab_extras",
+                ]:
+                    st.session_state.pop(k, None)
+                for p in get_parametros_lab_cadena():
+                    st.session_state.pop(f"new_plab_{p['clave']}", None)
+                st.rerun()
+
+    # Defaults derivados del borrador (o defaults base)
+    def_nombre   = f"{borrador['origen_nombre']} (copia)" if borrador else ""
+    def_freq_idx = (
+        FRECUENCIAS.index(borrador["frecuencia"])
+        if borrador and borrador["frecuencia"] in FRECUENCIAS
+        else 0
+    )
+    def_puntos_labels: list[str]
+    if borrador:
+        ids_borrador = set(borrador["puntos_ids"])
+        def_puntos_labels = [
+            label for label, pid in opciones_puntos.items() if pid in ids_borrador
+        ]
+    else:
+        def_puntos_labels = list(opciones_puntos.keys())  # todos por defecto
+
+    def_obs = borrador["observaciones"] if borrador else ""
+    def_lab_sel = borrador["parametros_lab"] if borrador else None
+    def_lab_extra = borrador["parametros_lab_extra"] if borrador else None
+    def_resp_campo = borrador["responsable_campo"] if borrador else []
+
+    # ── Atajos de selección de puntos por cuenca (fuera del form) ────────────
+    cuencas_disponibles = sorted({_normalizar_cuenca(p.get("cuenca")) for p in puntos})
+    labels_por_cuenca: dict[str, list[str]] = {c: [] for c in cuencas_disponibles}
+    for p in puntos:
+        cuenca = _normalizar_cuenca(p.get("cuenca"))
+        label = f"{p['codigo']} — {p['nombre']} ({p.get('tipo', '')})"
+        labels_por_cuenca[cuenca].append(label)
+
+    with st.container(border=True):
+        st.caption(
+            ":material/place: **Atajo:** selección rápida de puntos por cuenca "
+            "(luego puedes ajustar uno por uno en el formulario)."
+        )
+        n_cols = 2 + len(cuencas_disponibles)
+        cols_atajo = st.columns(n_cols)
+
+        if cols_atajo[0].button(
+            f"Todos ({len(opciones_puntos)})",
+            key="btn_pts_todos",
+            icon=":material/select_all:",
+            use_container_width=True,
+        ):
+            st.session_state["new_puntos_sel"] = list(opciones_puntos.keys())
+            st.rerun()
+        if cols_atajo[1].button(
+            "Limpiar",
+            key="btn_pts_clear",
+            icon=":material/clear_all:",
+            use_container_width=True,
+        ):
+            st.session_state["new_puntos_sel"] = []
+            st.rerun()
+        for i, cuenca in enumerate(cuencas_disponibles):
+            if cols_atajo[i + 2].button(
+                f"Solo {cuenca} ({len(labels_por_cuenca[cuenca])})",
+                key=f"btn_pts_cuenca_{i}",
+                icon=":material/water:",
+                use_container_width=True,
+            ):
+                st.session_state["new_puntos_sel"] = list(labels_por_cuenca[cuenca])
+                st.rerun()
+
     with st.form("form_nueva_campana", clear_on_submit=False):
         nombre = st.text_input(
             "Nombre de la campaña *",
+            value=def_nombre,
             placeholder="Monitoreo mensual marzo 2025 — Cuenca Chili",
+            key="new_nombre",
         )
 
         fc1, fc2 = st.columns(2)
@@ -644,12 +847,14 @@ def _render_formulario_nueva() -> None:
             frecuencia = st.selectbox(
                 "Frecuencia",
                 [f.capitalize() for f in FRECUENCIAS],
-                index=0,
+                index=def_freq_idx,
+                key="new_frecuencia",
             )
         with fc4:
             responsable_campo_sel = st.multiselect(
                 f"Responsable de campo (máx. {_MAX_RESP_CAMPO})",
                 _opciones_responsables_campo(),
+                default=def_resp_campo,
                 max_selections=_MAX_RESP_CAMPO,
                 key="new_resp_campo",
             )
@@ -660,20 +865,26 @@ def _render_formulario_nueva() -> None:
         )
         responsable_lab_sel = _RESPONSABLE_LAB
 
+        n_pts_sel = len(st.session_state.get("new_puntos_sel", def_puntos_labels))
         puntos_sel = st.multiselect(
-            "Puntos de muestreo incluidos *",
+            f"Puntos de muestreo incluidos * ({n_pts_sel} de {len(opciones_puntos)})",
             list(opciones_puntos.keys()),
-            default=list(opciones_puntos.keys()),  # todos por defecto
+            default=def_puntos_labels,
+            key="new_puntos_sel",
         )
 
         section_header("Parámetros de laboratorio a analizar", "beaker")
         params_lab_sel, params_lab_extra = _render_seleccion_parametros_lab(
             key_prefix="new",
+            seleccionados_default=def_lab_sel,
+            extras_default=def_lab_extra,
         )
 
         observaciones = st.text_area(
             "Observaciones",
+            value=def_obs,
             placeholder="Notas sobre la campaña...",
+            key="new_obs",
         )
 
         submitted = st.form_submit_button(
@@ -729,6 +940,9 @@ def _render_formulario_nueva() -> None:
                     f"{len(puntos_ids)} punto(s) de muestreo y "
                     f"{len(params_lab_sel) + len(params_lab_extra)} parámetro(s) de laboratorio."
                 )
+                # Limpiar borrador de duplicado si lo había
+                st.session_state.pop("duplicar_camp", None)
+                st.session_state.pop("duplicar_camp_aplicado", None)
             except Exception as exc:
                 st.error(f"Error al crear la campaña: {exc}")
 
