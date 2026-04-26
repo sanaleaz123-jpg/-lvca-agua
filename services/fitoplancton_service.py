@@ -29,38 +29,136 @@ from services.audit_service import registrar_cambio
 # Taxonomía (constante de método — no migrar a BD)
 # ─────────────────────────────────────────────────────────────────────────────
 
-TAXONOMIA_FITOPLANCTON: dict[str, list[str]] = {
+# Cada especie es un dict con:
+#   nombre              — nombre taxonómico (con sp.)
+#   unidad              — natural unit de conteo: "celula" | "colonia" | "filamento"
+#   celulas_por_unidad  — número promedio de células por unidad natural (1 si unicelular)
+#   volumen_celula_um3  — biovolumen promedio de una célula individual (µm³)
+#
+# Fuentes consultadas:
+#   - Olenina I. et al. 2006 — "Biovolumes and size-classes of phytoplankton in
+#     the Baltic Sea". HELCOM Baltic Sea Environment Proceedings 106.
+#   - Sun J. & Liu D. 2003 — "Geometric models for calculating cell biovolume
+#     and surface area for phytoplankton". J Plankton Res 25:1331-1346.
+#   - Hillebrand H. et al. 1999 — "Biovolume calculation for pelagic and
+#     benthic microalgae". J Phycol 35:403-424.
+#   - HELCOM PEG counting guidelines (2018 update).
+#   - WHO 2021 Toxic Cyanobacteria in Water (2nd ed.) — definición de unidad
+#     de conteo para cianobacterias.
+#
+# Los valores `celulas_por_unidad` y `volumen_celula_um3` son VALORES DE
+# REFERENCIA basados en la literatura citada. Para alta precisión el
+# laboratorio debe medir biovolumen específico de su muestra (ImageJ +
+# fórmulas de Sun & Liu 2003). Estos defaults sirven para reportes de
+# vigilancia rutinaria y para aplicar la Tabla OMS 2021 sin medición
+# explícita.
+TAXONOMIA_FITOPLANCTON: dict[str, list[dict]] = {
     "Cyanobacteria": [
-        "Oscillatoria sp.", "Anabaena sp.", "Chroococcus sp.", "Merismopedia sp.",
-        "Microcystis sp.", "Nostoc sp.", "Phormidium sp.", "Pseudanabaena sp.",
-        "Spirulina sp.", "Synechococcus sp.",
+        # Coloniales (mucilaginosas o cocoidales agrupadas)
+        {"nombre": "Microcystis sp.",      "unidad": "colonia",   "celulas_por_unidad": 100, "volumen_celula_um3": 65},
+        {"nombre": "Chroococcus sp.",      "unidad": "colonia",   "celulas_por_unidad": 4,   "volumen_celula_um3": 50},
+        {"nombre": "Merismopedia sp.",     "unidad": "colonia",   "celulas_por_unidad": 32,  "volumen_celula_um3": 5},
+        {"nombre": "Nostoc sp.",           "unidad": "colonia",   "celulas_por_unidad": 100, "volumen_celula_um3": 35},
+        # Filamentosas (tricomas con o sin envoltura)
+        {"nombre": "Anabaena sp.",         "unidad": "filamento", "celulas_por_unidad": 50,  "volumen_celula_um3": 30},
+        {"nombre": "Oscillatoria sp.",     "unidad": "filamento", "celulas_por_unidad": 50,  "volumen_celula_um3": 200},
+        {"nombre": "Phormidium sp.",       "unidad": "filamento", "celulas_por_unidad": 40,  "volumen_celula_um3": 35},
+        {"nombre": "Pseudanabaena sp.",    "unidad": "filamento", "celulas_por_unidad": 30,  "volumen_celula_um3": 5},
+        {"nombre": "Spirulina sp.",        "unidad": "filamento", "celulas_por_unidad": 10,  "volumen_celula_um3": 35},
+        # Unicelulares (picocianobacterias)
+        {"nombre": "Synechococcus sp.",    "unidad": "celula",    "celulas_por_unidad": 1,   "volumen_celula_um3": 5},
     ],
+    # Bacillariophyta (diatomeas) — convención HELCOM PEG: cuenta cada célula
+    # individual incluso en colonias/cadenas. Volumen por célula promedio.
     "Bacillariophyta": [
-        "Achnanthes sp.", "Amphora sp.", "Asterionella sp.", "Cocconeis sp.",
-        "Cyclotella sp.", "Cymbella sp.", "Diatoma sp.", "Encyonema sp.",
-        "Epithemia sp.", "Fragilaria sp.", "Gomphonema sp.", "Melosira sp.",
-        "Navicula sp.", "Nitzschia sp.", "Pinnularia sp.", "Rhoicosphenia sp.",
-        "Rhopalodia sp.", "Surirella sp.", "Synedra sp.", "Tabellaria sp.",
-        "Ulnaria sp.",
+        {"nombre": "Achnanthes sp.",       "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 200},
+        {"nombre": "Amphora sp.",          "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 600},
+        {"nombre": "Asterionella sp.",     "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 600},
+        {"nombre": "Cocconeis sp.",        "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 250},
+        {"nombre": "Cyclotella sp.",       "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 500},
+        {"nombre": "Cymbella sp.",         "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 1500},
+        {"nombre": "Diatoma sp.",          "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 800},
+        {"nombre": "Encyonema sp.",        "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 1200},
+        {"nombre": "Epithemia sp.",        "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 2500},
+        {"nombre": "Fragilaria sp.",       "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 500},
+        {"nombre": "Gomphonema sp.",       "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 1000},
+        {"nombre": "Melosira sp.",         "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 3500},
+        {"nombre": "Navicula sp.",         "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 800},
+        {"nombre": "Nitzschia sp.",        "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 600},
+        {"nombre": "Pinnularia sp.",       "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 5000},
+        {"nombre": "Rhoicosphenia sp.",    "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 350},
+        {"nombre": "Rhopalodia sp.",       "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 2000},
+        {"nombre": "Surirella sp.",        "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 5000},
+        {"nombre": "Synedra sp.",          "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 1200},
+        {"nombre": "Tabellaria sp.",       "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 700},
+        {"nombre": "Ulnaria sp.",          "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 1500},
     ],
+    # Charophyta (desmidiaceas) — todas unicelulares.
     "Charophyta": [
-        "Closterium sp.", "Cosmarium sp.", "Staurastrum sp.",
+        {"nombre": "Closterium sp.",       "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 8000},
+        {"nombre": "Cosmarium sp.",        "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 5000},
+        {"nombre": "Staurastrum sp.",      "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 4000},
     ],
+    # Chlorophyta — mezcla: unicelulares, cenobios coloniales y filamentos.
     "Chlorophyta": [
-        "Ankistrodesmus sp.", "Botryococcus sp.", "Chlamydomonas sp.",
-        "Chlorella sp.", "Coelastrum sp.", "Crucigenia sp.", "Dictyosphaerium sp.",
-        "Eudorina sp.", "Monoraphidium sp.", "Oocystis sp.", "Pandorina sp.",
-        "Pediastrum sp.", "Scenedesmus sp.", "Selenastrum sp.", "Sphaerocystis sp.",
-        "Stigeoclonium sp.", "Tetraedron sp.", "Tetraspora sp.", "Ulothrix sp.",
-        "Volvox sp.",
+        # Unicelulares
+        {"nombre": "Ankistrodesmus sp.",   "unidad": "celula",    "celulas_por_unidad": 1,   "volumen_celula_um3": 200},
+        {"nombre": "Chlamydomonas sp.",    "unidad": "celula",    "celulas_por_unidad": 1,   "volumen_celula_um3": 250},
+        {"nombre": "Chlorella sp.",        "unidad": "celula",    "celulas_por_unidad": 1,   "volumen_celula_um3": 30},
+        {"nombre": "Monoraphidium sp.",    "unidad": "celula",    "celulas_por_unidad": 1,   "volumen_celula_um3": 100},
+        {"nombre": "Oocystis sp.",         "unidad": "celula",    "celulas_por_unidad": 1,   "volumen_celula_um3": 200},
+        {"nombre": "Selenastrum sp.",      "unidad": "celula",    "celulas_por_unidad": 1,   "volumen_celula_um3": 80},
+        {"nombre": "Tetraedron sp.",       "unidad": "celula",    "celulas_por_unidad": 1,   "volumen_celula_um3": 700},
+        # Cenobios coloniales (4-32 células fijas)
+        {"nombre": "Botryococcus sp.",     "unidad": "colonia",   "celulas_por_unidad": 50,  "volumen_celula_um3": 250},
+        {"nombre": "Coelastrum sp.",       "unidad": "colonia",   "celulas_por_unidad": 8,   "volumen_celula_um3": 200},
+        {"nombre": "Crucigenia sp.",       "unidad": "colonia",   "celulas_por_unidad": 4,   "volumen_celula_um3": 80},
+        {"nombre": "Dictyosphaerium sp.",  "unidad": "colonia",   "celulas_por_unidad": 8,   "volumen_celula_um3": 60},
+        {"nombre": "Pediastrum sp.",       "unidad": "colonia",   "celulas_por_unidad": 16,  "volumen_celula_um3": 250},
+        {"nombre": "Scenedesmus sp.",      "unidad": "colonia",   "celulas_por_unidad": 4,   "volumen_celula_um3": 80},
+        {"nombre": "Sphaerocystis sp.",    "unidad": "colonia",   "celulas_por_unidad": 16,  "volumen_celula_um3": 250},
+        {"nombre": "Tetraspora sp.",       "unidad": "colonia",   "celulas_por_unidad": 16,  "volumen_celula_um3": 100},
+        # Volvocales (esféricas grandes con muchas células)
+        {"nombre": "Eudorina sp.",         "unidad": "colonia",   "celulas_por_unidad": 32,  "volumen_celula_um3": 250},
+        {"nombre": "Pandorina sp.",        "unidad": "colonia",   "celulas_por_unidad": 16,  "volumen_celula_um3": 250},
+        {"nombre": "Volvox sp.",           "unidad": "colonia",   "celulas_por_unidad": 500, "volumen_celula_um3": 60},
+        # Filamentosas
+        {"nombre": "Stigeoclonium sp.",    "unidad": "filamento", "celulas_por_unidad": 30,  "volumen_celula_um3": 150},
+        {"nombre": "Ulothrix sp.",         "unidad": "filamento", "celulas_por_unidad": 50,  "volumen_celula_um3": 250},
     ],
+    # Dinophyta (dinoflagelados) — unicelulares grandes.
     "Dinophyta": [
-        "Ceratium sp.", "Peridinium sp.",
+        {"nombre": "Ceratium sp.",         "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 50000},
+        {"nombre": "Peridinium sp.",       "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 12000},
     ],
+    # Euglenozoa — unicelulares flagelados.
     "Euglenozoa": [
-        "Euglena sp.", "Phacus sp.", "Trachelomonas sp.",
+        {"nombre": "Euglena sp.",          "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 8000},
+        {"nombre": "Phacus sp.",           "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 3500},
+        {"nombre": "Trachelomonas sp.",    "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 2000},
     ],
 }
+
+
+# Etiquetas cortas para mostrar la unidad en UI sin ocupar mucho espacio.
+ABREV_UNIDAD: dict[str, str] = {
+    "celula":    "cél",
+    "colonia":   "col",
+    "filamento": "fil",
+}
+
+
+def get_especies_filo(filo: str) -> list[dict]:
+    """Devuelve la lista de especies (dicts) de un filo, vacía si no existe."""
+    return TAXONOMIA_FITOPLANCTON.get(filo, [])
+
+
+def get_metadata_especie(filo: str, nombre_especie: str) -> dict | None:
+    """Devuelve el dict completo {nombre, unidad, celulas_por_unidad, volumen_celula_um3} o None."""
+    for esp in get_especies_filo(filo):
+        if esp["nombre"] == nombre_especie:
+            return esp
+    return None
 
 # Iconos Material por filo (para la UI — no afectan la lógica).
 ICONOS_FILO: dict[str, str] = {
@@ -165,19 +263,30 @@ def calcular_y_agrupar_por_filo(
     vol_concentrado_ml: float,
     area_campo_mm2:     float,
     num_campos:         int,
-) -> dict[str, dict[str, dict[str, float | int]]]:
+) -> dict[str, dict[str, dict[str, float | int | str]]]:
     """
-    Wrapper que conserva la agrupación por filo en el resultado.
+    Calcula densidad y biovolumen por especie y agrupa por filo.
 
     Entrada:
-        {"Cyanobacteria": {"Oscillatoria sp.": 5, ...}, "Bacillariophyta": {...}, ...}
+        {"Cyanobacteria": {"Microcystis sp.": 5, ...}, ...}
+        Los valores son CONTEOS de unidades naturales (no de células — la
+        unidad depende de la especie según TAXONOMIA_FITOPLANCTON).
 
-    Retorna:
-        {"Cyanobacteria": {"Oscillatoria sp.": {conteo_bruto, cel_ml, cel_l}, ...}, ...}
-        Sólo se incluyen filos que tengan al menos una especie con conteo > 0.
+    Salida por especie:
+        {
+          "conteo_bruto":     int,    # unidades contadas
+          "unidad":           str,    # "celula" | "colonia" | "filamento"
+          "unidad_ml":        float,  # densidad en unidades/mL (Sedgewick-Rafter)
+          "cel_ml_equiv":     float,  # equivalente en células/mL (× cels_por_unidad)
+          "cel_l_equiv":      float,  # = cel_ml_equiv × 1000
+          "biovolumen_mm3_l": float,  # biomasa estimada (mm³/L)
+        }
+
+    Sólo se incluyen filos con al menos una especie con conteo > 0.
     """
-    salida: dict[str, dict[str, dict[str, float | int]]] = {}
+    salida: dict[str, dict[str, dict[str, float | int | str]]] = {}
     for filo, especies in conteos_por_filo.items():
+        # Densidad bruta en unidades/mL (la fórmula APHA es ortogonal a la unidad).
         densidades = calcular_densidad_sedgewick_rafter(
             conteos_brutos=especies,
             vol_muestra_ml=vol_muestra_ml,
@@ -185,8 +294,35 @@ def calcular_y_agrupar_por_filo(
             area_campo_mm2=area_campo_mm2,
             num_campos=num_campos,
         )
-        if densidades:
-            salida[filo] = densidades
+        if not densidades:
+            continue
+
+        salida_filo: dict[str, dict[str, float | int | str]] = {}
+        for nombre_especie, val in densidades.items():
+            meta = get_metadata_especie(filo, nombre_especie)
+            unidad = (meta or {}).get("unidad", "celula")
+            cels_por_unidad = float((meta or {}).get("celulas_por_unidad", 1) or 1)
+            vol_cel_um3 = float((meta or {}).get("volumen_celula_um3", 0) or 0)
+
+            unidad_ml = float(val["cel_ml"])  # Sedgewick-Rafter da unidades/mL
+            cel_ml_equiv = unidad_ml * cels_por_unidad
+            cel_l_equiv = cel_ml_equiv * 1000.0
+            # Biovolumen: cel/mL × µm³/cel × 1e-9 (µm³→mm³) × 1000 (mL→L) = ×1e-6
+            biovolumen_mm3_l = cel_ml_equiv * vol_cel_um3 * 1e-6
+
+            salida_filo[nombre_especie] = {
+                "conteo_bruto":     int(val["conteo_bruto"]),
+                "unidad":           unidad,
+                "unidad_ml":        round(unidad_ml, 4),
+                "cel_ml_equiv":     round(cel_ml_equiv, 4),
+                "cel_l_equiv":      round(cel_l_equiv, 4),
+                "biovolumen_mm3_l": round(biovolumen_mm3_l, 6),
+                # Mantenemos cel_ml/cel_l por compatibilidad con datos legacy
+                # del formato anterior: corresponden a unidad_ml/cel_l_unidad.
+                "cel_ml":           round(unidad_ml, 4),
+                "cel_l":            round(unidad_ml * 1000.0, 4),
+            }
+        salida[filo] = salida_filo
     return salida
 
 
@@ -208,6 +344,7 @@ def calcular_y_agrupar_por_filo(
 # ─────────────────────────────────────────────────────────────────────────────
 
 OMS_FUENTE: str = "OMS 1999 — Tabla por cél/mL (agua potable, Drinking-water Alert Levels Framework)"
+OMS_FUENTE_2021: str = "OMS 2021 — Tabla por biovolumen mm³/L (agua recreativa, Chorus & Welker 2da ed.)"
 
 CYANOBACTERIA_FILO: str = "Cyanobacteria"
 
@@ -260,6 +397,90 @@ NIVELES_OMS_CIANOBACTERIAS: list[dict] = [
 ]
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Alerta OMS 2021 — Tabla por biovolumen (mm³/L) + criterio de unidades
+#
+# Fuente: WHO (2021) — "Toxic Cyanobacteria in Water" 2nd ed. (Chorus & Welker).
+#         Capítulo "Alert Levels Framework" — tabla por biovolumen para agua
+#         recreativa.
+#
+# Criterios (literal):
+#   Vigilancia inicial: >10 colonias·mL⁻¹  o  >50 filamentos·mL⁻¹
+#   Alerta 1:           biovolumen ≥ 0,3 mm³·L⁻¹
+#   Alerta 2:           biovolumen ≥ 4,0 mm³·L⁻¹
+#
+# Implementación:
+#   - Si biovolumen >= 4.0  → Alerta 2
+#   - Si biovolumen >= 0.3  → Alerta 1
+#   - Si NO hay alerta por biovolumen pero sí por conteo de unidades
+#     (col > 10 o fil > 50) → Vigilancia inicial
+#   - En caso contrario → None (sin alerta)
+# ─────────────────────────────────────────────────────────────────────────────
+
+NIVELES_OMS_2021_CIANOBACTERIAS: list[dict] = [
+    {
+        "nivel":      "alerta_2",
+        "label":      "Alerta 2",
+        "criterio":   "biovolumen ≥ 4,0 mm³/L",
+        "color_bg":   "#f8d7da",
+        "color_fg":   "#721c24",
+        "color_borde":"#dc3545",
+        "icono":      "dangerous",
+        "descripcion": (
+            "Floración de cianobacterias establecida en el cuerpo de agua "
+            "con elevado riesgo de toxicidad."
+        ),
+    },
+    {
+        "nivel":      "alerta_1",
+        "label":      "Alerta 1",
+        "criterio":   "biovolumen ≥ 0,3 mm³/L",
+        "color_bg":   "#fff3cd",
+        "color_fg":   "#856404",
+        "color_borde":"#ffc107",
+        "icono":      "warning",
+        "descripcion": (
+            "Concentraciones que traen riesgos asociados a cianotoxinas. "
+            "Comunicar a las autoridades pertinentes para evaluar manejo "
+            "operacional o tratamiento de agua."
+        ),
+    },
+    {
+        "nivel":      "vigilancia_inicial",
+        "label":      "Vigilancia inicial",
+        "criterio":   ">10 colonias/mL o >50 filamentos/mL",
+        "color_bg":   "#d4edda",
+        "color_fg":   "#155724",
+        "color_borde":"#28a745",
+        "icono":      "monitoring",
+        "descripcion": (
+            "Posible etapa inicial del desarrollo de una floración: "
+            "cianobacterias presentes con biomasa aún baja."
+        ),
+    },
+]
+
+
+def evaluar_alerta_oms_2021(
+    biovolumen_mm3_l:    float,
+    colonias_por_ml:     float,
+    filamentos_por_ml:   float,
+) -> Optional[dict]:
+    """
+    Aplica los umbrales WHO 2021 para cianobacterias (Tabla por biovolumen
+    + criterio de unidades para Vigilancia inicial).
+
+    Retorna el dict del nivel disparado o None si no hay alerta.
+    """
+    if biovolumen_mm3_l >= 4.0:
+        return NIVELES_OMS_2021_CIANOBACTERIAS[0]   # Alerta 2
+    if biovolumen_mm3_l >= 0.3:
+        return NIVELES_OMS_2021_CIANOBACTERIAS[1]   # Alerta 1
+    if colonias_por_ml > 10 or filamentos_por_ml > 50:
+        return NIVELES_OMS_2021_CIANOBACTERIAS[2]   # Vigilancia inicial
+    return None
+
+
 def evaluar_alerta_oms_cianobacterias(total_cel_ml: float) -> Optional[dict]:
     """
     Aplica los umbrales OMS por densidad celular al total de cianobacterias.
@@ -281,12 +502,49 @@ def evaluar_alerta_oms_cianobacterias(total_cel_ml: float) -> Optional[dict]:
 
 
 def total_cel_ml_filo(
-    resultados_por_filo: dict[str, dict[str, dict[str, float | int]]],
+    resultados_por_filo: dict[str, dict[str, dict[str, float | int | str]]],
     filo: str,
 ) -> float:
-    """Suma cel/mL de todas las especies de un filo en el resultado del cálculo."""
+    """
+    Suma equivalente en CÉLULAS/mL de un filo (para aplicar OMS 1999).
+    Lee `cel_ml_equiv` (presente desde el refactor C.1). Para datos legacy
+    sin ese campo, cae al campo `cel_ml` antiguo (que asumía 1 unidad = 1 cel).
+    """
     especies = resultados_por_filo.get(filo) or {}
-    return float(sum(float(v.get("cel_ml", 0.0) or 0.0) for v in especies.values()))
+    total = 0.0
+    for v in especies.values():
+        if "cel_ml_equiv" in v:
+            total += float(v.get("cel_ml_equiv", 0.0) or 0.0)
+        else:
+            total += float(v.get("cel_ml", 0.0) or 0.0)  # legacy fallback
+    return float(total)
+
+
+def total_unidades_ml_filo(
+    resultados_por_filo: dict[str, dict[str, dict[str, float | int | str]]],
+    filo: str,
+    unidad: str,
+) -> float:
+    """
+    Suma de unidades/mL de un filo filtrando por tipo de unidad
+    ("colonia" o "filamento"). Sirve para aplicar el criterio de
+    Vigilancia OMS 2021 (>10 col/mL o >50 fil/mL).
+    """
+    especies = resultados_por_filo.get(filo) or {}
+    total = 0.0
+    for v in especies.values():
+        if v.get("unidad") == unidad:
+            total += float(v.get("unidad_ml", 0.0) or 0.0)
+    return float(total)
+
+
+def total_biovolumen_filo(
+    resultados_por_filo: dict[str, dict[str, dict[str, float | int | str]]],
+    filo: str,
+) -> float:
+    """Suma biovolumen mm³/L de todas las especies del filo (para OMS 2021)."""
+    especies = resultados_por_filo.get(filo) or {}
+    return float(sum(float(v.get("biovolumen_mm3_l", 0.0) or 0.0) for v in especies.values()))
 
 
 # ─── Cruce con clorofila-a (parámetro P124) ──────────────────────────────────
@@ -497,17 +755,29 @@ def get_historico_cianobacterias_por_punto(
     for fila in res.data or []:
         doc = fila.get("datos_fitoplancton") or {}
         resultados = doc.get("resultados") or {}
-        total = total_cel_ml_filo(resultados, CYANOBACTERIA_FILO)
-        nivel = evaluar_alerta_oms_cianobacterias(total)
+        total_cel = total_cel_ml_filo(resultados, CYANOBACTERIA_FILO)
+        biovol = total_biovolumen_filo(resultados, CYANOBACTERIA_FILO)
+        col_ml = total_unidades_ml_filo(resultados, CYANOBACTERIA_FILO, "colonia")
+        fil_ml = total_unidades_ml_filo(resultados, CYANOBACTERIA_FILO, "filamento")
+        n1999 = evaluar_alerta_oms_cianobacterias(total_cel)
+        n2021 = evaluar_alerta_oms_2021(biovol, col_ml, fil_ml)
         serie.append({
-            "muestra_id":         fila["id"],
-            "codigo_muestra":     fila.get("codigo"),
-            "fecha_muestreo":     fila.get("fecha_muestreo"),
-            "total_cyano_cel_ml": total,
-            "nivel_oms":          (nivel["label"] if nivel else "Sin alerta"),
-            "nivel_codigo":       (nivel["nivel"] if nivel else None),
-            "color_bg":           (nivel["color_bg"] if nivel else "#e2e3e5"),
-            "color_borde":        (nivel["color_borde"] if nivel else "#6c757d"),
+            "muestra_id":          fila["id"],
+            "codigo_muestra":      fila.get("codigo"),
+            "fecha_muestreo":      fila.get("fecha_muestreo"),
+            "total_cyano_cel_ml":  total_cel,
+            "biovolumen_mm3_l":    biovol,
+            "colonias_ml":         col_ml,
+            "filamentos_ml":       fil_ml,
+            "oms_1999_label":      (n1999["label"] if n1999 else "Sin alerta"),
+            "oms_1999_codigo":     (n1999["nivel"] if n1999 else None),
+            "oms_1999_color_borde":(n1999["color_borde"] if n1999 else "#6c757d"),
+            "oms_2021_label":      (n2021["label"] if n2021 else "Sin alerta"),
+            "oms_2021_codigo":     (n2021["nivel"] if n2021 else None),
+            "oms_2021_color_borde":(n2021["color_borde"] if n2021 else "#6c757d"),
+            # Aliases retro-compat para el componente histórico anterior:
+            "nivel_oms":           (n1999["label"] if n1999 else "Sin alerta"),
+            "color_borde":         (n1999["color_borde"] if n1999 else "#6c757d"),
         })
     return serie
 
@@ -555,14 +825,41 @@ def get_alertas_oms_por_punto() -> dict[str, dict]:
         if not pid or pid in salida:  # solo el más reciente
             continue
         doc = fila.get("datos_fitoplancton") or {}
-        total = total_cel_ml_filo(doc.get("resultados") or {}, CYANOBACTERIA_FILO)
-        nivel = evaluar_alerta_oms_cianobacterias(total)
+        resultados = doc.get("resultados") or {}
+        total_cel = total_cel_ml_filo(resultados, CYANOBACTERIA_FILO)
+        biovol = total_biovolumen_filo(resultados, CYANOBACTERIA_FILO)
+        col_ml = total_unidades_ml_filo(resultados, CYANOBACTERIA_FILO, "colonia")
+        fil_ml = total_unidades_ml_filo(resultados, CYANOBACTERIA_FILO, "filamento")
+        n1999 = evaluar_alerta_oms_cianobacterias(total_cel)
+        n2021 = evaluar_alerta_oms_2021(biovol, col_ml, fil_ml)
+
+        def _empaquetar(nivel: dict | None) -> dict:
+            if nivel is None:
+                return {
+                    "label":        "Sin alerta",
+                    "codigo":       "sin_alerta",
+                    "color_bg":     "#e2e3e5",
+                    "color_borde":  "#6c757d",
+                }
+            return {
+                "label":        nivel["label"],
+                "codigo":       nivel["nivel"],
+                "color_bg":     nivel["color_bg"],
+                "color_borde":  nivel["color_borde"],
+            }
+
         salida[pid] = {
             "ultima_fecha":       fila.get("fecha_muestreo"),
-            "total_cyano_cel_ml": total,
-            "nivel_oms":          (nivel["label"] if nivel else "Sin alerta"),
-            "nivel_codigo":       (nivel["nivel"] if nivel else "sin_alerta"),
-            "color_bg":           (nivel["color_bg"] if nivel else "#e2e3e5"),
-            "color_borde":        (nivel["color_borde"] if nivel else "#6c757d"),
+            "total_cyano_cel_ml": total_cel,
+            "biovolumen_mm3_l":   biovol,
+            "colonias_ml":        col_ml,
+            "filamentos_ml":      fil_ml,
+            "oms_1999":           _empaquetar(n1999),
+            "oms_2021":           _empaquetar(n2021),
+            # Aliases retro-compat:
+            "nivel_oms":          (n1999["label"] if n1999 else "Sin alerta"),
+            "nivel_codigo":       (n1999["nivel"] if n1999 else "sin_alerta"),
+            "color_bg":           (n1999["color_bg"] if n1999 else "#e2e3e5"),
+            "color_borde":        (n1999["color_borde"] if n1999 else "#6c757d"),
         }
     return salida

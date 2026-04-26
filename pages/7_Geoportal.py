@@ -636,10 +636,11 @@ def _construir_mapa(puntos: list[dict], solo_excedencias: bool, mostrar_heatmap:
 
     fg_puntos.add_to(m)
 
-    # ── Capa: Alerta OMS de cianobacterias (último análisis fitoplancton) ──
-    # Anillo coloreado encima del marcador ECA según el nivel OMS 1999. La
-    # capa siempre se registra en el LayerControl aunque esté vacía, para
-    # que el usuario vea que la funcionalidad existe.
+    # ── Capas: Alerta OMS Cianobacterias (1999 y 2021 — ambas separadas) ──
+    # Cada capa es un anillo coloreado encima del marcador ECA con el nivel
+    # del último análisis fitoplancton. Las dos tablas se reportan sin
+    # combinar: el usuario decide cuál mirar según el contexto (agua potable
+    # vs agua recreativa).
     try:
         alertas_cyano = get_alertas_oms_por_punto()
         cyano_error = None
@@ -648,48 +649,64 @@ def _construir_mapa(puntos: list[dict], solo_excedencias: bool, mostrar_heatmap:
         cyano_error = str(exc)
 
     n_puntos_cyano = sum(1 for p in pts_filtrados if alertas_cyano.get(p["id"]))
-    label_cyano = (
-        f"Alerta OMS — Cianobacterias ({n_puntos_cyano})"
-        if n_puntos_cyano else "Alerta OMS — Cianobacterias (sin análisis)"
-    )
-    fg_cyano = folium.FeatureGroup(name=label_cyano, show=False)
 
-    for p in pts_filtrados:
-        alerta = alertas_cyano.get(p["id"])
-        if not alerta:
-            continue
-        tooltip = (
-            f"{p['codigo']} — Cianobacterias: "
-            f"{alerta['total_cyano_cel_ml']:,.0f} cél/mL · "
-            f"{alerta['nivel_oms']} (OMS 1999)"
+    def _construir_fg_oms(version: str, titulo: str) -> folium.FeatureGroup:
+        """version: '1999' o '2021'. Lee `oms_1999`/`oms_2021` del dict."""
+        clave = f"oms_{version}"
+        label = (
+            f"{titulo} ({n_puntos_cyano})"
+            if n_puntos_cyano else f"{titulo} (sin análisis)"
         )
-        popup_html = (
-            f'<div style="font-family:sans-serif;min-width:200px">'
-            f'<div style="font-weight:700;color:#1a1a1a">{p["codigo"]}</div>'
-            f'<div style="color:#475569;font-size:12px;margin-bottom:6px">'
-            f'{p["nombre"]}</div>'
-            f'<div style="background:{alerta["color_bg"]};'
-            f'border-left:4px solid {alerta["color_borde"]};'
-            f'padding:6px 10px;border-radius:4px;font-size:12px">'
-            f'<b>{alerta["nivel_oms"]}</b><br>'
-            f'{alerta["total_cyano_cel_ml"]:,.0f} cél/mL<br>'
-            f'<span style="opacity:0.7">Último análisis: {alerta["ultima_fecha"]}</span>'
-            f'</div></div>'
-        )
-        folium.CircleMarker(
-            location=[p["latitud"], p["longitud"]],
-            radius=18,
-            color=alerta["color_borde"],
-            weight=3,
-            fill=False,
-            tooltip=tooltip,
-            popup=folium.Popup(popup_html, max_width=320),
-        ).add_to(fg_cyano)
+        fg = folium.FeatureGroup(name=label, show=False)
+        for p in pts_filtrados:
+            alerta = alertas_cyano.get(p["id"])
+            if not alerta:
+                continue
+            nivel_info = alerta.get(clave) or {}
+            extra = (
+                f"{alerta.get('total_cyano_cel_ml', 0):,.0f} cél/mL"
+                if version == "1999"
+                else f"{alerta.get('biovolumen_mm3_l', 0):.4f} mm³/L"
+            )
+            tooltip = (
+                f"{p['codigo']} — {nivel_info.get('label','—')} "
+                f"(OMS {version}) · {extra}"
+            )
+            popup_html = (
+                f'<div style="font-family:sans-serif;min-width:220px">'
+                f'<div style="font-weight:700;color:#1a1a1a">{p["codigo"]}</div>'
+                f'<div style="color:#475569;font-size:12px;margin-bottom:6px">'
+                f'{p["nombre"]}</div>'
+                f'<div style="background:{nivel_info.get("color_bg","#e2e3e5")};'
+                f'border-left:4px solid {nivel_info.get("color_borde","#6c757d")};'
+                f'padding:6px 10px;border-radius:4px;font-size:12px">'
+                f'<b>OMS {version} — {nivel_info.get("label","—")}</b><br>'
+                f'cél/mL equiv: {alerta.get("total_cyano_cel_ml",0):,.0f}<br>'
+                f'biovolumen: {alerta.get("biovolumen_mm3_l",0):.4f} mm³/L<br>'
+                f'colonias/mL: {alerta.get("colonias_ml",0):,.1f} · '
+                f'filamentos/mL: {alerta.get("filamentos_ml",0):,.1f}<br>'
+                f'<span style="opacity:0.7">Último análisis: '
+                f'{alerta.get("ultima_fecha","—")}</span>'
+                f'</div></div>'
+            )
+            folium.CircleMarker(
+                location=[p["latitud"], p["longitud"]],
+                radius=18 if version == "1999" else 22,
+                color=nivel_info.get("color_borde", "#6c757d"),
+                weight=3,
+                fill=False,
+                dash_array=None if version == "1999" else "5,5",
+                tooltip=tooltip,
+                popup=folium.Popup(popup_html, max_width=340),
+            ).add_to(fg)
+        return fg
 
-    fg_cyano.add_to(m)
+    fg_oms_1999 = _construir_fg_oms("1999", "Alerta OMS 1999 — cél/mL")
+    fg_oms_2021 = _construir_fg_oms("2021", "Alerta OMS 2021 — biovolumen")
+    fg_oms_1999.add_to(m)
+    fg_oms_2021.add_to(m)
 
-    # Guardamos el conteo en un atributo del mapa para mostrarlo como caption
-    # en el page (sin reabrir get_alertas_oms_por_punto fuera del builder).
+    # Guardamos meta en el mapa para mostrar caption en la página.
     m._cyano_meta = {  # type: ignore[attr-defined]
         "n_puntos_con_analisis": n_puntos_cyano,
         "error": cyano_error,
@@ -1170,16 +1187,20 @@ def main() -> None:
         )
     elif n_cyano == 0:
         st.caption(
-            ":material/info: Capa **Alerta OMS — Cianobacterias** disponible en "
-            "el control de capas pero vacía: ningún punto del filtro tiene "
-            "análisis Sedgewick-Rafter guardado todavía. Guarda un análisis en "
-            "Resultados Lab → Hidrobiologico → Fitoplancton para que aparezca."
+            ":material/info: Capas **Alerta OMS 1999 (cél/mL)** y **Alerta OMS "
+            "2021 (biovolumen)** disponibles en el control de capas pero "
+            "vacías: ningún punto del filtro tiene análisis Sedgewick-Rafter "
+            "guardado todavía. Carga un análisis en Resultados Lab → "
+            "Hidrobiologico → Fitoplancton para que aparezcan."
         )
     else:
         st.caption(
-            f":material/biotech: Capa **Alerta OMS — Cianobacterias**: "
-            f"{n_cyano} punto(s) con análisis fitoplancton. Actívala desde el "
-            "control de capas (esquina superior derecha del mapa)."
+            f":material/biotech: **{n_cyano}** punto(s) con análisis "
+            "fitoplancton. Activa cualquiera de las dos capas en el control: "
+            "**OMS 1999** (anillo sólido, por densidad celular) o "
+            "**OMS 2021** (anillo punteado, por biovolumen). "
+            "Las tablas se reportan sin combinar — cada una aplica a un "
+            "escenario distinto (agua potable vs recreativa)."
         )
 
     # Click en el mapa → actualizar la selección persistente del selectbox
