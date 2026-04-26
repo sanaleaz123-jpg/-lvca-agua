@@ -620,6 +620,33 @@ def eliminar_campana(campana_id: str, forzar: bool = False, usuario_id: Optional
     }
 
 
+def peek_siguiente_codigo() -> str:
+    """
+    Vista previa del próximo código sin reservarlo (no atómico, solo informativo).
+    Útil para mostrar "se creará como CAMP-YYYY-NNN" antes de enviar el form.
+    """
+    year = datetime.utcnow().year
+    prefijo = f"CAMP-{year}-"
+    try:
+        db = get_admin_client()
+        res = (
+            db.table("campanas")
+            .select("codigo")
+            .like("codigo", f"{prefijo}%")
+            .execute()
+        )
+        max_seq = 0
+        for row in (res.data or []):
+            try:
+                seq = int(row["codigo"].replace(prefijo, ""))
+                max_seq = max(max_seq, seq)
+            except (ValueError, KeyError):
+                pass
+        return f"{prefijo}{max_seq + 1:03d}"
+    except Exception:
+        return f"{prefijo}???"
+
+
 def _generar_codigo(db) -> str:
     """
     Genera el siguiente código secuencial: CAMP-YYYY-NNN.

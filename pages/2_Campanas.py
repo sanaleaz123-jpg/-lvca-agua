@@ -41,6 +41,7 @@ from services.campana_service import (
     get_detalle_campana,
     get_parametros_lab_campana,
     get_todos_los_puntos,
+    peek_siguiente_codigo,
     restaurar_campana,
     set_parametros_lab_campana,
 )
@@ -74,6 +75,19 @@ def _normalizar_cuenca(valor: str | None) -> str:
         return "Sin cuenca"
     # "Quilca - Chili - Vitor" → "Quilca-Chili-Vitor"
     return " ".join(valor.replace(" - ", "-").split())
+
+
+_MESES_ES = {
+    1: "enero", 2: "febrero",  3: "marzo",      4: "abril",
+    5: "mayo",  6: "junio",    7: "julio",      8: "agosto",
+    9: "septiembre", 10: "octubre", 11: "noviembre", 12: "diciembre",
+}
+
+
+def _sugerir_nombre_campana(fecha_ini: date, frecuencia: str) -> str:
+    """Genera un nombre razonable como default para una campaña nueva."""
+    mes = _MESES_ES.get(fecha_ini.month, "")
+    return f"Monitoreo {frecuencia.lower()} {mes} {fecha_ini.year} — Cuenca Quilca-Chili-Vítor"
 
 
 def _preparar_duplicado(camp: dict, puntos: list[dict], campana_id: str) -> None:
@@ -227,7 +241,7 @@ def _render_atajo_flujo(camp: dict) -> None:
 def _render_listado() -> None:
     # ── Filtros ──────────────────────────────────────────────────────────────
     section_header("Filtros", "filter")
-    fc1, fc2, fc3 = st.columns(3)
+    fc1, fc2, fc3, fc4 = st.columns([2, 2, 2, 1.5])
 
     with fc1:
         opciones_estado = ["Todos"] + [_badge_estado(e) for e in ESTADOS]
@@ -253,11 +267,21 @@ def _render_listado() -> None:
             key="filtro_hasta",
         )
 
+    with fc4:
+        st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+        incluir_archivadas = st.toggle(
+            "Incluir archivadas",
+            value=False,
+            key="filtro_incluir_archivadas",
+            help="Si está activo, las campañas archivadas también aparecerán en la tabla.",
+        )
+
     # ── Consulta ─────────────────────────────────────────────────────────────
     campanas = get_campanas(
         filtro_estado=filtro_estado,
         fecha_desde=str(fecha_desde) if fecha_desde else None,
         fecha_hasta=str(fecha_hasta) if fecha_hasta else None,
+        incluir_archivadas=incluir_archivadas,
     )
 
     if not campanas:
@@ -709,7 +733,10 @@ def _render_editar_puntos(campana_id: str, puntos_actuales: list[dict]) -> None:
 
 def _render_formulario_nueva() -> None:
     section_header("Nueva campaña de monitoreo", "plus")
-    st.caption("El código se generará automáticamente (CAMP-YYYY-NNN).")
+    proximo_codigo = peek_siguiente_codigo()
+    st.caption(
+        f":material/badge: **Próximo código:** `{proximo_codigo}` _(se asigna al crear la campaña)._"
+    )
 
     # Cargar puntos disponibles para el multiselect
     puntos = get_todos_los_puntos()
@@ -763,11 +790,14 @@ def _render_formulario_nueva() -> None:
                 st.rerun()
 
     # Defaults derivados del borrador (o defaults base)
-    def_nombre   = f"{borrador['origen_nombre']} (copia)" if borrador else ""
     def_freq_idx = (
         FRECUENCIAS.index(borrador["frecuencia"])
         if borrador and borrador["frecuencia"] in FRECUENCIAS
         else 0
+    )
+    def_nombre = (
+        f"{borrador['origen_nombre']} (copia)" if borrador
+        else _sugerir_nombre_campana(date.today(), FRECUENCIAS[def_freq_idx])
     )
     def_puntos_labels: list[str]
     if borrador:
