@@ -77,19 +77,6 @@ def _normalizar_cuenca(valor: str | None) -> str:
     return " ".join(valor.replace(" - ", "-").split())
 
 
-_MESES_ES = {
-    1: "enero", 2: "febrero",  3: "marzo",      4: "abril",
-    5: "mayo",  6: "junio",    7: "julio",      8: "agosto",
-    9: "septiembre", 10: "octubre", 11: "noviembre", 12: "diciembre",
-}
-
-
-def _sugerir_nombre_campana(fecha_ini: date, frecuencia: str) -> str:
-    """Genera un nombre razonable como default para una campaña nueva."""
-    mes = _MESES_ES.get(fecha_ini.month, "")
-    return f"Monitoreo {frecuencia.lower()} {mes} {fecha_ini.year} — Cuenca Quilca-Chili-Vítor"
-
-
 def _preparar_duplicado(camp: dict, puntos: list[dict], campana_id: str) -> None:
     """
     Construye un borrador en session_state con los datos de una campaña existente
@@ -185,7 +172,32 @@ def _color_estado(estado: str) -> str:
         "en_laboratorio": "#ffc107",
         "completada":     "#198754",
         "anulada":        "#dc3545",
+        "archivada":      "#343a40",
     }.get(estado, "#6c757d")
+
+
+_ESTADO_LABEL_LIMPIO: dict[str, str] = {
+    "planificada":    "Planificada",
+    "en_campo":       "En campo",
+    "en_laboratorio": "En laboratorio",
+    "completada":     "Completada",
+    "anulada":        "Anulada",
+    "archivada":      "Archivada",
+}
+
+
+def _estilo_celda_estado(label: str) -> str:
+    """CSS para una celda de la columna Estado en la tabla del listado."""
+    estado_key = next(
+        (k for k, v in _ESTADO_LABEL_LIMPIO.items() if v == label), None
+    )
+    bg = _color_estado(estado_key or "")
+    # 'En laboratorio' usa amarillo claro: texto negro para contraste.
+    fg = "black" if estado_key == "en_laboratorio" else "white"
+    return (
+        f"background-color: {bg}; color: {fg}; "
+        f"text-align: center; font-weight: 600; border-radius: 4px;"
+    )
 
 
 def _render_atajo_flujo(camp: dict) -> None:
@@ -293,7 +305,7 @@ def _render_listado() -> None:
     st.caption("Haz clic en una fila para ver el detalle de la campaña.")
 
     df = pd.DataFrame(campanas)
-    df["estado_label"] = df["estado"].apply(_badge_estado)
+    df["estado_label"] = df["estado"].map(_ESTADO_LABEL_LIMPIO).fillna(df["estado"])
 
     df_view = df[[
         "codigo", "nombre", "fecha_inicio", "fecha_fin",
@@ -308,8 +320,10 @@ def _render_listado() -> None:
         "responsable_campo": "Resp. campo",
     })
 
+    styled = df_view.style.map(_estilo_celda_estado, subset=["Estado"])
+
     event = st.dataframe(
-        df_view,
+        styled,
         use_container_width=True,
         hide_index=True,
         on_select="rerun",
@@ -360,18 +374,23 @@ def _render_detalle(campana_id: str) -> None:
     _ciclo = ["planificada", "en_campo", "en_laboratorio", "completada"]
     _labels_ciclo = ["Planificada", "En campo", "En laboratorio", "Completada"]
     _estado = camp["estado"]
-    if _estado in _ciclo:
-        _idx_actual = _ciclo.index(_estado)
-    elif _estado == "anulada":
-        _idx_actual = 0  # anulada se renderiza desde el inicio
+
+    if _estado == "anulada":
+        st.error(
+            ":material/cancel: **Campaña anulada.** Ya no participa del flujo de monitoreo. "
+            "Sus datos se preservan para auditoría pero no se actualizarán."
+        )
     elif _estado == "archivada":
-        _idx_actual = len(_ciclo) - 1
+        st.info(
+            ":material/archive: **Campaña archivada.** Sus datos se preservan pero queda "
+            "oculta del listado por defecto. Puedes restaurarla desde el panel inferior."
+        )
     else:
-        _idx_actual = 0
-    _timeline(
-        [{"label": lbl, "sub": ""} for lbl in _labels_ciclo],
-        current=_idx_actual,
-    )
+        _idx_actual = _ciclo.index(_estado) if _estado in _ciclo else 0
+        _timeline(
+            [{"label": lbl, "sub": ""} for lbl in _labels_ciclo],
+            current=_idx_actual,
+        )
 
     rc1, rc2 = st.columns(2)
     rc1.markdown(f"**Responsable campo:** {camp.get('responsable_campo') or '—'}")
@@ -483,6 +502,29 @@ def _render_detalle(campana_id: str) -> None:
 
         # Barra de progreso
         st.progress(min(avance["porcentaje"] / 100.0, 1.0))
+
+        # Atajos a las páginas de detalle
+        ax1, ax2 = st.columns(2)
+        with ax1:
+            if avance["total_muestras"] > 0:
+                if st.button(
+                    "Ver muestras de esta campaña",
+                    key="atajo_avance_muestras",
+                    icon=":material/edit_note:",
+                    use_container_width=True,
+                ):
+                    st.session_state["reg_camp"] = f"{camp['codigo']} — {camp['nombre']}"
+                    st.switch_page("pages/3_Muestras_Campo.py")
+        with ax2:
+            if avance["total_resultados_registrados"] > 0:
+                if st.button(
+                    "Ver / capturar resultados",
+                    key="atajo_avance_resultados",
+                    icon=":material/biotech:",
+                    use_container_width=True,
+                ):
+                    st.session_state["sel_campana"] = f"{camp['nombre']} ({camp['estado']})"
+                    st.switch_page("pages/4_Resultados_Lab.py")
 
         # Tabla de muestras individuales
         if muestras:
@@ -790,14 +832,11 @@ def _render_formulario_nueva() -> None:
                 st.rerun()
 
     # Defaults derivados del borrador (o defaults base)
+    def_nombre   = f"{borrador['origen_nombre']} (copia)" if borrador else ""
     def_freq_idx = (
         FRECUENCIAS.index(borrador["frecuencia"])
         if borrador and borrador["frecuencia"] in FRECUENCIAS
         else 0
-    )
-    def_nombre = (
-        f"{borrador['origen_nombre']} (copia)" if borrador
-        else _sugerir_nombre_campana(date.today(), FRECUENCIAS[def_freq_idx])
     )
     def_puntos_labels: list[str]
     if borrador:
