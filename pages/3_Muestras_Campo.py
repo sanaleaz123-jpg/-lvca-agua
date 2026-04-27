@@ -84,15 +84,34 @@ from services.ficha_campo_service import generar_docx_fichas
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _semaforo_insitu(valor, lim_min, lim_max) -> str:
+    """
+    Estado ECA del valor in situ como icono Material Symbols renderizado
+    con un span colored. Se usa dentro de st.markdown(unsafe_allow_html=True)
+    o en st.markdown directo (Streamlit interpreta los iconos en HTML inline).
+    """
     if valor is None:
-        return "⬜"
+        return (
+            '<span class="material-symbols-rounded" style="color:#9ca3af;">'
+            "remove</span>"
+        )
     if lim_max is None and lim_min is None:
-        return "⚪"
+        return (
+            '<span class="material-symbols-rounded" style="color:#9ca3af;">'
+            "horizontal_rule</span>"
+        )
     excede = (
         (lim_max is not None and valor > lim_max)
         or (lim_min is not None and valor < lim_min)
     )
-    return "🔴" if excede else "🟢"
+    if excede:
+        return (
+            '<span class="material-symbols-rounded" style="color:#dc2626;">'
+            "error</span>"
+        )
+    return (
+        '<span class="material-symbols-rounded" style="color:#16a34a;">'
+        "check_circle</span>"
+    )
 
 
 def _muestras_por_campana_cached(campana_id: str, *, force: bool = False) -> list[dict]:
@@ -119,24 +138,23 @@ def _invalidar_muestras_cache(campana_id: str | None = None) -> None:
         cache.pop(campana_id, None)
 
 
-def _selector_campana(
-    key_prefix: str,
-    estados: tuple[str, ...] | None = None,
-    label: str = "Campaña",
-    mostrar_estado_en_label: bool = False,
-) -> str | None:
+_ESTADOS_ACTIVOS = ("planificada", "en_campo", "en_laboratorio")
+
+
+def _global_campaign_selector() -> str | None:
     """
-    Selector unificado de campaña.
+    Selector único de campaña que se renderiza UNA sola vez arriba de los
+    tabs y persiste en `session_state["muestras_campana_id"]`. Todos los
+    tabs leen esa misma campaña.
 
-    Args:
-        key_prefix: prefijo único para el widget key (evita colisiones entre tabs).
-        estados: tupla de estados permitidos. Si es None, todas las campañas.
-                 Ej. ("en_campo",) o ("en_campo", "en_laboratorio").
-        label: etiqueta del selectbox.
-        mostrar_estado_en_label: si True, agrega el estado entre paréntesis.
+    Por defecto solo muestra campañas activas (planificada / en_campo /
+    en_laboratorio). Hay un toggle para incluir las completadas/archivadas/
+    anuladas (útil para consultar datos históricos en Listado o regenerar
+    documentos).
 
-    Sustituye a las 3 variantes anteriores (_selector_campana_campo,
-    _selector_campana_todas, y la lógica manual del tab in-situ).
+    Cada tab valida internamente si el estado de la campaña es compatible
+    con su acción (ej. Registro requiere en_campo) y muestra una nota si
+    no lo es. Así el usuario nunca pierde el contexto al cambiar de tab.
     """
     todas = get_campanas()
     if not todas:
@@ -147,51 +165,66 @@ def _selector_campana(
         )
         return None
 
-    if estados is None:
+    incluir_cerradas = st.toggle(
+        "Incluir campañas completadas / archivadas / anuladas",
+        value=False,
+        key="muestras_incluir_cerradas",
+        help="Activa para consultar datos o regenerar documentos de campañas históricas.",
+    )
+    if incluir_cerradas:
         candidatas = todas
     else:
-        candidatas = [c for c in todas if c.get("estado") in estados]
+        candidatas = [c for c in todas if c.get("estado") in _ESTADOS_ACTIVOS]
 
     if not candidatas:
-        # Diagnóstico: agrupar campañas existentes por estado
         agrupadas: dict[str, list[str]] = {}
         for c in todas:
             agrupadas.setdefault(c.get("estado", "desconocido"), []).append(c["codigo"])
-        ed_str = " / ".join(estados or ())
-        st.warning(
-            f"No hay campañas en estado **{ed_str or 'requerido'}**."
-        )
-        with st.expander("Ver campañas existentes y cómo activarlas", expanded=True):
+        st.warning("No hay campañas activas (planificada / en_campo / en_laboratorio).")
+        with st.expander("Ver campañas existentes", expanded=True):
             for est, codigos in agrupadas.items():
                 st.markdown(
                     f"- **{est}** ({len(codigos)}): {', '.join(codigos[:5])}"
                     + (f" (+{len(codigos) - 5})" if len(codigos) > 5 else "")
                 )
-            st.info(
-                "Ve a la página **Campañas**, abre una y cambia su estado al requerido."
-            )
+            st.info("Activa el toggle de arriba para verlas, o crea una nueva en **Campañas**.")
         return None
 
-    if mostrar_estado_en_label:
-        opciones = {
-            f"{c['codigo']} — {c['nombre']} ({c.get('estado', '')})": c["id"]
-            for c in candidatas
-        }
-    else:
-        opciones = {f"{c['codigo']} — {c['nombre']}": c["id"] for c in candidatas}
-
-    label_sel = st.selectbox(label, list(opciones.keys()), key=f"{key_prefix}_camp")
+    opciones = {
+        f"{c['codigo']} — {c['nombre']} ({c.get('estado', '')})": c["id"]
+        for c in candidatas
+    }
+    label_sel = st.selectbox(
+        "Campaña activa",
+        list(opciones.keys()),
+        key="muestras_global_camp",
+    )
     return opciones[label_sel]
 
 
-# Wrappers de compatibilidad — mantienen la API antigua para no romper callers
-def _selector_campana_campo(key_prefix: str) -> str | None:
-    return _selector_campana(key_prefix, estados=("en_campo",), label="Campaña activa")
+def _bloquear_si_estado_incorrecto(
+    campana_id: str,
+    estados_validos: tuple[str, ...],
+    accion: str,
+) -> bool:
+    """
+    Devuelve True si la campaña está en un estado válido para la acción del
+    tab actual. Si no, muestra una nota explicativa con el estado actual y
+    el o los estados requeridos, y devuelve False (el caller hace `return`).
+    """
+    info = _get_campana_info(campana_id)
+    estado = info.get("estado", "")
+    if estado in estados_validos:
+        return True
 
-
-def _selector_campana_todas(key_prefix: str) -> str | None:
-    return _selector_campana(key_prefix, estados=None, label="Campaña",
-                             mostrar_estado_en_label=True)
+    estados_str = " o ".join(f"<b>{e}</b>" for e in estados_validos)
+    inline_note(
+        f"Esta campaña está en estado <b>{estado}</b>. "
+        f"Para {accion} la campaña debe estar en {estados_str}. "
+        "Cambia el estado en la página <b>Campañas</b>.",
+        tipo="warning",
+    )
+    return False
 
 
 def _generate_download_widget(
@@ -348,12 +381,13 @@ def _abreviar_nombre(nombre_completo: str) -> str:
     return f"{inicial} {apellidos}"
 
 
-def _render_registro() -> None:
+def _render_registro(campana_id: str) -> None:
     section_header("Registro de muestra de campo", "edit")
     st.caption("Si el punto ya tiene una muestra en la campaña, se cargan los datos para editar.")
 
-    campana_id = _selector_campana_campo("reg")
-    if not campana_id:
+    if not _bloquear_si_estado_incorrecto(
+        campana_id, ("en_campo",), "registrar muestras"
+    ):
         return
 
     # Obtener info de la campaña para restringir fechas
@@ -376,7 +410,30 @@ def _render_registro() -> None:
         st.info("Esta campaña no tiene puntos de muestreo vinculados.")
         return
 
+    # Filtrar técnicos a los responsables de campo definidos en la campaña.
+    # Si la campaña no tiene responsables definidos (campo vacío) o ninguno
+    # de los nombres declarados coincide con un usuario registrado, caemos al
+    # listado completo para no bloquear el registro.
     usuarios = get_usuarios_campo()
+    resp_campo_str = camp_info.get("responsable_campo") or ""
+    resp_campo_set = {
+        n.strip() for n in resp_campo_str.split(",") if n.strip()
+    }
+    if resp_campo_set:
+        usuarios_filtrados = [
+            u for u in usuarios
+            if f"{u.get('nombre','')} {u.get('apellido','')}".strip() in resp_campo_set
+        ]
+        if usuarios_filtrados:
+            usuarios = usuarios_filtrados
+        else:
+            inline_note(
+                "Los responsables de campo declarados en la campaña no coinciden con "
+                "ningún usuario del sistema — se muestra el listado completo. "
+                "Verifica los nombres en la página <b>Campañas</b>.",
+                tipo="warning",
+            )
+
     opciones_puntos = {
         f"{p['codigo']} — {p['nombre']}": p["id"] for p in puntos
     }
@@ -771,14 +828,9 @@ def _render_registro() -> None:
                     icon=":material/arrow_forward:",
                     use_container_width=True,
                 ):
+                    # La campaña ya es global — solo pre-seleccionamos la
+                    # muestra en el tab in-situ.
                     st.session_state["insitu_prefill_muestra_id"] = muestra_id_fotos
-                    # Pre-seleccionamos también la campaña en el tab in-situ
-                    st.session_state["insitu_camp"] = next(
-                        (k for k, v in {f"{c['codigo']} — {c['nombre']}": c["id"]
-                                        for c in get_campanas()}.items()
-                         if v == campana_id),
-                        None,
-                    )
                     st.rerun()
             with cta_b:
                 if st.button(
@@ -797,17 +849,16 @@ def _render_registro() -> None:
 # Tab 2 — Mediciones in situ
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _render_insitu() -> None:
+def _render_insitu(campana_id: str) -> None:
     section_header("Parámetros medidos en campo", "thermometer")
 
-    # Selector unificado: campañas en campo o ya recibidas en lab pueden tener
-    # mediciones in-situ aún por registrar
-    campana_id = _selector_campana(
-        key_prefix="insitu",
-        estados=("en_campo", "en_laboratorio"),
-        label="Campaña activa",
-    )
-    if not campana_id:
+    # Las mediciones in-situ pueden registrarse en cualquier momento mientras
+    # la campaña esté en campo o ya recibida en lab.
+    if not _bloquear_si_estado_incorrecto(
+        campana_id,
+        ("en_campo", "en_laboratorio"),
+        "registrar mediciones in situ",
+    ):
         return
 
     # Si el usuario llegó aquí desde "Registrar mediciones in-situ ahora →"
@@ -998,7 +1049,10 @@ def _render_insitu_single(
             cols[3].caption("—")
 
         sem = _semaforo_insitu(valores[clave], lim_min, lim_max)
-        cols[4].markdown(f"### {sem}")
+        cols[4].markdown(
+            f'<div style="font-size:1.6em; line-height:1;">{sem}</div>',
+            unsafe_allow_html=True,
+        )
 
     st.divider()
 
@@ -1161,17 +1215,13 @@ def _render_insitu_columna(
 # Tab 3 — Cadena de custodia
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _render_custodia() -> None:
+def _render_custodia(campana_id: str) -> None:
     section_header("Recepción en laboratorio", "archive")
     st.caption(
         "Avanza el estado de cada muestra individual: registra recepción "
         "en lab, cambia a 'analizada', etc. Para generar el documento oficial "
         "PDF/Excel ve al tab **Documento CC**."
     )
-
-    campana_id = _selector_campana_todas("custodia")
-    if not campana_id:
-        return
 
     muestras = _muestras_por_campana_cached(campana_id)
     if not muestras:
@@ -1292,15 +1342,8 @@ def _render_custodia() -> None:
                 icon=":material/description:",
                 use_container_width=True,
             ):
-                # Pre-seleccionar la misma campaña en el tab Documento CC
-                opt_label = next(
-                    (k for k, v in {f"{c['codigo']} — {c['nombre']} ({c.get('estado','')})":
-                                    c["id"] for c in get_campanas()}.items()
-                     if v == campana_id),
-                    None,
-                )
-                if opt_label:
-                    st.session_state["cadena_camp"] = opt_label
+                # La campaña ya es global — solo señalizamos el "salto" para
+                # mostrar el banner contextual en el tab Documento CC.
                 st.session_state["_jump_to_cadena"] = True
                 st.rerun()
 
@@ -1309,12 +1352,8 @@ def _render_custodia() -> None:
 # Tab 4 — Listado general
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _render_listado() -> None:
+def _render_listado(campana_id: str) -> None:
     section_header("Listado de muestras", "list")
-
-    campana_id = _selector_campana_todas("listado")
-    if not campana_id:
-        return
 
     # Filtros
     fc1, fc2 = st.columns(2)
@@ -1373,7 +1412,7 @@ def _render_listado() -> None:
     )
 
     if muestra_sel.get("estado") == "recolectada":
-        with st.expander("🗑️ Eliminar muestra", expanded=False):
+        with st.expander("Eliminar muestra", expanded=False, icon=":material/delete:"):
             st.warning("Solo se pueden eliminar muestras en estado 'recolectada' y sin resultados de laboratorio.")
             if st.button("Eliminar muestra permanentemente", key="btn_eliminar_muestra", type="primary"):
                 try:
@@ -1397,7 +1436,7 @@ _RECEPTORES_CADENA = ["Alfonso Torres", "Jean Pierre Llerena"]
 _SUPERVISOR_CADENA = "Ing. Ana Lucía Paz Alcázar"
 
 
-def _render_cadena_custodia() -> None:
+def _render_cadena_custodia(campana_id: str) -> None:
     section_header("Documento de Cadena de Custodia — Formato AUTODEMA", "clipboard")
     st.caption(
         "Genera el documento oficial CC-MON-01 (Excel y PDF) a partir de las "
@@ -1413,10 +1452,6 @@ def _render_cadena_custodia() -> None:
             "pre-seleccionada — completa los datos y genera el documento.",
             tipo="success",
         )
-
-    campana_id = _selector_campana_todas("cadena")
-    if not campana_id:
-        return
 
     # Obtener info de la campaña para auto-poblar campos
     camp_info = _get_campana_info(campana_id)
@@ -1661,13 +1696,9 @@ def _render_cadena_custodia() -> None:
 # Tab — Ficha de campo (generación DOCX/PDF)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _render_ficha_campo() -> None:
+def _render_ficha_campo(campana_id: str) -> None:
     section_header("Fichas de Identificación del Punto de Monitoreo", "file")
     st.caption("Genera todas las fichas de una campaña en un solo documento Word")
-
-    campana_id = _selector_campana_todas("ficha")
-    if not campana_id:
-        return
 
     muestras = _muestras_por_campana_cached(campana_id)
     if not muestras:
@@ -1751,6 +1782,13 @@ def main() -> None:
     st.session_state.pop("_muestras_cache", None)
     page_header("Muestras de Campo", "Registro, mediciones in situ y cadena de custodia")
 
+    # Selector único de campaña — todos los tabs operan sobre esta misma
+    # campaña. Cada tab valida internamente si su acción es compatible con
+    # el estado actual.
+    campana_id = _global_campaign_selector()
+    if not campana_id:
+        return
+
     # Orden lógico del flujo operativo:
     #   campo (Registro → In situ)
     #   transición a lab (Recepción en Lab)
@@ -1765,22 +1803,22 @@ def main() -> None:
     ])
 
     with tab_reg:
-        _render_registro()
+        _render_registro(campana_id)
 
     with tab_insitu:
-        _render_insitu()
+        _render_insitu(campana_id)
 
     with tab_custodia:
-        _render_custodia()
+        _render_custodia(campana_id)
 
     with tab_lista:
-        _render_listado()
+        _render_listado(campana_id)
 
     with tab_cadena:
-        _render_cadena_custodia()
+        _render_cadena_custodia(campana_id)
 
     with tab_ficha:
-        _render_ficha_campo()
+        _render_ficha_campo(campana_id)
 
 
 main()
