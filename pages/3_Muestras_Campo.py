@@ -722,6 +722,7 @@ def _render_registro() -> None:
                                 **datos,
                                 "profundidad_valor": datos.get("profundidades", {}).get(tp),
                             })
+                    _invalidar_muestras_cache(campana_id)
                 except Exception as exc:
                     st.error(f"Error al actualizar: {exc}")
                     return
@@ -734,6 +735,7 @@ def _render_registro() -> None:
             with st.spinner("Registrando muestra..."):
                 try:
                     creada = crear_muestra(datos)
+                    _invalidar_muestras_cache(campana_id)
                 except Exception as exc:
                     st.error(f"Error al crear la muestra: {exc}")
                     return
@@ -1418,6 +1420,7 @@ def _render_listado() -> None:
             if st.button("Eliminar muestra permanentemente", key="btn_eliminar_muestra", type="primary"):
                 try:
                     eliminar_muestra(muestra_sel["id"])
+                    _invalidar_muestras_cache(campana_id)
                     st.success("Muestra eliminada.")
                     st.rerun()
                 except ValueError as exc:
