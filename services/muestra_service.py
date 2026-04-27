@@ -172,13 +172,16 @@ def get_responsables_lab() -> list[dict]:
 
 def get_campana_detalle(campana_id: str) -> dict:
     """
-    Detalle de una campaña por id (codigo, nombre, fechas, responsable_campo).
-    Retorna dict vacío si no existe.
+    Detalle de una campaña por id (codigo, nombre, fechas, responsable_campo,
+    estado). Retorna dict vacío si no existe.
     """
     db = get_admin_client()
     res = (
         db.table("campanas")
-        .select("id, codigo, nombre, fecha_inicio, fecha_fin, responsable_campo")
+        .select(
+            "id, codigo, nombre, fecha_inicio, fecha_fin, "
+            "responsable_campo, estado"
+        )
         .eq("id", campana_id)
         .single()
         .execute()
