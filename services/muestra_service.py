@@ -501,17 +501,22 @@ def actualizar_estado_muestra(muestra_id: str, nuevo_estado: str, usuario_id: Op
     """
     Transición simple de estado.
     recolectada → en_transporte → en_laboratorio → analizada
+
+    Si la transición es a 'analizada' y todas las demás muestras de la
+    campaña ya están analizadas, la campaña se cierra automáticamente
+    (en_laboratorio → completada).
     """
     db = get_admin_client()
 
     res = (
         db.table("muestras")
-        .select("estado")
+        .select("estado, campana_id")
         .eq("id", muestra_id)
         .single()
         .execute()
     )
     actual = res.data["estado"]
+    campana_id = res.data.get("campana_id")
 
     if TRANSICIONES_MUESTRA.get(actual) != nuevo_estado:
         raise TransicionMuestraError(
@@ -532,6 +537,58 @@ def actualizar_estado_muestra(muestra_id: str, nuevo_estado: str, usuario_id: Op
         usuario_id=usuario_id,
     )
     _invalidar_cache()
+
+    if nuevo_estado == "analizada" and campana_id:
+        _autocompletar_campana_si_todas_analizadas(campana_id, usuario_id)
+
+
+def _autocompletar_campana_si_todas_analizadas(
+    campana_id: str,
+    usuario_id: Optional[str] = None,
+) -> bool:
+    """
+    Si todas las muestras de la campaña están en estado 'analizada' y la
+    campaña sigue en 'en_laboratorio', la transiciona automáticamente a
+    'completada'. No hace nada si la campaña ya está cerrada o si aún
+    quedan muestras pendientes.
+
+    Retorna True si efectivamente se cerró la campaña, False en otro caso.
+    Errores en la transición se silencian (la analización individual ya
+    se grabó — no queremos romper esa operación por un fallo en la
+    transición de la campaña).
+    """
+    db = get_admin_client()
+
+    estados_muestras = (
+        db.table("muestras")
+        .select("estado")
+        .eq("campana_id", campana_id)
+        .execute()
+        .data
+        or []
+    )
+    if not estados_muestras:
+        return False
+    if not all(m.get("estado") == "analizada" for m in estados_muestras):
+        return False
+
+    camp = (
+        db.table("campanas")
+        .select("estado")
+        .eq("id", campana_id)
+        .single()
+        .execute()
+        .data
+    )
+    if not camp or camp.get("estado") != "en_laboratorio":
+        return False
+
+    try:
+        from services.campana_service import actualizar_estado
+        actualizar_estado(campana_id, "completada", usuario_id=usuario_id)
+        return True
+    except Exception:
+        return False
 
 
 def recibir_en_laboratorio(
