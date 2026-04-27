@@ -1,13 +1,17 @@
 """
 pages/7_Geoportal.py
-Geoportal interactivo de monitoreo de calidad de agua — Cuenca Chili-Quilca.
+Geoportal técnico de monitoreo de calidad de agua — cuencas
+Quilca-Vítor-Chili y Colca-Camaná.
 
-Secciones:
-    1. Dashboard resumen: métricas, gráfico de torta, panel de alertas
-    2. Mapa Folium optimizado: CircleMarkers térmicos + HeatMap + polígonos
-    3. Panel de detalle: gauge, tendencia, comparativa ECA, barras
+Layout:
+    1. Filtros (fechas, campaña, solo excedencias)
+    2. Dashboard global: 4 KPIs + barra cumplimiento + alertas críticas
+    3. Mapa Folium + panel lateral del punto seleccionado (2 columnas)
+       Click en marcador → actualiza el panel sin scroll
+    4. Análisis del punto: filtro de categoría + selector de parámetro
+       4 tabs: Tendencia, Comparar puntos, Estacionalidad, Estado ECA
 
-Acceso mínimo: visitante (público).
+Audiencia actual: técnicos AUTODEMA/ANA. La versión ciudadana se hará aparte.
 """
 
 from __future__ import annotations
@@ -162,7 +166,11 @@ def _render_kpi_card(
 
 
 def _render_dashboard(puntos: list[dict]) -> None:
-    """Metricas globales estilo ANA + torta + alertas."""
+    """
+    Resumen ejecutivo: 4 KPIs + barra de cumplimiento + alertas críticas.
+    La torta se eliminó (duplicaba la información de los KPIs 2-3-4).
+    El KPI '% Cumplimiento ECA' se eliminó (duplicaba la barra inferior).
+    """
     n_total = len(puntos)
     n_exc = sum(1 for p in puntos if p["estado"] == "excedencia")
     n_ok = sum(1 for p in puntos if p["estado"] == "cumple")
@@ -171,9 +179,7 @@ def _render_dashboard(puntos: list[dict]) -> None:
     indices = [p["indice_cumplimiento"] for p in puntos if p.get("indice_cumplimiento") is not None]
     ic_general = round(sum(indices) / len(indices) * 100, 1) if indices else 0
 
-    # ── KPIs estilo SSDH/ANA: cada métrica con su color identitario,
-    #     franja inferior y halo sutil en el ícono ─────────────────────
-    k1, k2, k3, k4, k5 = st.columns(5)
+    k1, k2, k3, k4 = st.columns(4)
     with k1:
         st.markdown(_render_kpi_card(n_total, "Puntos monitoreados", "#0a9396", "map_pin"), unsafe_allow_html=True)
     with k2:
@@ -182,100 +188,73 @@ def _render_dashboard(puntos: list[dict]) -> None:
         st.markdown(_render_kpi_card(n_exc, "Con excedencias", "#c62828", "alert"), unsafe_allow_html=True)
     with k4:
         st.markdown(_render_kpi_card(n_sin, "Sin datos", "#94a3b8", "info"), unsafe_allow_html=True)
-    with k5:
-        color_ic = "#1b6b35" if ic_general >= 80 else "#e8870e" if ic_general >= 50 else "#c62828"
-        st.markdown(_render_kpi_card(f"{ic_general}%", "Cumplimiento ECA", color_ic, "shield"), unsafe_allow_html=True)
 
     st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
 
-    # ── Barra de cumplimiento + torta ────────────────────────────────────
-    col_barra, col_torta = st.columns([3, 2])
+    # Barra de cumplimiento general — ancho completo
+    color_barra = "#1b6b35" if ic_general >= 80 else "#e8870e" if ic_general >= 50 else "#c62828"
+    st.markdown(
+        f"""<div style="background:#ffffff; border-radius:12px; padding:18px 22px;
+             border:1px solid #f1f5f9;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+            <span style="font-size:0.7rem; color:#94a3b8; text-transform:uppercase;
+                 letter-spacing:0.05em; font-weight:600;">Índice de cumplimiento general ECA</span>
+            <span style="color:{color_barra}; font-weight:600; font-size:1.25rem; letter-spacing:-0.01em;">{ic_general}%</span>
+        </div>
+        <div style="background:#f1f5f9; border-radius:6px; height:10px; overflow:hidden;">
+            <div style="background:{color_barra}; width:{ic_general}%; height:100%;
+                 border-radius:6px; transition: width 0.5s;"></div>
+        </div>
+        <div style="font-size:0.72rem; color:#94a3b8; margin-top:10px;">
+            D.S. N° 004-2017-MINAM · promedio simple del índice por punto
+        </div>
+        </div>""",
+        unsafe_allow_html=True,
+    )
 
-    with col_barra:
-        color_barra = "#1b6b35" if ic_general >= 80 else "#e8870e" if ic_general >= 50 else "#c62828"
-        st.markdown(
-            f"""<div style="background:#ffffff; border-radius:12px; padding:18px 22px;
-                 border:1px solid #f1f5f9; margin-top:4px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-                <span style="font-size:0.7rem; color:#94a3b8; text-transform:uppercase;
-                     letter-spacing:0.05em; font-weight:600;">Índice de cumplimiento general ECA</span>
-                <span style="color:{color_barra}; font-weight:600; font-size:1.05rem; letter-spacing:-0.01em;">{ic_general}%</span>
-            </div>
-            <div style="background:#f1f5f9; border-radius:6px; height:8px; overflow:hidden;">
-                <div style="background:{color_barra}; width:{ic_general}%; height:100%;
-                     border-radius:6px; transition: width 0.5s;"></div>
-            </div>
-            <div style="font-size:0.72rem; color:#94a3b8; margin-top:10px;">
-                D.S. N° 004-2017-MINAM
-            </div>
-            </div>""",
-            unsafe_allow_html=True,
-        )
-
-        # Panel de alertas compacto
-        criticos = sorted(
-            [p for p in puntos if p["estado"] == "excedencia"],
-            key=lambda x: x.get("n_excedencias", 0),
-            reverse=True,
-        )
-        if criticos:
-            from components.ui_styles import icon as _icon
-            label_exp = f"{len(criticos)} punto(s) con excedencia"
-            with st.expander(label_exp, expanded=False):
-                for p in criticos[:5]:
-                    exc_list = p.get("excedencias", [])
-                    params_exc = ", ".join(
-                        f"{e['parametro']}" for e in exc_list[:4]
-                    )
-                    if len(exc_list) > 4:
-                        params_exc += f" (+{len(exc_list)-4})"
-                    st.markdown(
-                        f"""<div style="display:flex; align-items:center; padding:10px 14px; margin:4px 0;
-                            background:#fef5f5; border-left:3px solid #c62828; border-radius:8px; font-size:0.82rem;">
-                            <div style="flex:1;">
-                                <b style="color:#0f172a;">{p['codigo']}</b>
-                                <span style="color:#475569;"> — {p['nombre']}</span>
-                                <span style="color:#94a3b8; margin-left:8px; font-size:0.76rem;">{params_exc}</span>
-                            </div>
-                            <span style="color:#c62828; font-weight:600; font-size:0.78rem;">{len(exc_list)}</span>
-                        </div>""",
-                        unsafe_allow_html=True,
-                    )
-
-    with col_torta:
-        fig_torta = go.Figure(go.Pie(
-            labels=["Cumple ECA", "Excedencia", "Sin datos"],
-            values=[n_ok, n_exc, n_sin],
-            marker_colors=["#2e7d32", "#c62828", "#9e9e9e"],
-            hole=0.55,
-            textinfo="value+percent",
-            textfont_size=12,
-            hovertemplate="%{label}: %{value} puntos (%{percent})<extra></extra>",
-        ))
-        fig_torta.update_layout(
-            margin=dict(l=10, r=10, t=10, b=10),
-            height=220,
-            showlegend=True,
-            legend=dict(orientation="h", yanchor="bottom", y=-0.15, xanchor="center", x=0.5, font_size=11),
-            annotations=[dict(
-                text=f"<b>{n_total}</b><br>puntos",
-                x=0.5, y=0.5, font_size=14, showarrow=False,
-            )],
-        )
-        st.plotly_chart(fig_torta, use_container_width=True, key="torta_general")
+    # Panel de alertas críticas (global)
+    criticos = sorted(
+        [p for p in puntos if p["estado"] == "excedencia"],
+        key=lambda x: x.get("n_excedencias", 0),
+        reverse=True,
+    )
+    if criticos:
+        st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+        label_exp = f"{len(criticos)} punto(s) con excedencias activas"
+        with st.expander(label_exp, expanded=False):
+            for p in criticos[:5]:
+                exc_list = p.get("excedencias", [])
+                params_exc = ", ".join(
+                    f"{e['parametro']}" for e in exc_list[:4]
+                )
+                if len(exc_list) > 4:
+                    params_exc += f" (+{len(exc_list)-4})"
+                st.markdown(
+                    f"""<div style="display:flex; align-items:center; padding:10px 14px; margin:4px 0;
+                        background:#fef5f5; border-left:3px solid #c62828; border-radius:8px; font-size:0.82rem;">
+                        <div style="flex:1;">
+                            <b style="color:#0f172a;">{p['codigo']}</b>
+                            <span style="color:#475569;"> — {p['nombre']}</span>
+                            <span style="color:#94a3b8; margin-left:8px; font-size:0.76rem;">{params_exc}</span>
+                        </div>
+                        <span style="color:#c62828; font-weight:600; font-size:0.78rem;">{len(exc_list)}</span>
+                    </div>""",
+                    unsafe_allow_html=True,
+                )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 2. MAPA OPTIMIZADO (Fix 1: z-index — markers always above heatmap)
 # ─────────────────────────────────────────────────────────────────────────────
 
+@st.cache_data(show_spinner=False)
 def _cargar_geojson_puntos() -> dict[str, dict]:
-    """Carga los archivos GeoJSON de siluetas de cuerpos de agua (represas)."""
+    """Carga las siluetas de cuerpos de agua (represas). Cacheado en disco."""
     import json
     from pathlib import Path
 
     geojson_dir = Path(__file__).parent.parent / "static" / "geojson"
-    siluetas = {}
+    siluetas: dict[str, dict] = {}
     if not geojson_dir.exists():
         return siluetas
     for f in geojson_dir.glob("*.geojson"):
@@ -290,17 +269,14 @@ def _cargar_geojson_puntos() -> dict[str, dict]:
     return siluetas
 
 
+@st.cache_data(show_spinner=False)
 def _cargar_geojson_cuencas() -> list[dict]:
-    """
-    Carga los polígonos de cuencas desde `static/geojson/cuencas/*.geojson`.
-    Estilo SSDH/ANA: outline verde brillante sobre satélite para anclar
-    visualmente al territorio.
-    """
+    """Polígonos de cuencas (`static/geojson/cuencas/*.geojson`). Cacheado."""
     import json
     from pathlib import Path
 
     cuencas_dir = Path(__file__).parent.parent / "static" / "geojson" / "cuencas"
-    cuencas = []
+    cuencas: list[dict] = []
     if not cuencas_dir.exists():
         return cuencas
     for f in cuencas_dir.glob("*.geojson"):
@@ -315,17 +291,14 @@ def _cargar_geojson_cuencas() -> list[dict]:
     return cuencas
 
 
+@st.cache_data(show_spinner=False)
 def _cargar_geojson_rios() -> list[dict]:
-    """
-    Carga la red hídrica (ríos y quebradas) desde
-    `static/geojson/rios/*.geojson`. Un archivo por cuenca.
-    Estilo ANA: líneas azules, grosor según si es río o quebrada.
-    """
+    """Red hídrica (`static/geojson/rios/*.geojson`). Cacheado."""
     import json
     from pathlib import Path
 
     rios_dir = Path(__file__).parent.parent / "static" / "geojson" / "rios"
-    items = []
+    items: list[dict] = []
     if not rios_dir.exists():
         return items
     for f in rios_dir.glob("*.geojson"):
@@ -341,62 +314,51 @@ def _cargar_geojson_rios() -> list[dict]:
 
 
 def _popup_html(p: dict) -> str:
-    """Popup compacto para el marcador (Fix 2: campos corregidos)."""
+    """
+    Popup minimalista — solo identificación del punto + estado.
+    El detalle completo (UTM, ECA, sistema hídrico, excedencias) vive ahora
+    en el panel lateral del punto seleccionado, no en el popup.
+    """
     eca = p.get("ecas") or {}
-    exc = p.get("excedencias", [])
     ic = p.get("indice_cumplimiento")
     n_eval = p.get("n_parametros_evaluados", 0)
     n_exc = p.get("n_excedencias", 0)
     color = _color_termico(p)
 
-    pct_txt = f"{int(ic*100)}% ({n_eval-n_exc}/{n_eval})" if ic is not None else "Sin datos"
+    if ic is None:
+        estado_txt = "Sin datos"
+        sub_txt = ""
+    else:
+        estado_txt = f"{int(ic*100)}% cumple ECA"
+        sub_txt = f"{n_eval - n_exc} de {n_eval} parámetros dentro de norma"
 
-    # UTM coordinates (Zona 19S)
-    utm_e = p.get("utm_este")
-    utm_n = p.get("utm_norte")
-    utm_txt = f"{utm_e:.0f} E / {utm_n:.0f} N" if utm_e and utm_n else "—"
-
-    # Nivel del embalse
-    nivel = p.get("nivel_agua")
-    nivel_txt = f"{nivel}" if nivel else "—"
-
-    html = (
-        f"<div style='min-width:280px; font-family:sans-serif; font-size:12px;'>"
-        f"<div style='background:{color}; height:4px; border-radius:4px 4px 0 0; margin:-1px -1px 6px -1px;'></div>"
-        f"<b style='font-size:14px;'>{p['codigo']}</b>"
-        f"<span style='color:#666; margin-left:6px;'>{p['nombre']}</span>"
-        f"<table style='font-size:11px; color:#555; margin:4px 0;'>"
-        f"<tr><td><b>Cuenca:</b></td><td>{p.get('cuenca','—')}</td></tr>"
-        f"<tr><td><b>Sistema Hídrico:</b></td><td>{p.get('sistema_hidrico','—')}</td></tr>"
-        f"<tr><td><b>Tipo:</b></td><td>{(p.get('tipo') or '—').capitalize()}</td></tr>"
-        f"<tr><td><b>ECA:</b></td><td>{eca.get('codigo','—')}</td></tr>"
-        f"<tr><td><b>UTM (19S):</b></td><td>{utm_txt}</td></tr>"
-        f"<tr><td><b>Nivel embalse:</b></td><td>{nivel_txt}</td></tr>"
-        f"<tr><td><b>Cumple:</b></td><td>{pct_txt}</td></tr>"
-        f"</table>"
+    return (
+        f"<div style='min-width:220px; font-family:sans-serif;'>"
+        f"<div style='background:{color}; height:4px; border-radius:4px 4px 0 0; "
+        f"margin:-1px -1px 8px -1px;'></div>"
+        f"<div style='font-weight:700; font-size:13px; color:#0f172a;'>{p['codigo']}</div>"
+        f"<div style='color:#475569; font-size:12px; margin-bottom:8px;'>{p['nombre']}</div>"
+        f"<div style='font-size:11px; color:#64748b;'>"
+        f"{eca.get('codigo','—')} · {p.get('cuenca','—')}"
+        f"</div>"
+        f"<div style='margin-top:6px; font-size:12px; color:{color}; font-weight:600;'>{estado_txt}</div>"
+        f"<div style='font-size:10px; color:#94a3b8;'>{sub_txt}</div>"
+        f"<div style='font-size:10px; color:#94a3b8; margin-top:8px; "
+        f"border-top:1px solid #f1f5f9; padding-top:6px;'>"
+        f"Selecciona el punto en el panel lateral para el detalle completo."
+        f"</div>"
+        f"</div>"
     )
 
-    # ALL exceedances — no truncation, show parameter name + unit
-    if exc:
-        html += f"<hr style='margin:4px 0; border-color:#eee;'><span style='color:#dc3545; font-weight:bold;'>{len(exc)} excedencia(s):</span><br>"
-        for e in exc:
-            lim = e.get("lim_max")
-            param_name = e.get("parametro", e.get("codigo", ""))
-            unidad = e.get("unidad", "")
-            lim_txt = f"{lim} {unidad}" if lim else "—"
-            html += (
-                f"<span style='font-size:11px;'>{param_name}: "
-                f"<b style='color:red;'>{e['valor']}</b> / {lim_txt}</span><br>"
-            )
 
-    html += "</div>"
-    return html
-
-
-def _construir_mapa(puntos: list[dict], solo_excedencias: bool, mostrar_heatmap: bool):
-    """Mapa Folium: HeatMap added FIRST (below), markers added LAST (above)."""
+def _construir_mapa(puntos: list[dict], solo_excedencias: bool):
+    """
+    Mapa Folium con cuencas, red hídrica, puntos y alertas OMS de
+    cianobacterias. El HeatMap se eliminó porque duplicaba la información
+    cromática de los marcadores (mismo IC, dos canales visuales).
+    """
     import folium
-    from folium.plugins import HeatMap, MiniMap
+    from folium.plugins import MiniMap
 
     m = folium.Map(
         location=MAPA_CENTRO,
@@ -529,12 +491,11 @@ def _construir_mapa(puntos: list[dict], solo_excedencias: bool, mostrar_heatmap:
         fg_rios.add_to(m)
         fg_quebradas.add_to(m)
 
-    # Polígonos de represas/lagunas
+    # Polígonos de represas/lagunas — sin popup propio para no solapar con
+    # el popup del marcador del punto (antes había dos popups encima de la
+    # misma represa).
     siluetas = _cargar_geojson_puntos()
     fg_poligonos = folium.FeatureGroup(name="Represas/Lagunas", show=True)
-
-    # Datos para HeatMap
-    heat_data = []
 
     pts_filtrados = []
     for p in puntos:
@@ -547,7 +508,6 @@ def _construir_mapa(puntos: list[dict], solo_excedencias: bool, mostrar_heatmap:
             continue
         pts_filtrados.append(p)
 
-        # Polígono GeoJSON si existe (represas)
         color_hex = _color_termico(p)
         geojson_data = siluetas.get(p["codigo"])
         if geojson_data:
@@ -566,50 +526,9 @@ def _construir_mapa(puntos: list[dict], solo_excedencias: bool, mostrar_heatmap:
                     "fillOpacity": 0.7,
                 },
                 tooltip=f"{p['codigo']} — {p['nombre']}",
-                popup=folium.Popup(_popup_html(p), max_width=340, lazy=True),
             ).add_to(fg_poligonos)
 
-        # HeatMap data
-        ic = p.get("indice_cumplimiento")
-        if ic is not None:
-            weight = 1.0 - ic
-            if weight > 0:
-                heat_data.append([lat, lon, weight])
-
     fg_poligonos.add_to(m)
-
-    # HeatMap antes que los marcadores para que los marcadores queden encima.
-    # max_zoom controla hasta qué zoom el plugin re-genera la grilla; lo
-    # subimos para que el calor siga visible al hacer zoom in. radius/blur
-    # más conservadores para que se vea legible en cualquier zoom.
-    if mostrar_heatmap and heat_data:
-        fg_heat = folium.FeatureGroup(name="Mapa de calor ECA", show=True)
-        HeatMap(
-            heat_data,
-            min_opacity=0.35,
-            max_zoom=18,
-            radius=22,
-            blur=16,
-            gradient={
-                "0.0": "#2e7d32",
-                "0.3": "#0a9396",
-                "0.5": "#e8870e",
-                "0.7": "#c56d00",
-                "1.0": "#c62828",
-            },
-        ).add_to(fg_heat)
-        fg_heat.add_to(m)
-
-        # CRÍTICO: el canvas del heatmap intercepta el cursor y bloquea los
-        # clicks a los marcadores debajo. Lo dejamos puramente visual con
-        # pointer-events: none. Solo afecta al canvas del plugin (clase
-        # 'leaflet-heatmap-layer'), no al canvas de los CircleMarker que
-        # vive en otro pane (.leaflet-marker-pane / overlayPane SVG).
-        m.get_root().html.add_child(folium.Element(
-            '<style>'
-            'canvas.leaflet-heatmap-layer{pointer-events:none !important;}'
-            '</style>'
-        ))
 
     # Capa de marcadores — added LAST so they are on top of heatmap
     fg_puntos = folium.FeatureGroup(name="Puntos de monitoreo", show=True)
@@ -942,6 +861,7 @@ def _render_barras_comparativa_puntos(
             "punto":  p.get("codigo", ""),
             "nombre": p.get("nombre", ""),
             "valor":  info["valor"],
+            "fecha":  info.get("fecha", "—"),
             "lim_max": info.get("lim_max"),
             "lim_min": info.get("lim_min"),
             "estado": info.get("estado"),
@@ -959,18 +879,27 @@ def _render_barras_comparativa_puntos(
     unidad = (parametro.get("unidades_medida") or {}).get("simbolo", "")
     x_label = f"{parametro['nombre']} ({unidad})" if unidad else parametro["nombre"]
 
-    scope = "Último valor por punto"
+    scope = "Último valor por punto en el periodo"
     if campana_label and campana_label != "Todas":
         scope += f" · Campaña: {campana_label}"
+
+    # Anotamos la fecha del dato sobre la barra para que el técnico vea
+    # de inmediato si está comparando mediciones de campañas distintas.
+    text_labels = [f"{v:.3g}  ({f})" for v, f in zip(df["valor"], df["fecha"])]
 
     fig = go.Figure(go.Bar(
         y=df["punto"], x=df["valor"],
         orientation="h",
         marker_color=colores,
-        text=[f"{v:.3g}" for v in df["valor"]],
+        text=text_labels,
         textposition="outside", textfont_size=10,
-        customdata=df[["nombre"]].values,
-        hovertemplate="<b>%{y}</b> — %{customdata[0]}<br>Valor: %{x:.4g}<extra></extra>",
+        customdata=df[["nombre", "fecha"]].values,
+        hovertemplate=(
+            "<b>%{y}</b> — %{customdata[0]}<br>"
+            "Valor: %{x:.4g}<br>"
+            "Fecha: %{customdata[1]}"
+            "<extra></extra>"
+        ),
     ))
 
     lim_max = db_data[0].get("lim_max")
@@ -1133,11 +1062,11 @@ def main() -> None:
         sel_camp = st.selectbox("Campaña", list(opciones_camp.keys()), key="geo_camp")
         campana_id = opciones_camp[sel_camp]
     with fc4:
-        opt_c1, opt_c2 = st.columns(2)
-        with opt_c1:
-            solo_exc = st.checkbox("Solo excedencias", key="geo_solo_exc")
-        with opt_c2:
-            mostrar_heatmap = st.checkbox("Mapa de calor", value=True, key="geo_heatmap")
+        solo_exc = st.checkbox(
+            "Solo puntos con excedencias",
+            key="geo_solo_exc",
+            help="Oculta del mapa los puntos que cumplen ECA o sin datos.",
+        )
     filter_bar_close()
 
     # ── Cargar datos ────────────────────────────────────────────────────
@@ -1154,56 +1083,54 @@ def main() -> None:
         st.warning("No hay puntos con coordenadas disponibles para la campaña seleccionada.")
         st.stop()
 
-    # ── Selectores de punto y parámetro (también en el main area, arriba
-    #     del panel de análisis para que estén siempre visibles) ──────────
     opciones_punto = {f"{p['codigo']} — {p['nombre']}": p for p in puntos_con_coords}
     parametros = get_parametros_selector()
-    opciones_param = {f"{pr['codigo']} — {pr['nombre']}": pr for pr in parametros}
-    # Se renderizan más abajo junto al panel de detalle para mantener el flujo:
-    # Dashboard → Mapa → (aquí) Selectores + Detalle + Análisis
 
-    # ── 1. Dashboard resumen ────────────────────────────────────────────
+    # ── 1. Dashboard global ─────────────────────────────────────────────
     _render_dashboard(puntos_con_coords)
 
     st.divider()
 
-    # ── 2. Mapa ─────────────────────────────────────────────────────────
-    mapa = _construir_mapa(puntos_con_coords, solo_exc, mostrar_heatmap)
-    map_data = st_folium(mapa, use_container_width=True, height=520, returned_objects=["last_object_clicked"])
-    st.caption(
-        "Para zoom muy cerrado se recomienda la capa **Calles** — el satélite "
-        "Esri no tiene imágenes de alta resolución en zonas altiplánicas "
-        "remotas de la cuenca alta del Chili."
-    )
+    # ── 2. Mapa + panel lateral del punto seleccionado ──────────────────
+    # Layout 2 columnas: mapa a la izquierda, ficha del punto a la derecha.
+    # El click en el mapa actualiza el selectbox del panel sin scrollear.
+    col_mapa, col_panel = st.columns([7, 5], gap="medium")
 
-    # Estado de la capa "Alerta OMS Cianobacterias" debajo del mapa.
-    cyano_meta = getattr(mapa, "_cyano_meta", {}) or {}
-    n_cyano = cyano_meta.get("n_puntos_con_analisis", 0)
-    cyano_err = cyano_meta.get("error")
-    if cyano_err:
-        st.caption(
-            f":material/warning: Capa Alerta OMS Cianobacterias: error al "
-            f"consultar análisis fitoplancton ({cyano_err})."
+    with col_mapa:
+        mapa = _construir_mapa(puntos_con_coords, solo_exc)
+        map_data = st_folium(
+            mapa, use_container_width=True, height=620,
+            returned_objects=["last_object_clicked"],
         )
-    elif n_cyano == 0:
         st.caption(
-            ":material/info: Capas **Alerta OMS 1999 (cél/mL)** y **Alerta OMS "
-            "2021 (biovolumen)** disponibles en el control de capas pero "
-            "vacías: ningún punto del filtro tiene análisis Sedgewick-Rafter "
-            "guardado todavía. Carga un análisis en Resultados Lab → "
-            "Hidrobiologico → Fitoplancton para que aparezcan."
-        )
-    else:
-        st.caption(
-            f":material/biotech: **{n_cyano}** punto(s) con análisis "
-            "fitoplancton. Activa cualquiera de las dos capas en el control: "
-            "**OMS 1999** (anillo sólido, por densidad celular) o "
-            "**OMS 2021** (anillo punteado, por biovolumen). "
-            "Las tablas se reportan sin combinar — cada una aplica a un "
-            "escenario distinto (agua potable vs recreativa)."
+            "Para zoom muy cerrado se recomienda la capa **Calles** — el satélite "
+            "Esri no tiene imágenes de alta resolución en zonas altiplánicas "
+            "remotas de la cuenca alta del Chili."
         )
 
-    # Click en el mapa → actualizar la selección persistente del selectbox
+        # Estado de la capa "Alerta OMS Cianobacterias" debajo del mapa.
+        cyano_meta = getattr(mapa, "_cyano_meta", {}) or {}
+        n_cyano = cyano_meta.get("n_puntos_con_analisis", 0)
+        cyano_err = cyano_meta.get("error")
+        if cyano_err:
+            st.caption(
+                f":material/warning: Capa Alerta OMS Cianobacterias: error al "
+                f"consultar análisis fitoplancton ({cyano_err})."
+            )
+        elif n_cyano == 0:
+            st.caption(
+                ":material/info: Capas **Alerta OMS 1999** y **Alerta OMS 2021** "
+                "disponibles en el control de capas pero vacías: ningún punto del "
+                "filtro tiene análisis Sedgewick-Rafter cargado todavía."
+            )
+        else:
+            st.caption(
+                f":material/biotech: **{n_cyano}** punto(s) con análisis "
+                "fitoplancton. Activa **OMS 1999** (anillo sólido, densidad celular) "
+                "u **OMS 2021** (anillo punteado, biovolumen) en el control de capas."
+            )
+
+    # Click en el mapa → actualiza la selección persistente del selectbox
     if map_data and map_data.get("last_object_clicked"):
         clicked = map_data["last_object_clicked"]
         clat, clon = clicked.get("lat"), clicked.get("lng")
@@ -1220,88 +1147,109 @@ def main() -> None:
                 st.session_state["geo_punto"] = closest_label
                 st.rerun()
 
-    # ── 3. Selectores de punto y parámetro ──────────────────────────────
-    st.divider()
-    sel_c1, sel_c2 = st.columns(2)
-    with sel_c1:
+    # Panel lateral (col derecha) — ficha del punto
+    with col_panel:
         sel_punto_label = st.selectbox(
-            "Punto de muestreo a analizar",
+            "Punto seleccionado",
             list(opciones_punto.keys()),
             key="geo_punto",
-            help="Click en el mapa también cambia esta selección.",
+            help="Click en un marcador del mapa también cambia esta selección.",
         )
-    with sel_c2:
+        punto_sel = opciones_punto[sel_punto_label]
+        _render_panel_punto(punto_sel)
+
+    st.divider()
+
+    # ── 3. Análisis del punto (ancho completo) ──────────────────────────
+    section_header(f"Análisis · {punto_sel['codigo']} — {punto_sel['nombre']}", "analytics")
+
+    # Filtro de categoría sobre el selector de parámetro.
+    # Sustituye los antiguos tabs de Campo / Fisicoquímico / Hidrobiológico.
+    cat_c1, cat_c2 = st.columns([1, 3])
+    with cat_c1:
+        categoria_filtro = st.radio(
+            "Categoría",
+            ["Todas", "Campo", "Fisicoquimico", "Hidrobiologico"],
+            horizontal=False,
+            key="geo_cat_filtro",
+            label_visibility="visible",
+        )
+    with cat_c2:
+        if categoria_filtro == "Todas":
+            params_filtrados = parametros
+        else:
+            params_filtrados = [pr for pr in parametros if _clasificar_cat(pr) == categoria_filtro]
+
+        if not params_filtrados:
+            st.warning(f"No hay parámetros en la categoría **{categoria_filtro}**.")
+            st.stop()
+
+        opciones_param_filt = {f"{pr['codigo']} — {pr['nombre']}": pr for pr in params_filtrados}
         sel_param_label = st.selectbox(
             "Parámetro a graficar",
-            list(opciones_param.keys()),
+            list(opciones_param_filt.keys()),
             key="geo_param",
         )
-    punto_sel = opciones_punto[sel_punto_label]
-    param_sel = opciones_param[sel_param_label]
+        param_sel = opciones_param_filt[sel_param_label]
 
-    # ── 4. Detalle del punto seleccionado ───────────────────────────────
-    st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+    _render_analisis_punto(
+        punto_sel, param_sel, puntos_con_coords,
+        str(fecha_inicio), str(fecha_fin), sel_camp,
+    )
+
+
+def _render_panel_punto(punto_sel: dict) -> None:
+    """
+    Ficha del punto seleccionado para el panel lateral.
+    Layout vertical (columna estrecha): header + estado, datos clave en
+    lista, bullet ECA y excedencias activas.
+    """
     eca_info = punto_sel.get("ecas") or {}
     exc_punto = punto_sel.get("excedencias", [])
     n_exc_punto = len(exc_punto)
     estado_punto = punto_sel.get("estado", "sin_datos")
-    color_estado = {"excedencia": "#c62828", "cumple": "#2e7d32", "sin_datos": "#9e9e9e"}.get(estado_punto, "#9e9e9e")
-    # Mapeo al dominio "resultado" del nuevo sistema de pills
+    color_estado = {
+        "excedencia": "#c62828", "cumple": "#2e7d32", "sin_datos": "#9e9e9e",
+    }.get(estado_punto, "#9e9e9e")
+
     from components.ui_styles import estado_pill as _pill
-    _pill_key = {"excedencia": "excede", "cumple": "cumple", "sin_datos": "sin_dato"}.get(estado_punto, "sin_dato")
+    _pill_key = {
+        "excedencia": "excede", "cumple": "cumple", "sin_datos": "sin_dato",
+    }.get(estado_punto, "sin_dato")
     estado_html = _pill(_pill_key, dominio="resultado")
 
-    # Header del punto con estilo
     st.markdown(
-        f"""<div style="background:white; border:1px solid #e2e8f0; border-left:5px solid {color_estado};
-             border-radius:10px; padding:16px 20px; margin-bottom:12px;">
-            <div style="display:flex; align-items:center; justify-content:space-between;">
-                <div>
-                    <span style="font-size:1.2rem; font-weight:700; color:#1e293b;">
-                        {punto_sel['codigo']} — {punto_sel['nombre']}
-                    </span>
-                    <span style="margin-left:12px;">{estado_html}</span>
-                </div>
-                <div style="text-align:right; font-size:0.8rem; color:#64748b;">
-                    {(punto_sel.get('tipo') or '—').capitalize()} &middot;
-                    {punto_sel.get('cuenca', '—')} &middot;
-                    {punto_sel.get('altitud_msnm', '—')} msnm
-                </div>
+        f"""<div style="background:white; border:1px solid #e2e8f0;
+             border-left:5px solid {color_estado}; border-radius:10px;
+             padding:14px 16px; margin-top:8px;">
+            <div style="font-size:1.05rem; font-weight:700; color:#1e293b;
+                 line-height:1.25;">{punto_sel['codigo']} — {punto_sel['nombre']}</div>
+            <div style="margin-top:6px;">{estado_html}</div>
+            <div style="font-size:0.78rem; color:#64748b; margin-top:8px;
+                 line-height:1.6;">
+                <div><b>Tipo:</b> {(punto_sel.get('tipo') or '—').capitalize()}</div>
+                <div><b>Cuenca:</b> {punto_sel.get('cuenca', '—')}</div>
+                <div><b>Sistema hídrico:</b> {punto_sel.get('sistema_hidrico', '—')}</div>
+                <div><b>ECA aplicable:</b> {eca_info.get('codigo', '—')}</div>
+                <div><b>Altitud:</b> {punto_sel.get('altitud_msnm', '—')} msnm</div>
+                <div><b>Último dato:</b> {punto_sel.get('ultima_fecha', '—')}</div>
             </div>
         </div>""",
         unsafe_allow_html=True,
     )
 
-    # Tres tarjetas de contexto — minimalistas (sin fondos saturados)
-    i1, i2, i3 = st.columns(3)
-    _ctx_card = lambda label, valor, color: (
-        f'<div style="background:#ffffff; border:1px solid #f1f5f9; border-radius:10px; '
-        f'padding:14px 18px; text-align:left;">'
-        f'<div style="font-size:0.7rem; color:#94a3b8; text-transform:uppercase; '
-        f'letter-spacing:0.05em; font-weight:600;">{label}</div>'
-        f'<div style="font-weight:600; color:{color}; margin-top:6px; font-size:0.95rem;">{valor}</div>'
-        f'</div>'
-    )
-    i1.markdown(_ctx_card("Sistema hídrico", punto_sel.get('sistema_hidrico', '—'), '#0f172a'), unsafe_allow_html=True)
-    i2.markdown(_ctx_card("ECA aplicable",   eca_info.get('codigo', '—'),               '#0f172a'), unsafe_allow_html=True)
-    i3.markdown(_ctx_card("Último dato",     punto_sel.get('ultima_fecha', '—'),        '#0f172a'), unsafe_allow_html=True)
-
-    st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
-
-    # Cumplimiento ECA: bullet horizontal a ancho completo
     _render_gauge(punto_sel)
 
-    # Excedencias activas (compactado)
     if exc_punto:
-        with st.expander(f"⚠️ {n_exc_punto} excedencia(s) activa(s) en este punto", expanded=True):
+        with st.expander(f"{n_exc_punto} excedencia(s) activa(s)", expanded=False):
             df_exc = pd.DataFrame(exc_punto)
             df_exc["pct_exceso"] = df_exc.apply(
                 lambda r: round((r["valor"] / r["lim_max"] - 1) * 100, 1)
                           if r.get("lim_max") and r["lim_max"] > 0 else None,
                 axis=1,
             )
-            df_show = df_exc[["fecha", "parametro", "valor", "lim_max", "unidad", "pct_exceso"]].rename(columns={
-                "fecha": "Fecha", "parametro": "Parámetro", "valor": "Valor",
+            df_show = df_exc[["parametro", "valor", "lim_max", "unidad", "pct_exceso"]].rename(columns={
+                "parametro": "Parámetro", "valor": "Valor",
                 "lim_max": "Límite", "unidad": "Unidad", "pct_exceso": "% Exceso",
             })
             st.dataframe(
@@ -1313,76 +1261,51 @@ def main() -> None:
                 },
             )
 
-    # ── Fix 6: Tabs de categoría de parámetros ─────────────────────────
-    tab_campo, tab_fq, tab_hidro = st.tabs([
-        "Parámetros de Campo",
-        "Parámetros Fisicoquímicos",
-        "Parámetros Hidrobiológicos",
-    ])
 
-    with tab_campo:
-        _render_categoria_tabs(punto_sel, param_sel, "Campo",
-                               puntos_con_coords, str(fecha_inicio), str(fecha_fin), sel_camp)
-
-    with tab_fq:
-        _render_categoria_tabs(punto_sel, param_sel, "Fisicoquimico",
-                               puntos_con_coords, str(fecha_inicio), str(fecha_fin), sel_camp)
-
-    with tab_hidro:
-        st.info("Módulo en desarrollo")
-
-
-def _render_categoria_tabs(
-    punto_sel: dict, param_sel: dict, categoria: str,
+def _render_analisis_punto(
+    punto_sel: dict, param_sel: dict,
     puntos_con_coords: list[dict],
     fecha_inicio: str, fecha_fin: str,
     campana_label: str,
 ) -> None:
     """
-    Pestañas analíticas para una categoría — reorganizadas para evitar duplicación:
-        1. Tendencia        : evolución temporal del parámetro seleccionado
-        2. Comparar puntos  : un parámetro entre todos los puntos
-        3. Estacionalidad   : comportamiento mensual del parámetro
-        4. Estado ECA       : tabla resumen + últimos resultados (consolidados)
-    """
-    # Validación: si el parámetro elegido no pertenece a esta categoría, avisamos
-    cat_param = _clasificar_cat(param_sel)
-    if cat_param != categoria:
-        st.warning(
-            f"El parámetro **{param_sel.get('nombre', '')}** está en categoría "
-            f"**{cat_param}**, no en **{categoria}**. "
-            "Los gráficos siguen disponibles, pero el filtro por pestaña no aplica."
-        )
+    Tabs analíticas del punto seleccionado — sin separación por categoría.
+    La categoría se filtra arriba en el selector de parámetro.
 
-    tab_tend, tab_comp_puntos, tab_barras, tab_eca = st.tabs([
-        "📈 Tendencia",
-        "📊 Comparar puntos",
-        "🗓️ Estacionalidad",
-        "🛡️ Estado ECA y últimos resultados",
+    Se conservan las 4 vistas:
+        1. Tendencia       — evolución temporal del parámetro
+        2. Comparar puntos — el mismo parámetro entre todos los puntos
+        3. Estacionalidad  — promedio mensual del parámetro en el punto
+        4. Estado ECA      — tabla comparativa + últimos resultados
+    """
+    tab_tend, tab_comp, tab_seas, tab_eca = st.tabs([
+        ":material/show_chart: Tendencia",
+        ":material/bar_chart: Comparar puntos",
+        ":material/calendar_month: Estacionalidad",
+        ":material/shield: Estado ECA",
     ])
 
     with tab_tend:
-        # Chart a ancho completo — la tabla redundante se eliminó
-        _render_tendencia(punto_sel, param_sel, campana_label, cat=categoria)
+        _render_tendencia(punto_sel, param_sel, campana_label, cat="all")
 
-    with tab_comp_puntos:
-        st.markdown(f"**{param_sel['nombre']} — comparación entre puntos**")
+    with tab_comp:
         st.caption(
-            "Cada barra es el último valor disponible del parámetro en el periodo seleccionado."
+            "Cada barra es el **último valor disponible** del parámetro en cada "
+            "punto dentro del rango de fechas. La fecha del dato se muestra en el hover."
         )
         _render_barras_comparativa_puntos(
-            puntos_con_coords, param_sel, fecha_inicio, fecha_fin, campana_label, cat=categoria,
+            puntos_con_coords, param_sel, fecha_inicio, fecha_fin, campana_label, cat="all",
         )
 
-    with tab_barras:
+    with tab_seas:
         fecha_fin_dt = date.fromisoformat(fecha_fin)
         anio_sel = st.selectbox(
             "Año a visualizar",
             list(range(fecha_fin_dt.year, fecha_fin_dt.year - 5, -1)),
-            key=f"geo_anio_{categoria}",
+            key="geo_anio_all",
         )
         limite_eca = get_limite_eca_parametro(punto_sel["id"], param_sel["id"])
-        _render_barras_mensuales(punto_sel, param_sel, anio_sel, limite_eca, campana_label, cat=categoria)
+        _render_barras_mensuales(punto_sel, param_sel, anio_sel, limite_eca, campana_label, cat="all")
 
     with tab_eca:
         eca_info = punto_sel.get("ecas") or {}
@@ -1390,24 +1313,14 @@ def _render_categoria_tabs(
             f"**Comparativa vs ECA** · {eca_info.get('codigo', '')} — {eca_info.get('nombre', '')}"
         )
         datos = get_comparativa_eca_punto(punto_sel["id"], fecha_inicio, fecha_fin)
-        datos_cat = [d for d in datos if _clasificar_cat_comparativa(d) == categoria]
-        if datos_cat:
-            _render_comparativa_eca_filtered(datos_cat, cat=categoria)
+        if datos:
+            _render_comparativa_eca_filtered(datos, cat="all")
         else:
-            st.info("Sin datos para esta categoría en el periodo seleccionado.")
+            st.info("Sin datos para este punto en el periodo seleccionado.")
 
         st.divider()
-        section_header("Últimos 15 resultados (todas las categorías)", "list")
-        _render_ultimos_resultados(punto_sel, cat=categoria)
-
-
-def _clasificar_cat_comparativa(d: dict) -> str:
-    """Classify a comparativa row into category."""
-    codigo = (d.get("codigo") or "").upper()
-    if codigo in _CODIGOS_CAMPO:
-        return "Campo"
-    cat_raw = d.get("categoria", "")
-    return _CAT_NORMALIZE.get(cat_raw, "Fisicoquimico")
+        section_header("Últimos 15 resultados", "list")
+        _render_ultimos_resultados(punto_sel, cat="all")
 
 
 def _render_comparativa_eca_filtered(datos_f: list[dict], cat: str = "") -> None:
