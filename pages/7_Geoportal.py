@@ -354,11 +354,11 @@ def _popup_html(p: dict) -> str:
 def _construir_mapa(puntos: list[dict], solo_excedencias: bool):
     """
     Mapa Folium con cuencas, red hídrica, puntos y alertas OMS de
-    cianobacterias. Las capas se agrupan en el LayerControl en cuatro
-    secciones: Mapa base, Territorio, Monitoreo y Cianobacterias (OMS).
+    cianobacterias. El HeatMap se eliminó porque duplicaba la información
+    cromática de los marcadores (mismo IC, dos canales visuales).
     """
     import folium
-    from folium.plugins import GroupedLayerControl, MiniMap
+    from folium.plugins import MiniMap
 
     m = folium.Map(
         location=MAPA_CENTRO,
@@ -372,25 +372,23 @@ def _construir_mapa(puntos: list[dict], solo_excedencias: bool):
     # Tile layers — max_native_zoom evita que Leaflet quede en blanco al
     # pedir tiles más allá de lo que el proveedor sirve. max_zoom mantiene
     # el control de zoom disponible (sobreescala el último tile válido).
-    tile_calles = folium.TileLayer(
+    folium.TileLayer(
         "OpenStreetMap",
         name="Calles",
         max_native_zoom=19, max_zoom=22,
-    )
-    tile_calles.add_to(m)
+    ).add_to(m)
     # Esri World Imagery: cobertura limitada en zonas altiplánicas remotas.
     # En la cuenca Chili-Quilca (Aguada Blanca, Pampa de Arrieros, etc.) no
     # hay imagen satelital de alta resolución más allá de zoom 17. Limitamos
     # max_native_zoom y max_zoom para que Leaflet repita el último tile válido
     # en lugar de pedir tiles inexistentes (que vienen como "Map data not yet
     # available").
-    tile_satelite = folium.TileLayer(
+    folium.TileLayer(
         tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
         attr="Esri",
         name="Satélite",
         max_native_zoom=17, max_zoom=19,
-    )
-    tile_satelite.add_to(m)
+    ).add_to(m)
     # Capa Topográfico removida — el satélite + calles cubren los casos de uso
     # y reduce la carga visual del control de capas.
 
@@ -410,7 +408,6 @@ def _construir_mapa(puntos: list[dict], solo_excedencias: bool):
             return ("#dc2626", "#991b1b")    # rojo / rojo oscuro
         return ("#64748b", "#334155")         # gris fallback
 
-    fg_cuencas: folium.FeatureGroup | None = None
     if cuencas:
         fg_cuencas = folium.FeatureGroup(name="Cuencas hidrográficas", show=True)
         for cu in cuencas:
@@ -437,8 +434,6 @@ def _construir_mapa(puntos: list[dict], solo_excedencias: bool):
     # Estilo ANA: línea azul. Los ríos son más gruesos/opacos que las
     # quebradas para permitir una lectura jerárquica a cualquier zoom.
     rios_gj = _cargar_geojson_rios()
-    fg_rios: folium.FeatureGroup | None = None
-    fg_quebradas: folium.FeatureGroup | None = None
     if rios_gj:
         fg_rios = folium.FeatureGroup(name="Ríos", show=True)
         fg_quebradas = folium.FeatureGroup(name="Quebradas", show=False)
@@ -636,25 +631,9 @@ def _construir_mapa(puntos: list[dict], solo_excedencias: bool):
         "error": cyano_error,
     }
 
-    # Control de capas agrupado: secciones "Mapa base" (radio, exclusivo),
-    # "Territorio" (cuencas + red hídrica + represas), "Monitoreo" (puntos)
-    # y "Cianobacterias (OMS)". Antes era una lista plana de 8 capas sin
-    # jerarquía. Colapsado por defecto para no tapar el mapa al cargar.
-    grupos: dict[str, list] = {
-        "Mapa base": [tile_calles, tile_satelite],
-    }
-    territorio: list = [fg for fg in (fg_cuencas, fg_rios, fg_quebradas) if fg is not None]
-    territorio.append(fg_poligonos)
-    if territorio:
-        grupos["Territorio"] = territorio
-    grupos["Monitoreo"] = [fg_puntos]
-    grupos["Cianobacterias (OMS)"] = [fg_oms_1999, fg_oms_2021]
-
-    GroupedLayerControl(
-        groups=grupos,
-        exclusive_groups=["Mapa base"],
-        collapsed=True,
-    ).add_to(m)
+    # Colapsado por defecto: el panel expandido tapaba una porción grande
+    # del mapa. El usuario lo abre solo cuando necesita togglear capas.
+    folium.LayerControl(collapsed=True).add_to(m)
 
     # Leyenda compacta: solo la información que un técnico no puede inferir
     # del mapa. Se quitaron las secciones "Red hídrica" y "Cuencas" porque
