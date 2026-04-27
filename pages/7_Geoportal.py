@@ -631,47 +631,51 @@ def _construir_mapa(puntos: list[dict], solo_excedencias: bool):
         "error": cyano_error,
     }
 
-    folium.LayerControl(collapsed=False).add_to(m)
+    # Colapsado por defecto: el panel expandido tapaba una porción grande
+    # del mapa. El usuario lo abre solo cuando necesita togglear capas.
+    folium.LayerControl(collapsed=True).add_to(m)
 
-    # Leyenda estilo SSDH-ANA: sin borde, sombra más presente, título con
-    # norma legal debajo. El separador inferior es un hair-line.
+    # Leyenda compacta: solo la información que un técnico no puede inferir
+    # del mapa. Se quitaron las secciones "Red hídrica" y "Cuencas" porque
+    # el color de las líneas y los polígonos ya las identifica visualmente.
+    # Se colapsa al click sobre el título para liberar la esquina del mapa.
     leyenda_html = """
-    <div style="position:fixed; bottom:24px; left:24px; z-index:1000;
-         background:#ffffff; padding:12px 16px; border-radius:8px;
-         font-size:12px; line-height:1.55; min-width:180px;
+    <div id="lvca-legend" style="position:fixed; bottom:18px; left:18px;
+         z-index:1000; background:#ffffff; padding:10px 14px;
+         border-radius:8px; font-size:11.5px; line-height:1.55;
+         min-width:150px;
          box-shadow: 0 4px 16px rgba(15,23,42,0.14),
                      0 1px 3px rgba(15,23,42,0.08);
          font-family:sans-serif;">
-      <div style="font-weight:700; color:#1a1a1a; font-size:13px;
-           letter-spacing:-0.01em;">Estado ECA</div>
-      <div style="font-size:10px; color:#94a3b8; margin-bottom:8px;">
-        D.S. N° 004-2017-MINAM
+      <div onclick="
+        var b=document.getElementById('lvca-legend-body');
+        var c=document.getElementById('lvca-legend-caret');
+        if(b.style.display==='none'){b.style.display='block';c.innerHTML='&#9662;';}
+        else{b.style.display='none';c.innerHTML='&#9656;';}
+      " style="cursor:pointer; display:flex; align-items:center;
+           justify-content:space-between; user-select:none;">
+        <div>
+          <div style="font-weight:700; color:#1a1a1a; font-size:12.5px;
+               letter-spacing:-0.01em;">Estado ECA</div>
+          <div style="font-size:10px; color:#94a3b8;">
+            D.S. N° 004-2017-MINAM
+          </div>
+        </div>
+        <span id="lvca-legend-caret" style="color:#94a3b8;
+             font-size:10px; margin-left:10px;">&#9662;</span>
       </div>
-      <div style="color:#475569;">
-        <span style="color:#2e7d32; font-size:14px;">&#9679;</span> Cumple ECA<br>
-        <span style="color:#0a9396; font-size:14px;">&#9679;</span> Excedencia leve<br>
-        <span style="color:#e8870e; font-size:14px;">&#9679;</span> Excedencia media<br>
-        <span style="color:#c62828; font-size:14px;">&#9679;</span> Excedencia alta<br>
-        <span style="color:#9e9e9e; font-size:14px;">&#9679;</span> Sin datos
-      </div>
-      <div style="border-top:1px solid #f1f5f9; padding-top:6px; margin-top:8px;
-           color:#475569; font-size:11px; line-height:1.45;">
-        <div style="font-weight:600; color:#1a1a1a; font-size:11px;
-             margin-bottom:3px;">Red hídrica</div>
-        <span style="display:inline-block; width:18px; height:3px;
-              background:#1d4ed8; vertical-align:middle; margin-right:4px;"></span> Río<br>
-        <span style="display:inline-block; width:18px; height:0;
-              border-top:2px dashed #60a5fa; vertical-align:middle; margin-right:4px;"></span> Quebrada<br>
-        <span style="display:inline-block; width:14px; height:10px;
-              border:1.5px solid #22c55e; background:rgba(34,197,94,0.08);
-              vertical-align:middle; margin-right:4px;"></span> Cuenca Quilca-Vítor-Chili<br>
-        <span style="display:inline-block; width:14px; height:10px;
-              border:1.5px solid #dc2626; background:rgba(220,38,38,0.08);
-              vertical-align:middle; margin-right:4px;"></span> Cuenca Colca-Camaná
-      </div>
-      <div style="font-size:10px; color:#94a3b8; border-top:1px solid #f1f5f9;
-           padding-top:6px; margin-top:8px;">
-        Radio = N° parámetros evaluados
+      <div id="lvca-legend-body" style="margin-top:6px;">
+        <div style="color:#475569;">
+          <span style="color:#2e7d32; font-size:14px;">&#9679;</span> Cumple ECA<br>
+          <span style="color:#0a9396; font-size:14px;">&#9679;</span> Excedencia leve<br>
+          <span style="color:#e8870e; font-size:14px;">&#9679;</span> Excedencia media<br>
+          <span style="color:#c62828; font-size:14px;">&#9679;</span> Excedencia alta<br>
+          <span style="color:#9e9e9e; font-size:14px;">&#9679;</span> Sin datos
+        </div>
+        <div style="font-size:10px; color:#94a3b8; border-top:1px solid #f1f5f9;
+             padding-top:5px; margin-top:6px;">
+          Radio del marcador = N° parámetros evaluados
+        </div>
       </div>
     </div>
     """
@@ -685,7 +689,7 @@ def _construir_mapa(puntos: list[dict], solo_excedencias: bool):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_gauge(punto: dict) -> None:
-    """Indicador de cumplimiento ECA — bullet limpio, sin delta engañoso."""
+    """Indicador de cumplimiento ECA — bullet horizontal compacto."""
     ic = punto.get("indice_cumplimiento")
     if ic is None:
         st.info("Sin datos suficientes para evaluar el cumplimiento ECA.")
@@ -699,11 +703,19 @@ def _render_gauge(punto: dict) -> None:
     color_principal = "#2e7d32" if pct >= 80 else "#e8870e" if pct >= 50 else "#c62828"
     color_fondo = "#e8f5e9" if pct >= 80 else "#fef3e2" if pct >= 50 else "#fce4e4"
 
-    # Bullet horizontal: más compacto y legible que el gauge circular
+    # Título encima como markdown (antes el title interno del Indicator
+    # quedaba cortado a la izquierda en columnas estrechas).
+    st.markdown(
+        '<div style="font-size:0.72rem; color:#94a3b8; '
+        'text-transform:uppercase; letter-spacing:0.05em; '
+        'font-weight:600; margin-top:8px;">Cumplimiento ECA</div>',
+        unsafe_allow_html=True,
+    )
+
     fig = go.Figure(go.Indicator(
         mode="number+gauge",
         value=pct,
-        number={"suffix": "%", "font": {"size": 30, "color": color_principal}},
+        number={"suffix": "%", "font": {"size": 28, "color": color_principal}},
         gauge={
             "shape": "bullet",
             "axis": {"range": [0, 100], "tickwidth": 1, "ticksuffix": "%"},
@@ -721,23 +733,19 @@ def _render_gauge(punto: dict) -> None:
                 "value": 80,
             },
         },
-        domain={"x": [0.18, 1], "y": [0.15, 0.85]},
-        title={"text": "<b>Cumplimiento ECA</b>",
-               "font": {"size": 13, "color": "#1e293b"}},
+        domain={"x": [0, 1], "y": [0.15, 0.85]},
     ))
     fig.update_layout(
-        height=130,
-        margin=dict(l=10, r=10, t=20, b=10),
+        height=95,
+        margin=dict(l=10, r=10, t=10, b=5),
         paper_bgcolor="rgba(0,0,0,0)",
     )
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-    # Detalle bajo el bullet
     sub_a, sub_b, sub_c = st.columns(3)
-    sub_a.metric("Parámetros evaluados", n_eval)
-    sub_b.metric("Cumplen ECA", n_ok, delta=None)
-    sub_c.metric("Excedencias", n_exc, delta=None,
-                 delta_color="inverse")
+    sub_a.metric("Evaluados", n_eval)
+    sub_b.metric("Cumplen", n_ok)
+    sub_c.metric("Exceden", n_exc, delta_color="inverse")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1218,21 +1226,38 @@ def _render_panel_punto(punto_sel: dict) -> None:
     }.get(estado_punto, "sin_dato")
     estado_html = _pill(_pill_key, dominio="resultado")
 
+    # Header compacto: código + estado en una fila, datos clave en grid 2x3
+    # con labels cortos. Antes ocupaba demasiada altura en el panel lateral.
+    altitud = punto_sel.get('altitud_msnm', '—')
+    altitud_txt = f"{altitud} msnm" if altitud not in (None, "—") else "—"
+
     st.markdown(
         f"""<div style="background:white; border:1px solid #e2e8f0;
-             border-left:5px solid {color_estado}; border-radius:10px;
-             padding:14px 16px; margin-top:8px;">
-            <div style="font-size:1.05rem; font-weight:700; color:#1e293b;
-                 line-height:1.25;">{punto_sel['codigo']} — {punto_sel['nombre']}</div>
-            <div style="margin-top:6px;">{estado_html}</div>
-            <div style="font-size:0.78rem; color:#64748b; margin-top:8px;
-                 line-height:1.6;">
-                <div><b>Tipo:</b> {(punto_sel.get('tipo') or '—').capitalize()}</div>
-                <div><b>Cuenca:</b> {punto_sel.get('cuenca', '—')}</div>
-                <div><b>Sistema hídrico:</b> {punto_sel.get('sistema_hidrico', '—')}</div>
-                <div><b>ECA aplicable:</b> {eca_info.get('codigo', '—')}</div>
-                <div><b>Altitud:</b> {punto_sel.get('altitud_msnm', '—')} msnm</div>
-                <div><b>Último dato:</b> {punto_sel.get('ultima_fecha', '—')}</div>
+             border-left:4px solid {color_estado}; border-radius:10px;
+             padding:12px 14px; margin-top:6px;">
+            <div style="display:flex; align-items:center; justify-content:space-between;
+                 gap:10px; margin-bottom:8px;">
+                <div style="font-size:1rem; font-weight:700; color:#1e293b;
+                     line-height:1.2; flex:1;">{punto_sel['codigo']}</div>
+                <div>{estado_html}</div>
+            </div>
+            <div style="font-size:0.82rem; color:#475569; margin-bottom:10px;
+                 line-height:1.3;">{punto_sel['nombre']}</div>
+            <div style="display:grid; grid-template-columns:1fr 1fr;
+                 gap:6px 14px; font-size:0.74rem; color:#64748b;
+                 line-height:1.45;">
+                <div><span style="color:#94a3b8;">Tipo</span><br>
+                     <b style="color:#1e293b;">{(punto_sel.get('tipo') or '—').capitalize()}</b></div>
+                <div><span style="color:#94a3b8;">ECA aplicable</span><br>
+                     <b style="color:#1e293b;">{eca_info.get('codigo', '—')}</b></div>
+                <div><span style="color:#94a3b8;">Cuenca</span><br>
+                     <b style="color:#1e293b;">{punto_sel.get('cuenca', '—')}</b></div>
+                <div><span style="color:#94a3b8;">Sistema hídrico</span><br>
+                     <b style="color:#1e293b;">{punto_sel.get('sistema_hidrico', '—')}</b></div>
+                <div><span style="color:#94a3b8;">Altitud</span><br>
+                     <b style="color:#1e293b;">{altitud_txt}</b></div>
+                <div><span style="color:#94a3b8;">Último dato</span><br>
+                     <b style="color:#1e293b;">{punto_sel.get('ultima_fecha', '—')}</b></div>
             </div>
         </div>""",
         unsafe_allow_html=True,
@@ -1241,7 +1266,11 @@ def _render_panel_punto(punto_sel: dict) -> None:
     _render_gauge(punto_sel)
 
     if exc_punto:
-        with st.expander(f"{n_exc_punto} excedencia(s) activa(s)", expanded=False):
+        label_exc = (
+            f"{n_exc_punto} excedencia activa" if n_exc_punto == 1
+            else f"{n_exc_punto} excedencias activas"
+        )
+        with st.expander(label_exc, expanded=True):
             df_exc = pd.DataFrame(exc_punto)
             df_exc["pct_exceso"] = df_exc.apply(
                 lambda r: round((r["valor"] / r["lim_max"] - 1) * 100, 1)
