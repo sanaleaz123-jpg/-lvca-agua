@@ -1,7 +1,7 @@
 """
 services/muestra_service.py
 Lógica de negocio para registro de muestras de campo,
-mediciones in situ, cadena de custodia y generación de etiquetas QR.
+mediciones in situ y cadena de custodia.
 
 Funciones públicas:
     crear_muestra(datos)                   → código LVCA-YYYY-NNN
@@ -10,7 +10,7 @@ Funciones públicas:
     get_limites_insitu(muestra_id)         → límites ECA para parámetros in situ
     recibir_en_laboratorio(muestra_id, ...) → custodia
     actualizar_estado_muestra(id, estado)
-    generar_qr_pdf(muestra_id)             → bytes PDF descargable
+    renumerar_codigos_campana(campana_id)  → reordena códigos por fecha+hora
     get_muestras_por_campana(campana_id, ...)
     get_usuarios_campo()
     get_campanas_en_campo()
@@ -19,10 +19,8 @@ Funciones públicas:
 
 from __future__ import annotations
 
-import json
 import uuid
 from datetime import datetime
-from io import BytesIO
 from typing import Optional
 
 from database.client import get_admin_client
@@ -635,6 +633,8 @@ def get_muestras_por_campana(
         .select(select_fields)
         .eq("campana_id", campana_id)
         .order("fecha_muestreo", desc=True)
+        .order("hora_recoleccion", desc=True)
+        .order("codigo", desc=True)
     )
 
     if filtro_estado and filtro_estado in ESTADOS_MUESTRA:
@@ -733,105 +733,6 @@ def get_muestra_detalle(muestra_id: str) -> dict:
         .execute()
     )
     return res.data
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Generación de etiqueta QR (PDF 5cm × 3cm)
-# ─────────────────────────────────────────────────────────────────────────────
-
-def generar_qr_pdf(muestra_id: str) -> bytes:
-    """
-    Genera un PDF de 5cm × 3cm con código QR y datos de la muestra.
-    El QR codifica: código, punto, fecha, campaña.
-
-    Requiere: pip install qrcode[pil] reportlab
-
-    Retorna bytes del PDF (listo para st.download_button).
-    """
-    import qrcode
-    from reportlab.lib.units import mm
-    from reportlab.lib.utils import ImageReader
-    from reportlab.pdfgen import canvas as rl_canvas
-
-    db = get_admin_client()
-    muestra = (
-        db.table("muestras")
-        .select(
-            "codigo, fecha_muestreo, tipo_muestra, "
-            "puntos_muestreo(codigo, nombre), "
-            "campanas(codigo)"
-        )
-        .eq("id", muestra_id)
-        .single()
-        .execute()
-        .data
-    )
-
-    punto   = muestra.get("puntos_muestreo") or {}
-    campana = muestra.get("campanas") or {}
-
-    # ── Datos del QR ─────────────────────────────────────────────────────────
-    qr_payload = json.dumps({
-        "codigo":  muestra["codigo"],
-        "punto":   punto.get("codigo", ""),
-        "fecha":   str(muestra.get("fecha_muestreo", ""))[:10],
-        "campana": campana.get("codigo", ""),
-        "tipo":    muestra.get("tipo_muestra", ""),
-    }, ensure_ascii=True)
-
-    qr = qrcode.QRCode(version=1, box_size=10, border=1)
-    qr.add_data(qr_payload)
-    qr.make(fit=True)
-    qr_img = qr.make_image(fill_color="black", back_color="white")
-
-    qr_buffer = BytesIO()
-    qr_img.save(qr_buffer, format="PNG")
-    qr_buffer.seek(0)
-
-    # ── PDF label 5cm × 3cm ──────────────────────────────────────────────────
-    ancho  = 50 * mm
-    alto   = 30 * mm
-
-    pdf_buffer = BytesIO()
-    c = rl_canvas.Canvas(pdf_buffer, pagesize=(ancho, alto))
-
-    # Borde
-    c.setStrokeColorRGB(0.7, 0.7, 0.7)
-    c.setLineWidth(0.3)
-    c.rect(0.5 * mm, 0.5 * mm, ancho - 1 * mm, alto - 1 * mm)
-
-    # QR (lado izquierdo)
-    qr_size = 20 * mm
-    c.drawImage(
-        ImageReader(qr_buffer),
-        2 * mm, 5 * mm,
-        qr_size, qr_size,
-    )
-
-    # Texto (lado derecho)
-    tx = 24 * mm
-
-    c.setFont("Helvetica-Bold", 5)
-    c.drawString(tx, alto - 5 * mm, "AUTODEMA - LVCA")
-
-    c.setFont("Helvetica-Bold", 8)
-    c.drawString(tx, alto - 10 * mm, muestra["codigo"])
-
-    c.setFont("Helvetica", 5)
-    c.drawString(tx, alto - 14 * mm, f"Punto: {punto.get('codigo', '—')}")
-
-    nombre_corto = (punto.get("nombre") or "")[:22]
-    c.drawString(tx, alto - 17.5 * mm, nombre_corto)
-
-    fecha_str = str(muestra.get("fecha_muestreo", ""))[:10]
-    c.drawString(tx, alto - 21 * mm, f"Fecha: {fecha_str}")
-
-    tipo_label = ETIQUETA_TIPO.get(muestra.get("tipo_muestra", ""), "")
-    c.setFont("Helvetica-Oblique", 4.5)
-    c.drawString(tx, alto - 24.5 * mm, tipo_label)
-
-    c.save()
-    return pdf_buffer.getvalue()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -981,3 +882,71 @@ def _generar_codigo_muestra(db) -> str:
             except (ValueError, KeyError):
                 pass
         return f"{prefijo}{max_seq + 1:03d}"
+
+
+def renumerar_codigos_campana(campana_id: str) -> int:
+    """
+    Reasigna los códigos LVCA-YYYY-NNN de las muestras de una campaña en
+    orden cronológico (fecha_muestreo, hora_recoleccion, created_at).
+
+    La muestra con fecha+hora más temprana queda con el código menor; la más
+    tardía con el código mayor. Se conservan los mismos números (slots) que
+    la campaña ya tenía consumidos del año — solo se reordena quién ocupa
+    cada slot.
+
+    Para muestras de columna (mismo punto, misma fecha+hora), se desempata
+    por profundidad_tipo (S < M < F) y luego por created_at.
+
+    Implementado en dos pasos para evitar conflictos con UNIQUE(codigo):
+      1. Reasigna a códigos temporales sin colisión.
+      2. Reasigna a los códigos finales en orden cronológico.
+
+    Retorna la cantidad de muestras renumeradas.
+    """
+    db = get_admin_client()
+
+    muestras = (
+        db.table("muestras")
+        .select(
+            "id, codigo, fecha_muestreo, hora_recoleccion, "
+            "profundidad_tipo, created_at"
+        )
+        .eq("campana_id", campana_id)
+        .execute()
+        .data
+        or []
+    )
+    if not muestras:
+        return 0
+
+    # Orden cronológico ascendente — primero muestreado, código menor.
+    _orden_prof = {"S": 0, "M": 1, "F": 2}
+
+    def _sort_key(m: dict) -> tuple:
+        return (
+            str(m.get("fecha_muestreo") or ""),
+            str(m.get("hora_recoleccion") or "00:00:00"),
+            _orden_prof.get(m.get("profundidad_tipo") or "", 9),
+            str(m.get("created_at") or ""),
+        )
+
+    muestras_orden = sorted(muestras, key=_sort_key)
+    codigos_orden = sorted(m["codigo"] for m in muestras)
+
+    # Si el orden actual ya coincide con el cronológico, no tocar nada.
+    if [m["codigo"] for m in muestras_orden] == codigos_orden:
+        return 0
+
+    # Paso 1 — códigos temporales para liberar los slots originales.
+    for m in muestras_orden:
+        tmp = f"__TMP_{m['id']}"
+        db.table("muestras").update({"codigo": tmp}).eq("id", m["id"]).execute()
+
+    # Paso 2 — reasignar los códigos definitivos en orden cronológico.
+    for m, codigo_final in zip(muestras_orden, codigos_orden):
+        db.table("muestras").update(
+            {"codigo": codigo_final}
+        ).eq("id", m["id"]).execute()
+
+    _invalidar_cache()
+    return len(muestras_orden)
