@@ -1238,6 +1238,80 @@ def _render_custodia(campana_id: str) -> None:
     ]
     st.dataframe(pd.DataFrame(filas), use_container_width=True, hide_index=True)
 
+    # ── Bulk: recibir todas las muestras "en transporte" en una operación ─
+    muestras_en_transporte = [
+        m for m in muestras if m.get("estado") == "en_transporte"
+    ]
+    if len(muestras_en_transporte) >= 2:
+        st.divider()
+        section_header(
+            f"Recibir {len(muestras_en_transporte)} muestras en transporte",
+            "all_inbox",
+        )
+        st.caption(
+            "Procesa todas las muestras en transporte en una sola operación: "
+            "el receptor, el estado del frasco y las observaciones se aplican "
+            "a todas. Para casos individuales (ej. una muestra con frasco "
+            "fisurado), usa la sección de abajo."
+        )
+        with st.form("form_recepcion_bulk", clear_on_submit=False):
+            sesion = st.session_state.get("sesion")
+            st.markdown(
+                f"Receptor: **{sesion.nombre_completo if sesion else '—'}** — "
+                f"{len(muestras_en_transporte)} muestra(s) afectadas"
+            )
+
+            estado_frasco_bulk = st.selectbox(
+                "Estado del frasco (aplica a todas)",
+                ESTADOS_FRASCO,
+                format_func=lambda e: e.replace("_", " ").capitalize(),
+                key="bulk_estado_frasco",
+            )
+            obs_bulk = st.text_input(
+                "Observaciones de recepción (aplica a todas)",
+                placeholder="Temperatura de llegada, integridad del sello...",
+                key="bulk_obs_recepcion",
+            )
+
+            btn_recibir_bulk = st.form_submit_button(
+                f"Recibir {len(muestras_en_transporte)} muestras",
+                type="primary",
+                icon=":material/all_inbox:",
+            )
+
+        if btn_recibir_bulk:
+            receptor_id = _get_usuario_interno_id(sesion.uid) if sesion else None
+            if not receptor_id:
+                st.error(
+                    "Tu usuario no tiene un perfil interno asociado. "
+                    "Contacta al administrador para que te dé de alta en la "
+                    "tabla `usuarios` antes de recibir muestras."
+                )
+            else:
+                ok = 0
+                errores: list[str] = []
+                for m in muestras_en_transporte:
+                    try:
+                        recibir_en_laboratorio(
+                            m["id"],
+                            receptor_id,
+                            estado_frasco_bulk,
+                            obs_bulk,
+                        )
+                        ok += 1
+                    except (TransicionMuestraError, ValueError) as exc:
+                        errores.append(f"{m['codigo']}: {exc}")
+
+                _invalidar_muestras_cache(campana_id)
+                if errores:
+                    st.error(f"Recibidas {ok}/{len(muestras_en_transporte)}. Errores:")
+                    for e in errores:
+                        st.caption(f"• {e}")
+                if ok > 0:
+                    success_check_overlay(f"{ok} muestra(s) recibida(s) en laboratorio")
+                    st.session_state["_recepcion_recien_hecha"] = campana_id
+                    st.rerun()
+
     st.divider()
 
     # ── Selector de muestra para acciones ────────────────────────────────
@@ -1265,7 +1339,19 @@ def _render_custodia(campana_id: str) -> None:
             if st.button(f"Avanzar a → {etiq}", key="btn_avanzar_muestra", type="primary"):
                 try:
                     actualizar_estado_muestra(muestra["id"], siguiente)
-                    st.success(f"Estado actualizado a {etiq}.")
+                    # Si era la última muestra pendiente y la transición
+                    # a "analizada" cerró la campaña automáticamente,
+                    # avisamos al usuario con un mensaje específico.
+                    info_cierre = _get_campana_info(campana_id)
+                    if siguiente == "analizada" and info_cierre.get("estado") == "completada":
+                        st.success(
+                            f"Estado actualizado a {etiq}. "
+                            "Era la última muestra pendiente — la campaña "
+                            "se cerró automáticamente como **completada**."
+                        )
+                    else:
+                        st.success(f"Estado actualizado a {etiq}.")
+                    _invalidar_muestras_cache(campana_id)
                     st.rerun()
                 except TransicionMuestraError as exc:
                     st.error(str(exc))
