@@ -1,13 +1,12 @@
 """
 pages/3_Muestras_Campo.py
-Registro de muestras de campo, mediciones in situ,
-cadena de custodia, generación de etiquetas QR y cadena de custodia oficial.
+Registro de muestras de campo, mediciones in situ y cadena de custodia.
 
 Tabs:
-    1. Registro — formulario de nueva muestra + descarga QR
+    1. Registro — formulario de nueva muestra
     2. In situ  — mediciones de campo con semáforo ECA
     3. Custodia — recepción en lab y transiciones de estado
-    4. Listado  — tabla general con filtros y descarga QR
+    4. Listado  — tabla general con filtros
     5. Cadena   — generación de cadena de custodia AUTODEMA (Excel/PDF)
 
 Acceso mínimo: administrador.
@@ -47,7 +46,6 @@ from services.muestra_service import (
     actualizar_muestra,
     crear_muestra,
     eliminar_muestra,
-    generar_qr_pdf,
     get_campana_detalle,
     get_limites_insitu,
     get_mediciones_insitu,
@@ -729,7 +727,6 @@ def _render_registro() -> None:
             success_check_overlay(f"Muestra {existente['codigo']} actualizada")
             st.success(f"Muestra **{existente['codigo']}** actualizada correctamente.")
             muestra_id_fotos = existente["id"]
-            muestra_codigo = existente["codigo"]
         else:
             # ── Crear nueva muestra ──────────────────────────────────────
             with st.spinner("Registrando muestra..."):
@@ -746,7 +743,6 @@ def _render_registro() -> None:
                 success_check_overlay(f"Muestra {creada['codigo']} registrada")
                 st.success(f"Muestra **{creada['codigo']}** registrada exitosamente.")
             muestra_id_fotos = creada["id"]
-            muestra_codigo = creada["codigo"]
 
         # ── Subir fotos asociadas ────────────────────────────────────────
         if fotos_subidas:
@@ -761,24 +757,6 @@ def _render_registro() -> None:
                 except Exception as exc:
                     st.warning(f"Error subiendo {archivo.name}: {exc}")
             st.info(f"{len(fotos_subidas)} foto(s) subida(s).")
-
-        # ── Generar y ofrecer descarga del QR ────────────────────────────
-        if not es_edicion:
-            try:
-                pdf_bytes = generar_qr_pdf(muestra_id_fotos)
-                st.download_button(
-                    label=f"📥 Descargar etiqueta QR — {muestra_codigo}",
-                    data=pdf_bytes,
-                    file_name=f"etiqueta_{muestra_codigo}.pdf",
-                    mime="application/pdf",
-                )
-            except ImportError:
-                st.warning(
-                    "Instala qrcode y reportlab para generar etiquetas:\n\n"
-                    "`pip install qrcode[pil] reportlab`"
-                )
-            except Exception as exc:
-                st.warning(f"No se pudo generar la etiqueta QR: {exc}")
 
         # Puente al tab "In situ" — evita que el técnico tenga que cambiar
         # de tab y re-seleccionar la misma campaña/punto manualmente.
@@ -1202,7 +1180,10 @@ def _render_custodia() -> None:
 
     # ── Tabla resumen de estados ─────────────────────────────────────────
     filas = [
-        _fila_muestra(m, campos=("codigo", "punto", "fecha", "tipo", "estado", "tecnico"))
+        _fila_muestra(
+            m,
+            campos=("codigo", "punto", "fecha", "hora", "tipo", "estado", "tecnico"),
+        )
         for m in muestras
     ]
     st.dataframe(pd.DataFrame(filas), use_container_width=True, hide_index=True)
@@ -1373,29 +1354,6 @@ def _render_listado() -> None:
         for m in muestras
     ]
     st.dataframe(pd.DataFrame(filas), use_container_width=True, hide_index=True)
-
-    # ── Descarga de QR para cualquier muestra ────────────────────────────
-    st.divider()
-    opciones_qr = {
-        f"{m['codigo']}": m["id"] for m in muestras
-    }
-    sel_qr = st.selectbox("Generar etiqueta QR para", list(opciones_qr.keys()), key="list_qr")
-    muestra_id_qr = opciones_qr[sel_qr]
-
-    if st.button("Generar etiqueta QR", key="btn_qr_listado", icon=":material/qr_code:"):
-        try:
-            pdf_bytes = generar_qr_pdf(muestra_id_qr)
-            st.download_button(
-                label=f"Descargar etiqueta — {sel_qr}",
-                data=pdf_bytes,
-                file_name=f"etiqueta_{sel_qr}.pdf",
-                mime="application/pdf",
-                key="dl_qr_listado",
-            )
-        except ImportError:
-            st.warning("Instala qrcode y reportlab: `pip install qrcode[pil] reportlab`")
-        except Exception as exc:
-            st.error(f"Error al generar QR: {exc}")
 
     # ── Editar / Eliminar muestra ──────────────────────────────────────────
     st.divider()
@@ -1791,7 +1749,7 @@ def main() -> None:
     # se limpia para que cualquier rerun (después de crear/editar/eliminar)
     # vea datos frescos. Dentro del render los 5 tabs comparten la query.
     st.session_state.pop("_muestras_cache", None)
-    page_header("Muestras de Campo", "Registro, mediciones in situ, cadena de custodia y etiquetas QR")
+    page_header("Muestras de Campo", "Registro, mediciones in situ y cadena de custodia")
 
     # Orden lógico del flujo operativo:
     #   campo (Registro → In situ)

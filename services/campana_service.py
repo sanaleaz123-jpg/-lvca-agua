@@ -227,6 +227,26 @@ def actualizar_estado(campana_id: str, nuevo_estado: str, usuario_id: Optional[s
         valor_nuevo=nuevo_estado,
         usuario_id=usuario_id,
     )
+
+    # Al cerrar la fase de campo, los códigos LVCA-YYYY-NNN de las muestras
+    # se reordenan cronológicamente (fecha + hora del muestreo). Así el
+    # código más bajo queda en la muestra recolectada primero y el más alto
+    # en la última, sin importar el orden en que el técnico las registró.
+    if estado_actual == "en_campo" and nuevo_estado == "en_laboratorio":
+        from services.muestra_service import renumerar_codigos_campana
+        try:
+            renumerar_codigos_campana(campana_id)
+        except Exception as exc:
+            registrar_cambio(
+                tabla="campanas",
+                registro_id=campana_id,
+                accion="renumeracion_fallida",
+                campo="codigos_muestras",
+                valor_anterior=None,
+                valor_nuevo=str(exc),
+                usuario_id=usuario_id,
+            )
+
     _invalidar_cache()
 
 
