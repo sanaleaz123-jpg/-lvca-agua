@@ -1231,6 +1231,10 @@ def _render_panel_punto(punto_sel: dict) -> None:
     altitud = punto_sel.get('altitud_msnm', '—')
     altitud_txt = f"{altitud} msnm" if altitud not in (None, "—") else "—"
 
+    utm_e = punto_sel.get("utm_este")
+    utm_n = punto_sel.get("utm_norte")
+    utm_txt = f"{utm_e:,.0f} E · {utm_n:,.0f} N" if utm_e and utm_n else "—"
+
     st.markdown(
         f"""<div style="background:white; border:1px solid #e2e8f0;
              border-left:4px solid {color_estado}; border-radius:10px;
@@ -1258,6 +1262,11 @@ def _render_panel_punto(punto_sel: dict) -> None:
                      <b style="color:#1e293b;">{altitud_txt}</b></div>
                 <div><span style="color:#94a3b8;">Último dato</span><br>
                      <b style="color:#1e293b;">{punto_sel.get('ultima_fecha', '—')}</b></div>
+            </div>
+            <div style="border-top:1px solid #f1f5f9; padding-top:8px;
+                 margin-top:10px; font-size:0.74rem; color:#64748b;">
+                <span style="color:#94a3b8;">UTM (Zona 19S)</span><br>
+                <b style="color:#1e293b; font-variant-numeric:tabular-nums;">{utm_txt}</b>
             </div>
         </div>""",
         unsafe_allow_html=True,
