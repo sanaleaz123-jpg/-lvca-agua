@@ -53,89 +53,118 @@ from services.audit_service import registrar_cambio
 # vigilancia rutinaria y para aplicar la Tabla OMS 2021 sin medición
 # explícita.
 TAXONOMIA_FITOPLANCTON: dict[str, list[dict]] = {
+    # Cyanobacteria — biovolúmenes en 0 (pendientes de calibración con el lab).
+    # Las unidades y células/unidad sí están definidas para que la alerta OMS
+    # 1999 (por densidad celular) opere con valores correctos.
     "Cyanobacteria": [
-        # Coloniales (mucilaginosas o cocoidales agrupadas)
-        {"nombre": "Microcystis sp.",      "unidad": "colonia",   "celulas_por_unidad": 100, "volumen_celula_um3": 65},
-        {"nombre": "Chroococcus sp.",      "unidad": "colonia",   "celulas_por_unidad": 4,   "volumen_celula_um3": 50},
-        {"nombre": "Merismopedia sp.",     "unidad": "colonia",   "celulas_por_unidad": 32,  "volumen_celula_um3": 5},
-        {"nombre": "Nostoc sp.",           "unidad": "colonia",   "celulas_por_unidad": 100, "volumen_celula_um3": 35},
-        # Filamentosas (tricomas con o sin envoltura)
-        {"nombre": "Anabaena sp.",         "unidad": "filamento", "celulas_por_unidad": 50,  "volumen_celula_um3": 30},
-        {"nombre": "Oscillatoria sp.",     "unidad": "filamento", "celulas_por_unidad": 50,  "volumen_celula_um3": 200},
-        {"nombre": "Phormidium sp.",       "unidad": "filamento", "celulas_por_unidad": 40,  "volumen_celula_um3": 35},
-        {"nombre": "Pseudanabaena sp.",    "unidad": "filamento", "celulas_por_unidad": 30,  "volumen_celula_um3": 5},
-        {"nombre": "Spirulina sp.",        "unidad": "filamento", "celulas_por_unidad": 10,  "volumen_celula_um3": 35},
-        # Unicelulares (picocianobacterias)
-        {"nombre": "Synechococcus sp.",    "unidad": "celula",    "celulas_por_unidad": 1,   "volumen_celula_um3": 5},
+        {"nombre": "Dolichospermum sp.",       "unidad": "filamento", "celulas_por_unidad": 50,  "volumen_celula_um3": 0},
+        {"nombre": "Nodularia sp.",            "unidad": "filamento", "celulas_por_unidad": 50,  "volumen_celula_um3": 0},
+        {"nombre": "Nostoc sp.",               "unidad": "colonia",   "celulas_por_unidad": 100, "volumen_celula_um3": 0},
+        {"nombre": "Oscillatoria sp.",         "unidad": "filamento", "celulas_por_unidad": 50,  "volumen_celula_um3": 0},
+        {"nombre": "Phormidium sp.",           "unidad": "filamento", "celulas_por_unidad": 40,  "volumen_celula_um3": 0},
+        {"nombre": "Pseudanabaena sp.",        "unidad": "filamento", "celulas_por_unidad": 30,  "volumen_celula_um3": 0},
+        {"nombre": "Pseudanabaeenaceae ND",    "unidad": "filamento", "celulas_por_unidad": 30,  "volumen_celula_um3": 0},
+        {"nombre": "Chroococcus sp.",          "unidad": "colonia",   "celulas_por_unidad": 4,   "volumen_celula_um3": 0},
+        {"nombre": "Lyngbya sp.",              "unidad": "filamento", "celulas_por_unidad": 50,  "volumen_celula_um3": 0},
+        {"nombre": "Spirulina sp",             "unidad": "filamento", "celulas_por_unidad": 10,  "volumen_celula_um3": 0},
+        {"nombre": "Cianobacteria ND",         "unidad": "celula",    "celulas_por_unidad": 1,   "volumen_celula_um3": 0},
     ],
     # Bacillariophyta (diatomeas) — convención HELCOM PEG: cuenta cada célula
     # individual incluso en colonias/cadenas. Volumen por célula promedio.
     "Bacillariophyta": [
-        {"nombre": "Achnanthes sp.",       "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 200},
-        {"nombre": "Amphora sp.",          "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 600},
-        {"nombre": "Asterionella sp.",     "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 600},
-        {"nombre": "Cocconeis sp.",        "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 250},
-        {"nombre": "Cyclotella sp.",       "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 500},
-        {"nombre": "Cymbella sp.",         "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 1500},
-        {"nombre": "Diatoma sp.",          "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 800},
-        {"nombre": "Encyonema sp.",        "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 1200},
-        {"nombre": "Epithemia sp.",        "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 2500},
-        {"nombre": "Fragilaria sp.",       "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 500},
-        {"nombre": "Gomphonema sp.",       "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 1000},
-        {"nombre": "Melosira sp.",         "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 3500},
-        {"nombre": "Navicula sp.",         "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 800},
-        {"nombre": "Nitzschia sp.",        "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 600},
-        {"nombre": "Pinnularia sp.",       "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 5000},
-        {"nombre": "Rhoicosphenia sp.",    "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 350},
-        {"nombre": "Rhopalodia sp.",       "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 2000},
-        {"nombre": "Surirella sp.",        "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 5000},
-        {"nombre": "Synedra sp.",          "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 1200},
-        {"nombre": "Tabellaria sp.",       "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 700},
-        {"nombre": "Ulnaria sp.",          "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 1500},
-    ],
-    # Charophyta (desmidiaceas) — todas unicelulares.
-    "Charophyta": [
-        {"nombre": "Closterium sp.",       "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 8000},
-        {"nombre": "Cosmarium sp.",        "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 5000},
-        {"nombre": "Staurastrum sp.",      "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 4000},
+        {"nombre": "Aulacoseira sp",           "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 700},
+        {"nombre": "Achnanthidium sp.",        "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 100},
+        {"nombre": "Amphora sp.",              "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 600},
+        {"nombre": "Asterionella sp.",         "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 600},
+        {"nombre": "Coconeis sp.",             "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 250},
+        {"nombre": "Cymbella sp.",             "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 1500},
+        {"nombre": "Cymatopleura",             "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 3000},
+        {"nombre": "Diploneis sp",             "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 800},
+        {"nombre": "Diatoma sp.",              "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 800},
+        {"nombre": "Encyonema sp",             "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 1200},
+        {"nombre": "Caloneis sp",              "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 1000},
+        {"nombre": "Epithemia sorex",          "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 2500},
+        {"nombre": "Epithemia sp.",            "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 2500},
+        {"nombre": "Eunotia sp.",              "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 600},
+        {"nombre": "Fragilaria sp.",           "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 500},
+        {"nombre": "Frustulia sp.",            "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 1000},
+        {"nombre": "Gomphonema sp.",           "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 1000},
+        {"nombre": "Hannaea sp.",              "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 500},
+        {"nombre": "Hantzchia sp",             "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 600},
+        {"nombre": "Ceratoneis arcus",         "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 500},
+        {"nombre": "Navicula sp.",             "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 800},
+        {"nombre": "Neidium sp.",              "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 1500},
+        {"nombre": "Nitzschia sp.",            "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 600},
+        {"nombre": "Pinnularia sp.",           "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 5000},
+        {"nombre": "Rhoincosphenia sp.",       "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 350},
+        {"nombre": "Rhopalodia sp.",           "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 2000},
+        {"nombre": "Sellaphora sp.",           "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 500},
+        {"nombre": "Melosira sp.",             "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 3500},
+        {"nombre": "Surirella sp.",            "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 5000},
+        {"nombre": "Staurosirella",            "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 400},
+        {"nombre": "Synedra sp.",              "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 1200},
+        {"nombre": "Ulnaria sp",               "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 1500},
+        {"nombre": "Tryblionella sp.",         "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 800},
+        {"nombre": "Bacillariophyta sp",       "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 0},
     ],
     # Chlorophyta — mezcla: unicelulares, cenobios coloniales y filamentos.
     "Chlorophyta": [
-        # Unicelulares
-        {"nombre": "Ankistrodesmus sp.",   "unidad": "celula",    "celulas_por_unidad": 1,   "volumen_celula_um3": 200},
-        {"nombre": "Chlamydomonas sp.",    "unidad": "celula",    "celulas_por_unidad": 1,   "volumen_celula_um3": 250},
-        {"nombre": "Chlorella sp.",        "unidad": "celula",    "celulas_por_unidad": 1,   "volumen_celula_um3": 30},
-        {"nombre": "Monoraphidium sp.",    "unidad": "celula",    "celulas_por_unidad": 1,   "volumen_celula_um3": 100},
-        {"nombre": "Oocystis sp.",         "unidad": "celula",    "celulas_por_unidad": 1,   "volumen_celula_um3": 200},
-        {"nombre": "Selenastrum sp.",      "unidad": "celula",    "celulas_por_unidad": 1,   "volumen_celula_um3": 80},
-        {"nombre": "Tetraedron sp.",       "unidad": "celula",    "celulas_por_unidad": 1,   "volumen_celula_um3": 700},
-        # Cenobios coloniales (4-32 células fijas)
-        {"nombre": "Botryococcus sp.",     "unidad": "colonia",   "celulas_por_unidad": 50,  "volumen_celula_um3": 250},
-        {"nombre": "Coelastrum sp.",       "unidad": "colonia",   "celulas_por_unidad": 8,   "volumen_celula_um3": 200},
-        {"nombre": "Crucigenia sp.",       "unidad": "colonia",   "celulas_por_unidad": 4,   "volumen_celula_um3": 80},
-        {"nombre": "Dictyosphaerium sp.",  "unidad": "colonia",   "celulas_por_unidad": 8,   "volumen_celula_um3": 60},
-        {"nombre": "Pediastrum sp.",       "unidad": "colonia",   "celulas_por_unidad": 16,  "volumen_celula_um3": 250},
-        {"nombre": "Scenedesmus sp.",      "unidad": "colonia",   "celulas_por_unidad": 4,   "volumen_celula_um3": 80},
-        {"nombre": "Sphaerocystis sp.",    "unidad": "colonia",   "celulas_por_unidad": 16,  "volumen_celula_um3": 250},
-        {"nombre": "Tetraspora sp.",       "unidad": "colonia",   "celulas_por_unidad": 16,  "volumen_celula_um3": 100},
-        # Volvocales (esféricas grandes con muchas células)
-        {"nombre": "Eudorina sp.",         "unidad": "colonia",   "celulas_por_unidad": 32,  "volumen_celula_um3": 250},
-        {"nombre": "Pandorina sp.",        "unidad": "colonia",   "celulas_por_unidad": 16,  "volumen_celula_um3": 250},
-        {"nombre": "Volvox sp.",           "unidad": "colonia",   "celulas_por_unidad": 500, "volumen_celula_um3": 60},
-        # Filamentosas
-        {"nombre": "Stigeoclonium sp.",    "unidad": "filamento", "celulas_por_unidad": 30,  "volumen_celula_um3": 150},
-        {"nombre": "Ulothrix sp.",         "unidad": "filamento", "celulas_por_unidad": 50,  "volumen_celula_um3": 250},
+        {"nombre": "Acutodesmus sp.",          "unidad": "colonia",   "celulas_por_unidad": 4,   "volumen_celula_um3": 100},
+        {"nombre": "Ankistrodesmus sp.",       "unidad": "celula",    "celulas_por_unidad": 1,   "volumen_celula_um3": 200},
+        {"nombre": "Botryococcus sp",          "unidad": "colonia",   "celulas_por_unidad": 50,  "volumen_celula_um3": 250},
+        {"nombre": "Crucigenia sp.",           "unidad": "colonia",   "celulas_por_unidad": 4,   "volumen_celula_um3": 80},
+        {"nombre": "Chlamydomonas sp",         "unidad": "celula",    "celulas_por_unidad": 1,   "volumen_celula_um3": 250},
+        {"nombre": "Desmodesmus sp.",          "unidad": "colonia",   "celulas_por_unidad": 4,   "volumen_celula_um3": 80},
+        {"nombre": "Dictyosphaerium sp.",      "unidad": "colonia",   "celulas_por_unidad": 8,   "volumen_celula_um3": 60},
+        {"nombre": "Elakatothrix sp.",         "unidad": "colonia",   "celulas_por_unidad": 4,   "volumen_celula_um3": 150},
+        {"nombre": "Eudorina sp.",             "unidad": "colonia",   "celulas_por_unidad": 32,  "volumen_celula_um3": 250},
+        {"nombre": "Lagerheimia sp.",          "unidad": "celula",    "celulas_por_unidad": 1,   "volumen_celula_um3": 150},
+        {"nombre": "Microspora sp.",           "unidad": "filamento", "celulas_por_unidad": 30,  "volumen_celula_um3": 200},
+        {"nombre": "Monoraphidium sp.",        "unidad": "celula",    "celulas_por_unidad": 1,   "volumen_celula_um3": 100},
+        {"nombre": "Nephrocytium sp.",         "unidad": "colonia",   "celulas_por_unidad": 8,   "volumen_celula_um3": 150},
+        {"nombre": "Oedogonium sp.",           "unidad": "filamento", "celulas_por_unidad": 30,  "volumen_celula_um3": 250},
+        {"nombre": "Oocystis sp.",             "unidad": "celula",    "celulas_por_unidad": 1,   "volumen_celula_um3": 200},
+        {"nombre": "Pandorina sp.",            "unidad": "colonia",   "celulas_por_unidad": 16,  "volumen_celula_um3": 250},
+        {"nombre": "Pediastrum sp",            "unidad": "colonia",   "celulas_por_unidad": 16,  "volumen_celula_um3": 250},
+        {"nombre": "Scenedesmus sp.",          "unidad": "colonia",   "celulas_por_unidad": 4,   "volumen_celula_um3": 80},
+        {"nombre": "Schroederia sp.",          "unidad": "celula",    "celulas_por_unidad": 1,   "volumen_celula_um3": 100},
+        {"nombre": "Sphaerocystis sp.",        "unidad": "colonia",   "celulas_por_unidad": 16,  "volumen_celula_um3": 250},
+        {"nombre": "Stigeoclonium sp.",        "unidad": "filamento", "celulas_por_unidad": 30,  "volumen_celula_um3": 150},
+        {"nombre": "Ulothrix sp.",             "unidad": "filamento", "celulas_por_unidad": 50,  "volumen_celula_um3": 250},
+        {"nombre": "Orden Chlorellaceae",      "unidad": "celula",    "celulas_por_unidad": 1,   "volumen_celula_um3": 30},
+    ],
+    # Ochrophyta (Chrysophyta) — algas doradas, mayormente coloniales con loricas.
+    "Ochrophyta": [
+        {"nombre": "Dinobryon sertularia",     "unidad": "colonia", "celulas_por_unidad": 30, "volumen_celula_um3": 600},
+        {"nombre": "Dinobryon sp.",            "unidad": "colonia", "celulas_por_unidad": 30, "volumen_celula_um3": 600},
+        {"nombre": "Mallomonas sp",            "unidad": "celula",  "celulas_por_unidad": 1,  "volumen_celula_um3": 1500},
+    ],
+    # Charophyta (desmidiaceas y zignematales) — unicelulares y filamentosas.
+    "Charophyta": [
+        {"nombre": "Closterium sp.",           "unidad": "celula",    "celulas_por_unidad": 1,  "volumen_celula_um3": 8000},
+        {"nombre": "Cosmarium sp.",            "unidad": "celula",    "celulas_por_unidad": 1,  "volumen_celula_um3": 5000},
+        {"nombre": "Gonatozygon sp.",          "unidad": "celula",    "celulas_por_unidad": 1,  "volumen_celula_um3": 3000},
+        {"nombre": "Mougeotia sp.",            "unidad": "filamento", "celulas_por_unidad": 30, "volumen_celula_um3": 500},
+        {"nombre": "Spirogyra sp.",            "unidad": "filamento", "celulas_por_unidad": 30, "volumen_celula_um3": 3000},
+        {"nombre": "Staurastrum sp.",          "unidad": "celula",    "celulas_por_unidad": 1,  "volumen_celula_um3": 4000},
+        {"nombre": "Staurodesmus sp.",         "unidad": "celula",    "celulas_por_unidad": 1,  "volumen_celula_um3": 3000},
+        {"nombre": "Zygnema sp.",              "unidad": "filamento", "celulas_por_unidad": 30, "volumen_celula_um3": 1500},
+    ],
+    # Euglenophyta — unicelulares flagelados (antes "Euglenozoa" en este código).
+    "Euglenophyta": [
+        {"nombre": "Euglena sp.",              "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 8000},
+        {"nombre": "Lepocinclis acus",         "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 3000},
+        {"nombre": "Phacus sp.",               "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 3500},
+        {"nombre": "Trachelomonas sp.",        "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 2000},
+        {"nombre": "Euglenophyta sp.",         "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 0},
     ],
     # Dinophyta (dinoflagelados) — unicelulares grandes.
     "Dinophyta": [
-        {"nombre": "Ceratium sp.",         "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 50000},
-        {"nombre": "Peridinium sp.",       "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 12000},
+        {"nombre": "Peridinium sp.",           "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 12000},
     ],
-    # Euglenozoa — unicelulares flagelados.
-    "Euglenozoa": [
-        {"nombre": "Euglena sp.",          "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 8000},
-        {"nombre": "Phacus sp.",           "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 3500},
-        {"nombre": "Trachelomonas sp.",    "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 2000},
+    # Cryptophyta — flagelados unicelulares pequeños con dos flagelos.
+    "Cryptophyta": [
+        {"nombre": "Cryptomonas sp",           "unidad": "celula", "celulas_por_unidad": 1, "volumen_celula_um3": 500},
     ],
 }
 
@@ -164,10 +193,12 @@ def get_metadata_especie(filo: str, nombre_especie: str) -> dict | None:
 ICONOS_FILO: dict[str, str] = {
     "Cyanobacteria":   "bubble_chart",
     "Bacillariophyta": "grain",
-    "Charophyta":      "spa",
     "Chlorophyta":     "eco",
+    "Ochrophyta":      "blur_circular",
+    "Charophyta":      "spa",
+    "Euglenophyta":    "blur_on",
     "Dinophyta":       "scatter_plot",
-    "Euglenozoa":      "blur_on",
+    "Cryptophyta":     "lens_blur",
 }
 
 
