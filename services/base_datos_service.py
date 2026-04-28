@@ -72,7 +72,7 @@ def get_datos_consolidados(
                 "puntos_muestreo(codigo, nombre, cuenca, tipo, eca_id, "
                 "ecas(id, codigo, nombre))" + _depth_extra
             )
-            .order("fecha_muestreo", desc=True)
+            .order("codigo", desc=False)
             .limit(5000)
         )
         # Test if the query works
@@ -90,7 +90,7 @@ def get_datos_consolidados(
         q_muestras = (
             db.table("muestras")
             .select(select_campos)
-            .order("fecha_muestreo", desc=True)
+            .order("codigo", desc=False)
             .limit(5000)
         )
         if campana_id:
