@@ -33,7 +33,17 @@ from services.resultado_service import (
     evaluar_resultado_ctx,
 )
 from services.cumplimiento_service import EstadoECA
+from services.fitoplancton_service import (
+    NIVELES_OMS_CIANOBACTERIAS,
+    NIVELES_OMS_2021_CIANOBACTERIAS,
+    evaluar_alerta_oms_cianobacterias,
+)
 from components.fitoplancton_form import render_subseccion_fitoplancton
+
+# Códigos de los parámetros agregados de fitoplancton — se renderizan con
+# semáforo OMS en lugar del veredicto ECA estándar (no hay ECA en la norma).
+COD_CYANO_CEL_ML:    str = "FITO_CYANOBACTERIA_CEL"
+COD_CYANO_BIOVOLUMEN: str = "FITO_CYANOBACTERIA_BIOVOL"
 
 # ─── Constantes de visualización ─────────────────────────────────────────────
 
@@ -99,6 +109,78 @@ def _chip_veredicto_eca(veredicto) -> str:
     motivo = (veredicto.motivo or "").replace('"', "'")
     return (
         f'<div title="{motivo}" style="background:{est["bg"]};color:{est["fg"]};'
+        f'padding:2px 8px;border-radius:10px;text-align:center;font-size:0.82em;'
+        f'font-weight:500;white-space:nowrap">{label}</div>'
+    )
+
+
+def _chip_oms_cianobacterias_cel(valor: float | None) -> str:
+    """
+    Chip para el parámetro Cianobacteria (cel/mL) con la paleta OMS 1999.
+    Niveles: vigilancia inicial >=200, alerta 1 >=2 000, alerta 2 >=100 000.
+    """
+    if valor is None:
+        return (
+            '<div title="Sin valor cargado" '
+            'style="background:#f1f3f5;color:#6c757d;padding:2px 8px;'
+            'border-radius:10px;text-align:center;font-size:0.82em;'
+            'font-weight:500;white-space:nowrap">Sin valor</div>'
+        )
+    nivel = evaluar_alerta_oms_cianobacterias(float(valor))
+    if nivel is None:
+        bg, fg, label, motivo = (
+            "#d4edda", "#155724", "Sin alerta",
+            "OMS 1999: < 200 cél/mL, sin nivel de alerta.",
+        )
+    else:
+        bg = nivel["color_bg"]
+        fg = nivel["color_fg"]
+        label = nivel["label"]
+        motivo = f"OMS 1999 — {nivel['descripcion']}".replace('"', "'")
+    return (
+        f'<div title="{motivo}" style="background:{bg};color:{fg};'
+        f'padding:2px 8px;border-radius:10px;text-align:center;font-size:0.82em;'
+        f'font-weight:500;white-space:nowrap">{label}</div>'
+    )
+
+
+def _chip_oms_cianobacterias_biovol(valor: float | None) -> str:
+    """
+    Chip para Cianobacteria (biovolumen mm³/L) con la paleta OMS 2021.
+    Umbrales: alerta 2 >=4,0; alerta 1 >=0,3; sin alerta otherwise (la fila
+    Vigilancia inicial por col/mL o fil/mL no se evalúa aquí porque esos
+    sub-conteos no se persisten en resultados_laboratorio — sólo viven en
+    el JSONB del análisis Sedgewick-Rafter, donde sí se muestra el banner
+    completo OMS 2021).
+    """
+    if valor is None:
+        return (
+            '<div title="Sin valor cargado" '
+            'style="background:#f1f3f5;color:#6c757d;padding:2px 8px;'
+            'border-radius:10px;text-align:center;font-size:0.82em;'
+            'font-weight:500;white-space:nowrap">Sin valor</div>'
+        )
+    v = float(valor)
+    if v >= 4.0:
+        nivel = NIVELES_OMS_2021_CIANOBACTERIAS[0]
+    elif v >= 0.3:
+        nivel = NIVELES_OMS_2021_CIANOBACTERIAS[1]
+    else:
+        bg, fg, label, motivo = (
+            "#d4edda", "#155724", "Sin alerta",
+            "OMS 2021: biovolumen < 0,3 mm³/L, sin nivel de alerta por biomasa.",
+        )
+        return (
+            f'<div title="{motivo}" style="background:{bg};color:{fg};'
+            f'padding:2px 8px;border-radius:10px;text-align:center;font-size:0.82em;'
+            f'font-weight:500;white-space:nowrap">{label}</div>'
+        )
+    bg = nivel["color_bg"]
+    fg = nivel["color_fg"]
+    label = nivel["label"]
+    motivo = f"OMS 2021 — {nivel['descripcion']} ({nivel['criterio']})".replace('"', "'")
+    return (
+        f'<div title="{motivo}" style="background:{bg};color:{fg};'
         f'padding:2px 8px;border-radius:10px;text-align:center;font-size:0.82em;'
         f'font-weight:500;white-space:nowrap">{label}</div>'
     )
@@ -295,9 +377,20 @@ def _render_categoria(
         else:
             cols[4].caption("—")
 
-        # Veredicto ECA via motor de cumplimiento (5 estados). Fallback al pill
-        # antiguo si no hay contexto completo (ej. página embebida sin datos).
-        if datos is not None:
+        # Veredicto en cels[5]:
+        #   - Cianobacteria (cel/mL)        → OMS 1999
+        #   - Cianobacteria (biovolumen)    → OMS 2021
+        #   - Resto                         → motor ECA estándar (5 estados)
+        codigo = fila.get("codigo")
+        if codigo == COD_CYANO_CEL_ML:
+            cols[5].markdown(
+                _chip_oms_cianobacterias_cel(val), unsafe_allow_html=True,
+            )
+        elif codigo == COD_CYANO_BIOVOLUMEN:
+            cols[5].markdown(
+                _chip_oms_cianobacterias_biovol(val), unsafe_allow_html=True,
+            )
+        elif datos is not None:
             ver = evaluar_resultado_ctx(datos, pid, valor_lab=val, cualificador=(cualif or None))
             cols[5].markdown(_chip_veredicto_eca(ver), unsafe_allow_html=True)
         else:
