@@ -19,12 +19,19 @@ from database.client import get_admin_client
 from database.seeds._utils import upsert_batch, imprimir_resumen
 
 CATEGORIAS: list[dict] = [
-    {"nombre": "Campo",           "descripcion": "Mediciones in situ con equipos de campo"},
-    {"nombre": "Fisicoquimico",   "descripcion": "Parámetros físicos, químicos y metales analizados en laboratorio"},
-    {"nombre": "Hidrobiologico",  "descripcion": "Organismos acuáticos indicadores de calidad"},
+    {"nombre": "Parámetros de Campo",
+     "descripcion": "Mediciones in situ con equipos de campo"},
+    {"nombre": "Parámetros Físico-Químicos (Inorgánicos / Orgánicos)",
+     "descripcion": "Parámetros físicos, químicos y metales analizados en laboratorio"},
+    {"nombre": "Parámetros Hidrobiológicos",
+     "descripcion": "Organismos acuáticos indicadores de calidad"},
 ]
 
-_CAT_NOMBRE = {1: "Campo", 2: "Fisicoquimico", 3: "Hidrobiologico"}
+_CAT_NOMBRE = {
+    1: "Parámetros de Campo",
+    2: "Parámetros Físico-Químicos (Inorgánicos / Orgánicos)",
+    3: "Parámetros Hidrobiológicos",
+}
 
 PARAMETROS: list[dict] = [
 

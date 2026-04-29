@@ -32,14 +32,15 @@ VALUES
     ('mm3/L', 'milímetros cúbicos por litro')
 ON CONFLICT (simbolo) DO NOTHING;
 
--- Categoría hidrobiológica.
+-- Categoría hidrobiológica (nombre canónico largo — ver migración 017 para el
+-- contexto de la consolidación de nombres de categorías).
 INSERT INTO categorias_parametro (nombre, descripcion)
-VALUES ('Hidrobiologico', 'Organismos acuáticos indicadores de calidad')
+VALUES ('Parámetros Hidrobiológicos', 'Organismos acuáticos indicadores de calidad')
 ON CONFLICT (nombre) DO NOTHING;
 
 -- Inserta los 9 parámetros. on_conflict por código → idempotente.
 WITH cat AS (
-    SELECT id FROM categorias_parametro WHERE nombre = 'Hidrobiologico' LIMIT 1
+    SELECT id FROM categorias_parametro WHERE nombre = 'Parámetros Hidrobiológicos' LIMIT 1
 ), uni_cel AS (
     SELECT id FROM unidades_medida WHERE simbolo = 'cel/mL' LIMIT 1
 ), uni_biovol AS (
