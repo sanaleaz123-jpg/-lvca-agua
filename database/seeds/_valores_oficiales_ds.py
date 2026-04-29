@@ -49,7 +49,7 @@ OFICIAL: dict[str, dict[str, tuple]] = {
         "E1":  ("NO_REGULADO", None, "UNT"),
         "E2":  ("NO_REGULADO", None, "UNT"),
     },
-    "P011":  {  # Color verdadero (Pt/Co)
+    "P010":  {  # Color verdadero (Pt/Co) — código P010 tras consolidación (migración 018)
         "A2":  (None, 100.0, "Pt/Co"),
         "D1":  (None, 100.0, "Pt/Co"),
         "E1":  (None, 20.0,  "Pt/Co"),

@@ -135,7 +135,7 @@ ECA_VALORES: list[dict] = [
     {"eca_codigo": "ECA-C1A1", "param_codigo": "P004", "valor_minimo": 6.0},
     {"eca_codigo": "ECA-C1A1", "param_codigo": "P006", "valor_maximo": 5.0},
     # Fisicoquimico lab
-    {"eca_codigo": "ECA-C1A1", "param_codigo": "P011", "valor_maximo": 15.0},
+    {"eca_codigo": "ECA-C1A1", "param_codigo": "P010", "valor_maximo": 15.0},
     {"eca_codigo": "ECA-C1A1", "param_codigo": "P019", "valor_maximo": 3.0},
     {"eca_codigo": "ECA-C1A1", "param_codigo": "P020", "valor_maximo": 10.0},
     {"eca_codigo": "ECA-C1A1", "param_codigo": "P028", "valor_maximo": 25.0},
@@ -183,7 +183,7 @@ ECA_VALORES: list[dict] = [
     {"eca_codigo": "ECA-C1A2", "param_codigo": "P003", "valor_maximo": 1600.0},
     {"eca_codigo": "ECA-C1A2", "param_codigo": "P004", "valor_minimo": 5.0},
     {"eca_codigo": "ECA-C1A2", "param_codigo": "P006", "valor_maximo": 100.0},
-    {"eca_codigo": "ECA-C1A2", "param_codigo": "P011", "valor_maximo": 100.0},
+    {"eca_codigo": "ECA-C1A2", "param_codigo": "P010", "valor_maximo": 100.0},
     {"eca_codigo": "ECA-C1A2", "param_codigo": "P019", "valor_maximo": 5.0},
     {"eca_codigo": "ECA-C1A2", "param_codigo": "P020", "valor_maximo": 20.0},
     {"eca_codigo": "ECA-C1A2", "param_codigo": "P028", "valor_maximo": 100.0},
