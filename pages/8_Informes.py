@@ -25,6 +25,10 @@ from services.informe_service import (
     generar_excel_punto,
     generar_pdf_campana,
 )
+from services.reporte_hidrobiologico_service import (
+    generar_docx_hidrobiologico_campana,
+    tiene_analisis_hidrobiologico,
+)
 from services.resultado_service import get_campanas
 from services.punto_service import get_puntos
 from services.cumplimiento_service import EstadoECA
@@ -209,9 +213,11 @@ def _render_informe_campana() -> None:
     # ── Descargas ────────────────────────────────────────────────────────
     st.divider()
     section_header("Descargas", "download")
-    dc1, dc2 = st.columns(2)
 
-    with dc1:
+    hay_hidrobio = tiene_analisis_hidrobiologico(campana_id)
+    cols_descarga = st.columns(3 if hay_hidrobio else 2)
+
+    with cols_descarga[0]:
         try:
             excel_bytes = generar_excel_campana(campana_id)
             st.download_button(
@@ -220,11 +226,12 @@ def _render_informe_campana() -> None:
                 file_name=f"informe_{campana['codigo']}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
+                icon=":material/table_view:",
             )
         except Exception as exc:
             st.error(f"Error generando Excel: {exc}")
 
-    with dc2:
+    with cols_descarga[1]:
         try:
             pdf_bytes = generar_pdf_campana(campana_id)
             st.download_button(
@@ -233,9 +240,40 @@ def _render_informe_campana() -> None:
                 file_name=f"informe_{campana['codigo']}.pdf",
                 mime="application/pdf",
                 use_container_width=True,
+                icon=":material/picture_as_pdf:",
             )
         except Exception as exc:
             st.error(f"Error generando PDF: {exc}")
+
+    if hay_hidrobio:
+        with cols_descarga[2]:
+            try:
+                docx_bytes = generar_docx_hidrobiologico_campana(campana_id)
+                st.download_button(
+                    label="Descargar datos hidrobiológicos",
+                    data=docx_bytes,
+                    file_name=f"hidrobiologia_{campana['codigo']}.docx",
+                    mime=(
+                        "application/vnd.openxmlformats-officedocument."
+                        "wordprocessingml.document"
+                    ),
+                    use_container_width=True,
+                    icon=":material/biotech:",
+                    help=(
+                        "Tabla de abundancia de fitoplancton por punto, "
+                        "con conteos por especie y resumen TOTAL / N° Cel/mL / "
+                        "N° Cel/L por phylum."
+                    ),
+                )
+            except Exception as exc:
+                st.error(f"Error generando reporte hidrobiológico: {exc}")
+    else:
+        st.caption(
+            ":material/info: La descarga *Datos hidrobiológicos* se habilita "
+            "cuando al menos una muestra de la campaña tenga el análisis de "
+            "fitoplancton (Sedgewick-Rafter) cargado en *Resultados de "
+            "laboratorio → Hidrobiológico*."
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
