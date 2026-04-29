@@ -308,13 +308,19 @@ def get_insitu_a_cadena_map() -> dict[str, str]:
 def get_parametros_lab_cadena() -> list[dict]:
     """
     Reemplazo dinámico de ``PARAMETROS_LAB_DEFAULT``.
-    Retorna parámetros de laboratorio (no campo) para la cadena de custodia.
+    Retorna parámetros de laboratorio (no campo) para la cadena de custodia,
+    selección en campañas y muestras de campo.
 
     Deduplica por `nombre` de forma defensiva: si hay dos parámetros con el
     mismo nombre activos en BD (p. ej. "Color verdadero" duplicado), se
     conserva solo el primero por código — así la UI no muestra checkboxes
     duplicados. La corrección definitiva debe hacerse desactivando la fila
     duplicada en la página Parámetros.
+
+    Excluye los parámetros agregados de fitoplancton (códigos ``FITO_*``):
+    son derivados automáticos del análisis Sedgewick-Rafter, no se "marcan"
+    para análisis manual. El parámetro agrupador es ``P120 Fitoplancton``,
+    que sí aparece y representa todo el conjunto.
     """
     params = get_parametros_activos()
     result: list[dict] = []
@@ -323,12 +329,16 @@ def get_parametros_lab_cadena() -> list[dict]:
         cat = clasificar_categoria(p)
         if cat in _CATEGORIAS_EXCLUIDAS or cat == "Campo":
             continue
+        codigo = p.get("codigo", "") or ""
+        # Phyla de fitoplancton (Cyanobacteria, Bacillariophyta, ...) y
+        # Cyanobacteria-biovolumen son sumatorias automáticas, no se eligen.
+        if codigo.startswith("FITO_"):
+            continue
         nombre = (p.get("nombre") or "").strip()
         nombre_key = nombre.lower()
         if nombre_key in nombres_vistos:
             continue
         nombres_vistos.add(nombre_key)
-        codigo = p.get("codigo", "")
         result.append({
             "clave": codigo.lower(),
             "nombre": nombre,
