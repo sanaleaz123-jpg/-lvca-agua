@@ -41,6 +41,25 @@ def _es_admin() -> bool:
     return getattr(sesion, "rol", None) == "administrador"
 
 
+# Decimales por categoría para mostrar en la tabla (no persiste en BD).
+_FORMATO_POR_CATEGORIA = {
+    "Parámetros de Campo": "%.2f",
+    "Parámetros Físico-Químicos (Inorgánicos / Orgánicos)": "%.3f",
+    "Parámetros Hidrobiológicos": "%.1f",
+}
+_FORMATO_FALLBACK = "%.4g"
+
+
+def _formato_por_codigo(cat_params: dict) -> dict:
+    """Mapa {codigo: format_string} según la categoría del parámetro."""
+    mapa: dict[str, str] = {}
+    for cat_nombre, codigos in cat_params.items():
+        fmt = _FORMATO_POR_CATEGORIA.get(cat_nombre, _FORMATO_FALLBACK)
+        for cod in codigos:
+            mapa[cod] = fmt
+    return mapa
+
+
 def _excede_eca(valor, eca_id: str | None, param_codigo: str, limites: dict) -> bool:
     """Retorna True si el valor excede el ECA del punto."""
     if valor is None or eca_id is None:
@@ -141,6 +160,7 @@ def main() -> None:
     # ── Filtrar columnas por categoría (dinámico desde BD) ──────────────
     cat_params = get_cat_params()
     COLUMNAS_PARAMETROS = get_columnas_parametros()
+    formato_codigo = _formato_por_codigo(cat_params)
 
     codigos_visibles = []
     for cat in categoria_filtro:
@@ -226,7 +246,9 @@ def main() -> None:
         col_config = {}
         for cod, label in columnas_visibles:
             col_config[label] = st.column_config.NumberColumn(
-                label, format="%.4g", help=f"Parámetro {cod}"
+                label,
+                format=formato_codigo.get(cod, _FORMATO_FALLBACK),
+                help=f"Parámetro {cod}",
             )
 
         styled = df.style.apply(_aplicar_estilos, axis=None)
@@ -236,6 +258,7 @@ def main() -> None:
             use_container_width=True,
             hide_index=True,
             height=min(700, 35 * len(df) + 38),
+            column_config=col_config,
         )
 
         # Botón de descarga
@@ -301,7 +324,7 @@ def main() -> None:
                             nuevo_val = st.number_input(
                                 f"{'🔴 ' if excede else ''}{label}",
                                 value=float(val_actual) if val_actual is not None else None,
-                                format="%.4g",
+                                format=formato_codigo.get(cod, _FORMATO_FALLBACK),
                                 help=help_txt or None,
                                 key=f"edit_{cod}_{idx_muestra}",
                                 step=None,
