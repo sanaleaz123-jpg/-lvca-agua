@@ -649,6 +649,177 @@ def get_clorofila_de_muestra(muestra_id: str) -> Optional[dict]:
 # Persistencia (Supabase — JSONB en muestras.datos_fitoplancton)
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Sincronización con resultados_laboratorio
+#
+# Cuando se guarda un análisis Sedgewick-Rafter, además del JSONB con detalle
+# por especie, se escriben filas agregadas en resultados_laboratorio para que
+# los phyla aparezcan como parámetros normales del informe (cumplimiento, base
+# de datos, exportaciones). Mapeo phylum → código de parámetro:
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Códigos de parámetros agregados (creados en migración 016).
+PARAMETRO_FITOPLANCTON_TOTAL: str = "P120"
+PARAMETRO_CYANO_BIOVOL:       str = "FITO_CYANOBACTERIA_BIOVOL"
+
+# Phylum (clave de TAXONOMIA_FITOPLANCTON) → código del parámetro cel/mL.
+PARAMETROS_PHYLUM_CEL_ML: dict[str, str] = {
+    "Cyanobacteria":   "FITO_CYANOBACTERIA_CEL",
+    "Bacillariophyta": "FITO_BACILLARIOPHYTA",
+    "Chlorophyta":     "FITO_CHLOROPHYTA",
+    "Ochrophyta":      "FITO_OCHROPHYTA",
+    "Charophyta":      "FITO_CHAROPHYTA",
+    "Euglenophyta":    "FITO_EUGLENOPHYTA",
+    "Dinophyta":       "FITO_DINOPHYTA",
+    "Cryptophyta":     "FITO_CRYPTOPHYTA",
+}
+
+
+def _ids_parametros_fitoplancton(db) -> dict[str, str]:
+    """
+    Devuelve {codigo → parametro_id (uuid)} para los parámetros agregados de
+    fitoplancton. Si la migración 016 no se ejecutó, los códigos FITO_* faltarán
+    y la sincronización se saltea silenciosamente para no romper el guardado.
+    """
+    codigos = (
+        list(PARAMETROS_PHYLUM_CEL_ML.values())
+        + [PARAMETRO_CYANO_BIOVOL, PARAMETRO_FITOPLANCTON_TOTAL]
+    )
+    res = (
+        db.table("parametros")
+        .select("id, codigo")
+        .in_("codigo", codigos)
+        .execute()
+    )
+    return {r["codigo"]: r["id"] for r in (res.data or [])}
+
+
+def _calcular_filas_resultados_laboratorio(
+    muestra_id:          str,
+    resultados_por_filo: dict,
+    ids_parametros:      dict[str, str],
+    analista_id:         Optional[str],
+) -> list[dict]:
+    """
+    Construye las 10 filas (8 phyla cel/mL + Cyanobacteria biovolumen + total
+    Fitoplancton) para upsertar en resultados_laboratorio.
+
+    Sólo se incluyen filas cuyo `parametro_id` exista en `ids_parametros` —
+    si la migración 016 no se aplicó, las filas que falten se omiten.
+    """
+    fecha_hoy = datetime.utcnow().date().isoformat()
+    filas: list[dict] = []
+    total_general_cel_ml = 0.0
+
+    for filo, codigo_param in PARAMETROS_PHYLUM_CEL_ML.items():
+        cel_ml = total_cel_ml_filo(resultados_por_filo, filo)
+        total_general_cel_ml += cel_ml
+        if codigo_param in ids_parametros:
+            filas.append({
+                "muestra_id":     muestra_id,
+                "parametro_id":   ids_parametros[codigo_param],
+                "valor_numerico": round(cel_ml, 4),
+                "valor_texto":    None,
+                "analista_id":    analista_id,
+                "fecha_analisis": fecha_hoy,
+            })
+
+    # Cyanobacteria biovolumen (mm³/L) — para evaluar OMS 2021.
+    if PARAMETRO_CYANO_BIOVOL in ids_parametros:
+        biovol = total_biovolumen_filo(resultados_por_filo, CYANOBACTERIA_FILO)
+        filas.append({
+            "muestra_id":     muestra_id,
+            "parametro_id":   ids_parametros[PARAMETRO_CYANO_BIOVOL],
+            "valor_numerico": round(biovol, 6),
+            "valor_texto":    None,
+            "analista_id":    analista_id,
+            "fecha_analisis": fecha_hoy,
+        })
+
+    # Total Fitoplancton (cel/mL) = sumatoria de todos los phyla.
+    if PARAMETRO_FITOPLANCTON_TOTAL in ids_parametros:
+        filas.append({
+            "muestra_id":     muestra_id,
+            "parametro_id":   ids_parametros[PARAMETRO_FITOPLANCTON_TOTAL],
+            "valor_numerico": round(total_general_cel_ml, 4),
+            "valor_texto":    None,
+            "analista_id":    analista_id,
+            "fecha_analisis": fecha_hoy,
+        })
+
+    return filas
+
+
+def _sincronizar_resultados_laboratorio(
+    muestra_id:          str,
+    resultados_por_filo: dict,
+    analista_id:         Optional[str],
+) -> int:
+    """
+    Upsertea en resultados_laboratorio una fila por phylum + biovolumen +
+    Fitoplancton total. Devuelve el número de filas escritas.
+
+    La sincronización es best-effort: si falla por un parámetro validado o
+    por permisos, se reporta como excepción al caller pero no se hace rollback
+    del JSONB ya guardado.
+    """
+    db = get_admin_client()
+    ids = _ids_parametros_fitoplancton(db)
+    if not ids:
+        # Migración 016 no aplicada o parámetros ausentes — saltar sin romper.
+        return 0
+
+    # Respetar resultados ya validados: no se sobreescriben.
+    parametro_ids = list(ids.values())
+    try:
+        res_val = (
+            db.table("resultados_laboratorio")
+            .select("parametro_id")
+            .eq("muestra_id", muestra_id)
+            .in_("parametro_id", parametro_ids)
+            .eq("validado", True)
+            .execute()
+        )
+        bloqueados = {r["parametro_id"] for r in (res_val.data or [])}
+    except Exception:
+        # Pre-migración 006: columna validado no existe.
+        bloqueados = set()
+
+    filas = _calcular_filas_resultados_laboratorio(
+        muestra_id, resultados_por_filo, ids, analista_id,
+    )
+    filas = [f for f in filas if f["parametro_id"] not in bloqueados]
+    if not filas:
+        return 0
+
+    db.table("resultados_laboratorio").upsert(
+        filas, on_conflict="muestra_id,parametro_id"
+    ).execute()
+    return len(filas)
+
+
+def _eliminar_resultados_laboratorio_fitoplancton(muestra_id: str) -> int:
+    """
+    Elimina las filas agregadas de fitoplancton (8 phyla + biovol + total)
+    para una muestra. Se llama desde borrar_analisis_fitoplancton.
+    """
+    db = get_admin_client()
+    ids = _ids_parametros_fitoplancton(db)
+    if not ids:
+        return 0
+    parametro_ids = list(ids.values())
+    db.table("resultados_laboratorio") \
+        .delete() \
+        .eq("muestra_id", muestra_id) \
+        .in_("parametro_id", parametro_ids) \
+        .execute()
+    return len(parametro_ids)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Persistencia (Supabase — JSONB en muestras.datos_fitoplancton)
+# ─────────────────────────────────────────────────────────────────────────────
+
 def guardar_analisis_fitoplancton(
     muestra_id:         str,
     vol_muestra_ml:     float,
@@ -659,12 +830,14 @@ def guardar_analisis_fitoplancton(
     analista_id:        Optional[str] = None,
 ) -> None:
     """
-    Persiste el análisis de fitoplancton como un único documento JSONB en
-    muestras.datos_fitoplancton.
+    Persiste el análisis de fitoplancton:
 
-    No usa la tabla resultados_laboratorio porque (a) no es un parámetro
-    del DS 004-2017-MINAM y (b) un análisis Sedgewick-Rafter es un documento
-    único por muestra que agrupa metadatos + 59 especies.
+      - Documento JSONB con metadatos + detalle por especie en
+        muestras.datos_fitoplancton (es la fuente de verdad).
+      - 10 filas agregadas en resultados_laboratorio (8 phyla en cel/mL,
+        Cyanobacteria en biovolumen mm³/L y Fitoplancton total en cel/mL)
+        para que los phyla aparezcan como parámetros normales en informes
+        y exportaciones. Esta sincronización es derivada del JSONB.
     """
     documento = {
         "metadatos": {
@@ -696,6 +869,17 @@ def guardar_analisis_fitoplancton(
         pass
 
     db.table("muestras").update({"datos_fitoplancton": documento}).eq("id", muestra_id).execute()
+
+    # Sincronizar resultados_laboratorio (8 phyla + biovol + total).
+    try:
+        _sincronizar_resultados_laboratorio(
+            muestra_id, resultados_por_filo, analista_id,
+        )
+    except Exception:
+        # Si la sincronización falla (permisos, parámetro validado, etc.)
+        # el JSONB ya quedó guardado — el caller verá los detalles del error
+        # más arriba si vuelve a guardar. No se hace rollback.
+        pass
 
     # Resumen del cambio para el audit log: total cianobacterias + nº especies.
     total_cyano = total_cel_ml_filo(resultados_por_filo, CYANOBACTERIA_FILO)
@@ -741,9 +925,22 @@ def borrar_analisis_fitoplancton(
     muestra_id: str,
     usuario_id: Optional[str] = None,
 ) -> None:
-    """Limpia el análisis de fitoplancton de la muestra (set NULL) y audita."""
+    """
+    Limpia el análisis de fitoplancton de la muestra:
+      - set NULL en muestras.datos_fitoplancton
+      - elimina las 10 filas agregadas de resultados_laboratorio (phyla +
+        biovolumen + total Fitoplancton)
+      - audita la operación
+    """
     db = get_admin_client()
     db.table("muestras").update({"datos_fitoplancton": None}).eq("id", muestra_id).execute()
+
+    try:
+        _eliminar_resultados_laboratorio_fitoplancton(muestra_id)
+    except Exception:
+        # No romper el borrado del JSONB si falla la limpieza de derivados.
+        pass
+
     try:
         registrar_cambio(
             tabla="muestras",

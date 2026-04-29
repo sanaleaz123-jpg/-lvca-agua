@@ -254,8 +254,82 @@ PARAMETROS: list[dict] = [
 
     {"codigo": "P120", "nombre": "Fitoplancton",
      "nombre_corto": "Fitoplancton", "categoria_id": 3, "unidad_simbolo": "cel/mL",
-     "metodo_referencia": "Utermohl microscopio invertido",
-     "requiere_preservacion": True, "tipo_preservacion": "Lugol 1% 4°C", "tiempo_max_analisis_horas": 168},
+     "metodo_referencia": "Utermohl/Sedgewick-Rafter (sumatoria de todos los phyla)",
+     "requiere_preservacion": True, "tipo_preservacion": "Lugol 1% 4°C", "tiempo_max_analisis_horas": 168,
+     "es_eca": False,
+     "observacion_tecnica": (
+         "Total de fitoplancton (cel/mL): sumatoria automática de las densidades "
+         "calculadas para todos los phyla. Se calcula al guardar el análisis "
+         "Sedgewick-Rafter en Resultados de laboratorio → Hidrobiológico."
+     )},
+
+    # Phyla de fitoplancton — sumatoria automática de las especies del phylum
+    # al guardar el análisis Sedgewick-Rafter. No tienen ECA (DS 004-2017-MINAM
+    # no regula conteos por phylum). Códigos slug FITO_* → no se exponen al
+    # usuario, son sólo identificadores internos para upsert idempotente.
+    {"codigo": "FITO_CYANOBACTERIA_CEL", "nombre": "Cianobacteria",
+     "nombre_corto": "Cianobacteria", "categoria_id": 3, "unidad_simbolo": "cel/mL",
+     "metodo_referencia": "Sedgewick-Rafter (sumatoria de especies del phylum Cyanobacteria)",
+     "es_eca": False,
+     "observacion_tecnica": (
+         "Sumatoria automática de las especies de Cyanobacteria del análisis "
+         "Sedgewick-Rafter. Evaluación contra OMS 1999 (Drinking-water Alert "
+         "Levels Framework): vigilancia inicial ≥200 cél/mL, alerta 1 ≥2 000 "
+         "cél/mL, alerta 2 ≥100 000 cél/mL."
+     )},
+
+    {"codigo": "FITO_CYANOBACTERIA_BIOVOL", "nombre": "Cianobacteria (biovolumen)",
+     "nombre_corto": "Cianobacteria biovolumen", "categoria_id": 3, "unidad_simbolo": "mm3/L",
+     "metodo_referencia": "Sedgewick-Rafter (sumatoria de biovolumen de especies del phylum Cyanobacteria)",
+     "es_eca": False,
+     "observacion_tecnica": (
+         "Sumatoria automática del biovolumen estimado de las especies de "
+         "Cyanobacteria. Evaluación contra OMS 2021 (Toxic Cyanobacteria in "
+         "Water, 2nd ed.): vigilancia inicial >10 colonias/mL o >50 filamentos/mL, "
+         "alerta 1 ≥0,3 mm³/L, alerta 2 ≥4,0 mm³/L."
+     )},
+
+    {"codigo": "FITO_BACILLARIOPHYTA", "nombre": "Bacillariophyta",
+     "nombre_corto": "Diatomeas", "categoria_id": 3, "unidad_simbolo": "cel/mL",
+     "metodo_referencia": "Sedgewick-Rafter (sumatoria de especies del phylum Bacillariophyta)",
+     "es_eca": False,
+     "observacion_tecnica": "Sumatoria automática de las especies del phylum Bacillariophyta (diatomeas)."},
+
+    {"codigo": "FITO_CHLOROPHYTA", "nombre": "Chlorophyta",
+     "nombre_corto": "Algas verdes", "categoria_id": 3, "unidad_simbolo": "cel/mL",
+     "metodo_referencia": "Sedgewick-Rafter (sumatoria de especies del phylum Chlorophyta)",
+     "es_eca": False,
+     "observacion_tecnica": "Sumatoria automática de las especies del phylum Chlorophyta (algas verdes)."},
+
+    {"codigo": "FITO_OCHROPHYTA", "nombre": "Ochrophyta",
+     "nombre_corto": "Algas doradas (Chrysophyta)", "categoria_id": 3, "unidad_simbolo": "cel/mL",
+     "metodo_referencia": "Sedgewick-Rafter (sumatoria de especies del phylum Ochrophyta)",
+     "es_eca": False,
+     "observacion_tecnica": "Sumatoria automática de las especies del phylum Ochrophyta (Chrysophyta)."},
+
+    {"codigo": "FITO_CHAROPHYTA", "nombre": "Charophyta",
+     "nombre_corto": "Carofitas", "categoria_id": 3, "unidad_simbolo": "cel/mL",
+     "metodo_referencia": "Sedgewick-Rafter (sumatoria de especies del phylum Charophyta)",
+     "es_eca": False,
+     "observacion_tecnica": "Sumatoria automática de las especies del phylum Charophyta."},
+
+    {"codigo": "FITO_EUGLENOPHYTA", "nombre": "Euglenophyta",
+     "nombre_corto": "Euglenoideos", "categoria_id": 3, "unidad_simbolo": "cel/mL",
+     "metodo_referencia": "Sedgewick-Rafter (sumatoria de especies del phylum Euglenophyta)",
+     "es_eca": False,
+     "observacion_tecnica": "Sumatoria automática de las especies del phylum Euglenophyta."},
+
+    {"codigo": "FITO_DINOPHYTA", "nombre": "Dinophyta",
+     "nombre_corto": "Dinoflagelados", "categoria_id": 3, "unidad_simbolo": "cel/mL",
+     "metodo_referencia": "Sedgewick-Rafter (sumatoria de especies del phylum Dinophyta)",
+     "es_eca": False,
+     "observacion_tecnica": "Sumatoria automática de las especies del phylum Dinophyta (dinoflagelados)."},
+
+    {"codigo": "FITO_CRYPTOPHYTA", "nombre": "Cryptophyta",
+     "nombre_corto": "Criptofitas", "categoria_id": 3, "unidad_simbolo": "cel/mL",
+     "metodo_referencia": "Sedgewick-Rafter (sumatoria de especies del phylum Cryptophyta)",
+     "es_eca": False,
+     "observacion_tecnica": "Sumatoria automática de las especies del phylum Cryptophyta."},
 
     {"codigo": "P124", "nombre": "Clorofila A",
      "nombre_corto": "Cl-a", "categoria_id": 3, "unidad_simbolo": "ug/L",
