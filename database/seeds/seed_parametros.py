@@ -86,9 +86,12 @@ PARAMETROS: list[dict] = [
     # CATEGORÍA 2 — FISICOQUÍMICO (laboratorio)
     # ════════════════════════════════════════════════════════
 
-    {"codigo": "P011", "nombre": "Color verdadero",
-     "nombre_corto": "Color V.", "categoria_id": 2, "unidad_simbolo": "UCV",
-     "metodo_referencia": "SM 2120 C espectrofotométrico con filtración previa 0,45 µm",
+    # Unidad: el ECA del DS 004-2017-MINAM expresa Color verdadero en Pt/Co
+    # (Unidades Platino-Cobalto). La fila legacy con código P011 / unidad UCV
+    # se eliminó vía migración 018.
+    {"codigo": "P010", "nombre": "Color verdadero",
+     "nombre_corto": "Color V.", "categoria_id": 2, "unidad_simbolo": "U Pt-Co",
+     "metodo_referencia": "STANDARD METHODS — SM 2120 C espectrofotométrico con filtración previa 0,45 µm",
      "observacion_tecnica": (
          "CRÍTICO: requiere filtración simple previa (típicamente 0,45 µm) antes del "
          "análisis — Nota (b) del DS. Reportar color aparente (sin filtrar) NO cumple el ECA. "
