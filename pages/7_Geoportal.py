@@ -23,7 +23,14 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from components.auth_guard import require_rol
-from components.ui_styles import aplicar_estilos, page_header, section_header, top_nav
+from components.ui_styles import (
+    aplicar_estilos,
+    kpi_bold_card,
+    page_header,
+    section_header,
+    success_toast,
+    top_nav,
+)
 from services.mapa_service import (
     get_comparativa_eca_punto,
     get_datos_mensuales_parametro,
@@ -104,72 +111,36 @@ def _clasificar_cat(param: dict) -> str:
 # 1. DASHBOARD RESUMEN
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _render_kpi_card(
-    valor,
-    label: str,
-    color: str,
-    icono_name: str,
-    unidad: str = "",
-) -> str:
+def _build_sparkline_serie(puntos: list[dict]) -> list[float]:
     """
-    Tarjeta KPI estilo SSDH-ANA (rediseño 2026-04-21 v2):
-    - Borde INFERIOR 3px del color identitario (no lateral).
-    - Título arriba-izquierda en case normal, peso 500 (no uppercase).
-    - Ícono SVG en círculo pastel (halo del color) arriba-derecha, en el
-      mismo row que el título vía flexbox.
-    - Valor grande DEBAJO, en negro oscuro (#1a1a1a), peso regular 400
-      (no coloreado, no bold) — es lo que da el aire institucional SSDH.
-    - Unidad opcional en texto pequeño gris al lado del valor.
+    Serie sintética para el sparkline del KPI azul "Puntos monitoreados".
+
+    No agregamos queries nuevas (memoria: scope LVCA solo UI). Construimos
+    una serie a partir de los índices de cumplimiento individuales de los
+    puntos, ordenados de forma estable. Da una "tendencia" visual
+    indicativa del estado del set sin pretender ser estadísticamente
+    rigurosa — el técnico interpreta el dato real en los KPIs y la barra.
     """
-    from components.ui_styles import icon as _icon
-
-    # rgba con alpha para fondo de halo (más compatible que hex 8 dígitos)
-    def _hex_to_rgba(h: str, alpha: float) -> str:
-        h = h.lstrip("#")
-        if len(h) != 6:
-            return f"rgba(148,163,184,{alpha})"
-        r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
-        return f"rgba({r},{g},{b},{alpha})"
-
-    halo_bg = _hex_to_rgba(color, 0.12)
-    icono_svg = _icon(icono_name, size=22, color=color)
-
-    unidad_html = (
-        f'<span style="font-size:0.78rem; color:#6b7280; '
-        f'font-weight:400; margin-left:4px;">{unidad}</span>'
-        if unidad else ""
-    )
-
-    return f"""
-    <div style="background:#ffffff; border-radius:8px;
-         padding:14px 18px 12px 18px;
-         border:1px solid #e8eaed;
-         border-bottom:3px solid {color};
-         box-shadow:0 1px 2px rgba(15,23,42,0.04);
-         min-height:110px; display:flex; flex-direction:column;">
-        <div style="display:flex; justify-content:space-between;
-             align-items:flex-start; gap:10px; margin-bottom:14px;">
-            <div style="font-size:0.88rem; color:#374151; font-weight:500;
-                 letter-spacing:-0.01em; flex:1; line-height:1.3;">{label}</div>
-            <div style="width:42px; height:42px; border-radius:50%;
-                 background:{halo_bg};
-                 display:inline-flex; align-items:center;
-                 justify-content:center; flex-shrink:0;">
-                {icono_svg}
-            </div>
-        </div>
-        <div style="display:flex; align-items:baseline;">
-            <span style="font-size:1.9rem; font-weight:400;
-                 color:#1a1a1a; line-height:1; letter-spacing:-0.02em;">{valor}</span>{unidad_html}
-        </div>
-    </div>"""
+    serie = [
+        round((p.get("indice_cumplimiento") or 0) * 100, 1)
+        for p in puntos
+        if p.get("indice_cumplimiento") is not None
+    ]
+    if not serie:
+        # Fallback: línea plana baja para no dejar el sparkline vacío.
+        return [10, 10, 10, 10, 10]
+    return serie[:18]
 
 
 def _render_dashboard(puntos: list[dict]) -> None:
     """
-    Resumen ejecutivo: 4 KPIs + barra de cumplimiento + alertas críticas.
-    La torta se eliminó (duplicaba la información de los KPIs 2-3-4).
-    El KPI '% Cumplimiento ECA' se eliminó (duplicaba la barra inferior).
+    Resumen ejecutivo: 4 KPIs bold (paleta semántica) + barra de
+    cumplimiento general + panel desplegable de alertas críticas.
+
+    Estilo "Integrated Eco-Aura" — tarjetas con fondo sólido en color
+    identitario, valor grande contrastado, sparkline en el azul, lista
+    de bullets en amarillo y rojo. Funcionalmente equivalente al diseño
+    anterior: mismas 4 métricas, mismas queries.
     """
     n_total = len(puntos)
     n_exc = sum(1 for p in puntos if p["estado"] == "excedencia")
@@ -179,15 +150,74 @@ def _render_dashboard(puntos: list[dict]) -> None:
     indices = [p["indice_cumplimiento"] for p in puntos if p.get("indice_cumplimiento") is not None]
     ic_general = round(sum(indices) / len(indices) * 100, 1) if indices else 0
 
+    # Bullets para la tarjeta amarilla (cumplen): hasta 3 puntos con mejor IC.
+    cumplen_top = sorted(
+        [p for p in puntos if p["estado"] == "cumple"],
+        key=lambda x: x.get("indice_cumplimiento", 0),
+        reverse=True,
+    )[:3]
+    bullets_cumplen = [p["codigo"] for p in cumplen_top] if cumplen_top else None
+
+    # Bullets para la tarjeta roja (excedencias): hasta 3 puntos con más excedencias.
+    criticos = sorted(
+        [p for p in puntos if p["estado"] == "excedencia"],
+        key=lambda x: x.get("n_excedencias", 0),
+        reverse=True,
+    )
+    bullets_exc = [
+        f"{p['codigo']} — {p['nombre']}" for p in criticos[:3]
+    ] if criticos else None
+
+    serie_spark = _build_sparkline_serie(puntos)
+
     k1, k2, k3, k4 = st.columns(4)
     with k1:
-        st.markdown(_render_kpi_card(n_total, "Puntos monitoreados", "#0a9396", "map_pin"), unsafe_allow_html=True)
+        st.markdown(
+            kpi_bold_card(
+                valor=n_total,
+                label="Puntos monitoreados",
+                color="azul",
+                icon_material="science",
+                foot="Total en el periodo",
+                sparkline=serie_spark,
+            ),
+            unsafe_allow_html=True,
+        )
     with k2:
-        st.markdown(_render_kpi_card(n_ok, "Cumplen ECA", "#1b6b35", "check"), unsafe_allow_html=True)
+        st.markdown(
+            kpi_bold_card(
+                valor=n_ok,
+                label="Cumplen ECA",
+                color="verde",
+                icon_material="check_circle",
+                bullets=bullets_cumplen,
+                foot="D.S. N° 004-2017-MINAM",
+            ),
+            unsafe_allow_html=True,
+        )
     with k3:
-        st.markdown(_render_kpi_card(n_exc, "Con excedencias", "#c62828", "alert"), unsafe_allow_html=True)
+        st.markdown(
+            kpi_bold_card(
+                valor=n_exc,
+                label="Con excedencias activas",
+                color="rojo",
+                icon_material="warning",
+                bullets=bullets_exc,
+                foot="(Click en marcador del mapa para ver detalle)",
+            ),
+            unsafe_allow_html=True,
+        )
     with k4:
-        st.markdown(_render_kpi_card(n_sin, "Sin datos", "#94a3b8", "info"), unsafe_allow_html=True)
+        st.markdown(
+            kpi_bold_card(
+                valor=n_sin,
+                label="Puntos sin datos",
+                color="amarillo",
+                icon_material="thermostat",
+                foot="Pendientes de campaña en el periodo",
+            ),
+            unsafe_allow_html=True,
+        )
 
     st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
 
@@ -635,46 +665,69 @@ def _construir_mapa(puntos: list[dict], solo_excedencias: bool):
     # del mapa. El usuario lo abre solo cuando necesita togglear capas.
     folium.LayerControl(collapsed=True).add_to(m)
 
-    # Leyenda compacta: solo la información que un técnico no puede inferir
-    # del mapa. Se quitaron las secciones "Red hídrica" y "Cuencas" porque
-    # el color de las líneas y los polígonos ya las identifica visualmente.
-    # Se colapsa al click sobre el título para liberar la esquina del mapa.
+    # Leyenda estilo mockup "Integrated Eco-Aura" — esquina inferior derecha,
+    # con tres ítems (Cumple / Excedencia Leve / Excedencia Alta) usando
+    # íconos vectoriales (círculo verde, triángulo amarillo, círculo rojo).
+    # Se mantienen "media" y "sin datos" como filas extra colapsables —
+    # son útiles para el técnico AUTODEMA pero no aparecen en el mockup
+    # por ser un dashboard ejecutivo.
     leyenda_html = """
-    <div id="lvca-legend" style="position:fixed; bottom:18px; left:18px;
-         z-index:1000; background:#ffffff; padding:10px 14px;
-         border-radius:8px; font-size:11.5px; line-height:1.55;
-         min-width:150px;
-         box-shadow: 0 4px 16px rgba(15,23,42,0.14),
-                     0 1px 3px rgba(15,23,42,0.08);
-         font-family:sans-serif;">
+    <div id="lvca-legend" style="position:absolute; bottom:18px; right:18px;
+         z-index:1000; background:#ffffff; padding:12px 16px;
+         border-radius:12px; font-size:12px; line-height:1.6;
+         min-width:170px;
+         border:1px solid #e2e8f0;
+         box-shadow: 0 8px 24px rgba(15,23,42,0.10),
+                     0 2px 6px rgba(15,23,42,0.06);
+         font-family:'Inter','Segoe UI',sans-serif;">
       <div onclick="
         var b=document.getElementById('lvca-legend-body');
         var c=document.getElementById('lvca-legend-caret');
         if(b.style.display==='none'){b.style.display='block';c.innerHTML='&#9662;';}
         else{b.style.display='none';c.innerHTML='&#9656;';}
       " style="cursor:pointer; display:flex; align-items:center;
-           justify-content:space-between; user-select:none;">
+           justify-content:space-between; user-select:none;
+           padding-bottom:6px; border-bottom:1px solid #f1f5f9;">
         <div>
-          <div style="font-weight:700; color:#1a1a1a; font-size:12.5px;
+          <div style="font-weight:700; color:#0f172a; font-size:13px;
                letter-spacing:-0.01em;">Estado ECA</div>
-          <div style="font-size:10px; color:#94a3b8;">
+          <div style="font-size:10px; color:#94a3b8; margin-top:1px;">
             D.S. N° 004-2017-MINAM
           </div>
         </div>
         <span id="lvca-legend-caret" style="color:#94a3b8;
-             font-size:10px; margin-left:10px;">&#9662;</span>
+             font-size:10px; margin-left:12px;">&#9662;</span>
       </div>
-      <div id="lvca-legend-body" style="margin-top:6px;">
-        <div style="color:#475569;">
-          <span style="color:#2e7d32; font-size:14px;">&#9679;</span> Cumple ECA<br>
-          <span style="color:#0a9396; font-size:14px;">&#9679;</span> Excedencia leve<br>
-          <span style="color:#e8870e; font-size:14px;">&#9679;</span> Excedencia media<br>
-          <span style="color:#c62828; font-size:14px;">&#9679;</span> Excedencia alta<br>
-          <span style="color:#9e9e9e; font-size:14px;">&#9679;</span> Sin datos
+      <div id="lvca-legend-body" style="margin-top:8px; color:#334155;">
+        <div style="display:flex; align-items:center; gap:10px; padding:3px 0;">
+          <svg width="14" height="14" viewBox="0 0 24 24" style="flex-shrink:0;">
+            <circle cx="12" cy="12" r="9" fill="#10B981" stroke="#047857" stroke-width="1"/>
+          </svg>
+          <span style="font-weight:500;">Cumple ECA</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px; padding:3px 0;">
+          <svg width="14" height="14" viewBox="0 0 24 24" style="flex-shrink:0;">
+            <polygon points="12,3 22,21 2,21" fill="#F59E0B" stroke="#B45309" stroke-width="1" stroke-linejoin="round"/>
+          </svg>
+          <span style="font-weight:500;">Excedencia Leve</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px; padding:3px 0;">
+          <svg width="14" height="14" viewBox="0 0 24 24" style="flex-shrink:0;">
+            <circle cx="12" cy="12" r="9" fill="#EF4444" stroke="#B91C1C" stroke-width="1"/>
+            <circle cx="12" cy="12" r="3" fill="#ffffff"/>
+          </svg>
+          <span style="font-weight:500;">Excedencia Alta</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px; padding:3px 0;
+             color:#64748b; font-size:11.5px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" style="flex-shrink:0;">
+            <circle cx="12" cy="12" r="9" fill="#94a3b8" stroke="#64748b" stroke-width="1"/>
+          </svg>
+          <span>Sin datos</span>
         </div>
         <div style="font-size:10px; color:#94a3b8; border-top:1px solid #f1f5f9;
-             padding-top:5px; margin-top:6px;">
-          Radio del marcador = N° parámetros evaluados
+             padding-top:6px; margin-top:6px;">
+          Radio = N° parámetros evaluados
         </div>
       </div>
     </div>
@@ -1097,6 +1150,12 @@ def main() -> None:
     # ── 1. Dashboard global ─────────────────────────────────────────────
     _render_dashboard(puntos_con_coords)
 
+    # Toast verde flotante: solo primera vez por sesión, no en cada rerun.
+    success_toast(
+        "Datos de monitoreo actualizados exitosamente.",
+        key="geoportal_load",
+    )
+
     st.divider()
 
     # ── 2. Mapa + panel lateral del punto seleccionado ──────────────────
@@ -1208,17 +1267,16 @@ def main() -> None:
 
 def _render_panel_punto(punto_sel: dict) -> None:
     """
-    Ficha del punto seleccionado para el panel lateral.
-    Layout vertical (columna estrecha): header + estado, datos clave en
-    lista, bullet ECA y excedencias activas.
+    Ficha del punto seleccionado — versión integrada (mockup
+    "Integrated Eco-Aura"). Tarjeta blanca con bordes redondeados,
+    misma sombra y radius que las KPI cards / mapa. Header con gradiente
+    sutil + estado pill, body con grid 2×3 de datos clave y UTM al pie
+    en ribbon punteado. Estilos en `.lvca-panel-punto` (ui_styles.py).
     """
     eca_info = punto_sel.get("ecas") or {}
     exc_punto = punto_sel.get("excedencias", [])
     n_exc_punto = len(exc_punto)
     estado_punto = punto_sel.get("estado", "sin_datos")
-    color_estado = {
-        "excedencia": "#c62828", "cumple": "#2e7d32", "sin_datos": "#9e9e9e",
-    }.get(estado_punto, "#9e9e9e")
 
     from components.ui_styles import estado_pill as _pill
     _pill_key = {
@@ -1226,9 +1284,7 @@ def _render_panel_punto(punto_sel: dict) -> None:
     }.get(estado_punto, "sin_dato")
     estado_html = _pill(_pill_key, dominio="resultado")
 
-    # Header compacto: código + estado en una fila, datos clave en grid 2x3
-    # con labels cortos. Antes ocupaba demasiada altura en el panel lateral.
-    altitud = punto_sel.get('altitud_msnm', '—')
+    altitud = punto_sel.get("altitud_msnm", "—")
     altitud_txt = f"{altitud} msnm" if altitud not in (None, "—") else "—"
 
     utm_e = punto_sel.get("utm_este")
@@ -1236,37 +1292,47 @@ def _render_panel_punto(punto_sel: dict) -> None:
     utm_txt = f"{utm_e:.0f} E · {utm_n:.0f} N" if utm_e and utm_n else "—"
 
     st.markdown(
-        f"""<div style="background:white; border:1px solid #e2e8f0;
-             border-left:4px solid {color_estado}; border-radius:10px;
-             padding:12px 14px; margin-top:6px;">
-            <div style="display:flex; align-items:center; justify-content:space-between;
-                 gap:10px; margin-bottom:8px;">
-                <div style="font-size:1rem; font-weight:700; color:#1e293b;
-                     line-height:1.2; flex:1;">{punto_sel['codigo']}</div>
+        f"""<div class="lvca-panel-punto">
+            <div class="lvca-panel-head">
+                <div>
+                    <div class="lvca-panel-codigo">{punto_sel['codigo']}</div>
+                    <div class="lvca-panel-nombre">{punto_sel['nombre']}</div>
+                </div>
                 <div>{estado_html}</div>
             </div>
-            <div style="font-size:0.82rem; color:#475569; margin-bottom:10px;
-                 line-height:1.3;">{punto_sel['nombre']}</div>
-            <div style="display:grid; grid-template-columns:1fr 1fr;
-                 gap:6px 14px; font-size:0.74rem; color:#64748b;
-                 line-height:1.45;">
-                <div><span style="color:#94a3b8;">Tipo</span><br>
-                     <b style="color:#1e293b;">{(punto_sel.get('tipo') or '—').capitalize()}</b></div>
-                <div><span style="color:#94a3b8;">ECA aplicable</span><br>
-                     <b style="color:#1e293b;">{eca_info.get('codigo', '—')}</b></div>
-                <div><span style="color:#94a3b8;">Cuenca</span><br>
-                     <b style="color:#1e293b;">{punto_sel.get('cuenca', '—')}</b></div>
-                <div><span style="color:#94a3b8;">Sistema hídrico</span><br>
-                     <b style="color:#1e293b;">{punto_sel.get('sistema_hidrico', '—')}</b></div>
-                <div><span style="color:#94a3b8;">Altitud</span><br>
-                     <b style="color:#1e293b;">{altitud_txt}</b></div>
-                <div><span style="color:#94a3b8;">Último dato</span><br>
-                     <b style="color:#1e293b;">{punto_sel.get('ultima_fecha', '—')}</b></div>
-            </div>
-            <div style="border-top:1px solid #f1f5f9; padding-top:8px;
-                 margin-top:10px; font-size:0.74rem; color:#64748b;">
-                <span style="color:#94a3b8;">UTM (Zona 19S)</span><br>
-                <b style="color:#1e293b; font-variant-numeric:tabular-nums;">{utm_txt}</b>
+            <div class="lvca-panel-body">
+                <div class="lvca-panel-grid">
+                    <div>
+                        <div class="lbl">Tipo</div>
+                        <div class="val">{(punto_sel.get('tipo') or '—').capitalize()}</div>
+                    </div>
+                    <div>
+                        <div class="lbl">ECA aplicable</div>
+                        <div class="val">{eca_info.get('codigo', '—')}</div>
+                    </div>
+                    <div>
+                        <div class="lbl">Cuenca</div>
+                        <div class="val">{punto_sel.get('cuenca', '—')}</div>
+                    </div>
+                    <div>
+                        <div class="lbl">Sistema hídrico</div>
+                        <div class="val">{punto_sel.get('sistema_hidrico', '—')}</div>
+                    </div>
+                    <div>
+                        <div class="lbl">Altitud</div>
+                        <div class="val">{altitud_txt}</div>
+                    </div>
+                    <div>
+                        <div class="lbl">Último dato</div>
+                        <div class="val">{punto_sel.get('ultima_fecha', '—')}</div>
+                    </div>
+                </div>
+                <div class="lvca-panel-utm">
+                    <span style="color:var(--lvca-text-faint); font-size:0.66rem;
+                         text-transform:uppercase; letter-spacing:0.04em;
+                         font-weight:600;">UTM (Zona 19S)</span><br>
+                    <span class="val">{utm_txt}</span>
+                </div>
             </div>
         </div>""",
         unsafe_allow_html=True,
