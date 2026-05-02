@@ -108,21 +108,8 @@ def _clasificar_cat(param: dict) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Análisis Avanzado — gráficos compactos del panel derecho (Fase B)
+# Análisis Avanzado — gráfico compacto del panel derecho (Fase B)
 # ─────────────────────────────────────────────────────────────────────────────
-
-# Heurística de "indicadores clave" — coinciden por substring en el nombre
-# (case-insensitive). Se usa el ORDEN para priorizar al elegir top N.
-_INDICADORES_CLAVE = [
-    "ph",
-    "turbidez",
-    "conductividad",
-    "oxígeno",
-    "dbo5",
-    "fósforo",
-    "nitratos",
-    "coliformes",
-]
 
 
 def _buscar_parametro_por_nombre(parametros: list[dict], aguja: str) -> dict | None:
@@ -134,58 +121,20 @@ def _buscar_parametro_por_nombre(parametros: list[dict], aguja: str) -> dict | N
     return None
 
 
-def _seleccionar_indicadores_clave(parametros: list[dict], n: int = 4) -> list[dict]:
+def _render_barras_tendencia_anual(punto: dict, parametros: list[dict]) -> None:
     """
-    Para el heatmap del panel derecho — escoge hasta N parámetros que sean
-    "indicadores típicos" de calidad de agua (ver _INDICADORES_CLAVE).
-    Si no hay match para ninguno, retorna los primeros N de la lista.
-    """
-    elegidos: list[dict] = []
-    vistos: set[str] = set()
-    for nombre_pat in _INDICADORES_CLAVE:
-        if len(elegidos) >= n:
-            break
-        p = _buscar_parametro_por_nombre(parametros, nombre_pat)
-        if p and p["id"] not in vistos:
-            elegidos.append(p)
-            vistos.add(p["id"])
-    if len(elegidos) < n:
-        for p in parametros:
-            if len(elegidos) >= n:
-                break
-            if p["id"] not in vistos:
-                elegidos.append(p)
-                vistos.add(p["id"])
-    return elegidos
+    Gráfico de barras anual del panel derecho — se actualiza cada vez que
+    cambia el punto seleccionado. Cada barra es el promedio anual del
+    parámetro (Turbidez por defecto, fallback pH → primer disponible).
 
+    Coloreo semántico por barra:
+        - Verde (#10B981)  si el promedio cumple el ECA aplicable
+        - Rojo  (#EF4444)  si excede el límite máximo del ECA
+        - Ámbar (#F59E0B)  si está por debajo del mínimo del ECA
 
-def _clasificar_eca(valor: float, lim_min, lim_max) -> int:
-    """
-    Devuelve un código entero de estado ECA para una celda:
-        0 = sin datos
-        1 = cumple
-        2 = excedencia leve (≤ 30 % fuera de rango)
-        3 = excedencia alta (> 30 % fuera de rango)
-    """
-    if valor is None:
-        return 0
-    if lim_max is not None and valor > lim_max:
-        margen = (valor - lim_max) / lim_max if lim_max > 0 else 1.0
-        return 3 if margen > 0.30 else 2
-    if lim_min is not None and valor < lim_min:
-        if lim_min > 0:
-            margen = (lim_min - valor) / lim_min
-            return 3 if margen > 0.30 else 2
-        return 2
-    return 1
-
-
-def _render_boxplot_anual(punto: dict, parametros: list[dict]) -> None:
-    """
-    Boxplot compacto de tendencia anual para el panel derecho.
-    Usa Turbidez por defecto (mockup); fallback al primer parámetro
-    disponible con datos. Sin queries nuevas — usa get_historial_punto
-    que ya está cacheada (TTL 180s).
+    Líneas horizontales de referencia: ECA máx (rojo dashed), ECA mín
+    (verde dashed). Sin queries nuevas — usa get_historial_punto +
+    get_limite_eca_parametro (ambas cacheadas).
     """
     param = _buscar_parametro_por_nombre(parametros, "turbidez")
     if not param:
@@ -206,43 +155,55 @@ def _render_boxplot_anual(punto: dict, parametros: list[dict]) -> None:
     df = df.dropna(subset=["fecha", "valor"])
     df["anio"] = df["fecha"].dt.year
 
-    if df.empty or df["anio"].nunique() < 1:
+    if df.empty:
         st.caption(f"_Sin datos suficientes de **{param['nombre']}**._")
         return
+
+    df_agg = (
+        df.groupby("anio", as_index=False)
+        .agg(promedio=("valor", "mean"), n=("valor", "count"))
+        .sort_values("anio")
+    )
 
     lim = get_limite_eca_parametro(punto["id"], param["id"])
     lim_max = lim.get("valor_maximo")
     lim_min = lim.get("valor_minimo")
     eca_cod = lim.get("eca_codigo", "")
+
+    colores = []
+    for v in df_agg["promedio"]:
+        if lim_max is not None and v > lim_max:
+            colores.append("#EF4444")     # excede ECA máx
+        elif lim_min is not None and v < lim_min:
+            colores.append("#F59E0B")     # debajo ECA mín
+        else:
+            colores.append("#10B981")     # cumple
+
     unidad = (param.get("unidades_medida") or {}).get("simbolo", "")
     y_label = f"{param['nombre']} ({unidad})" if unidad else param["nombre"]
 
-    fig = go.Figure()
-    anios_ordenados = sorted(df["anio"].unique())
-    for anio in anios_ordenados:
-        valores_a = df.loc[df["anio"] == anio, "valor"].tolist()
-        fig.add_trace(go.Box(
-            y=valores_a,
-            x=[str(anio)] * len(valores_a),
-            name=str(anio),
-            marker_color="#1E6091",
-            line_color="#0D47A1",
-            fillcolor="rgba(30,96,145,0.30)",
-            boxpoints="outliers",
-            marker_size=4,
-            showlegend=False,
-            hovertemplate=(
-                f"<b>{anio}</b><br>"
-                "Mediana: %{median:.3g}<br>"
-                "Q1-Q3: %{q1:.3g}–%{q3:.3g}<br>"
-                "Min-Max: %{lowerfence:.3g}–%{upperfence:.3g}"
-                "<extra></extra>"
-            ),
-        ))
+    fig = go.Figure(go.Bar(
+        x=df_agg["anio"].astype(str),
+        y=df_agg["promedio"],
+        marker_color=colores,
+        marker_line_color="#0F172A",
+        marker_line_width=0.6,
+        text=[f"{v:.3g}" for v in df_agg["promedio"]],
+        textposition="outside",
+        textfont=dict(size=10, color="#1e293b"),
+        customdata=df_agg["n"],
+        hovertemplate=(
+            f"<b>%{{x}}</b><br>"
+            f"{param['nombre']}: %{{y:.4g}}<br>"
+            f"N° mediciones: %{{customdata}}"
+            f"<extra></extra>"
+        ),
+        width=0.55,
+    ))
 
     if lim_max is not None:
         fig.add_hline(
-            y=lim_max, line_dash="solid", line_color="#EF4444",
+            y=lim_max, line_dash="dash", line_color="#EF4444",
             line_width=1.6, opacity=0.85,
             annotation_text=f"Máx ECA: {lim_max}",
             annotation_position="top right",
@@ -250,7 +211,7 @@ def _render_boxplot_anual(punto: dict, parametros: list[dict]) -> None:
         )
     if lim_min is not None:
         fig.add_hline(
-            y=lim_min, line_dash="solid", line_color="#10B981",
+            y=lim_min, line_dash="dash", line_color="#10B981",
             line_width=1.6, opacity=0.85,
             annotation_text=f"Mín ECA: {lim_min}",
             annotation_position="bottom right",
@@ -259,7 +220,7 @@ def _render_boxplot_anual(punto: dict, parametros: list[dict]) -> None:
 
     fig.update_layout(
         height=240,
-        margin=dict(l=40, r=10, t=10, b=30),
+        margin=dict(l=40, r=10, t=20, b=30),
         plot_bgcolor="#ffffff",
         paper_bgcolor="rgba(0,0,0,0)",
         xaxis=dict(
@@ -274,139 +235,31 @@ def _render_boxplot_anual(punto: dict, parametros: list[dict]) -> None:
             tickfont=dict(size=10, color="#64748b"),
         ),
         showlegend=False,
+        bargap=0.30,
     )
 
     st.markdown(
         f'<div style="font-size:0.78rem; color:#64748b; margin:4px 0 0 0;">'
-        f'Tendencia <b>{param["nombre"]}</b> {punto["codigo"]} '
+        f'Promedio anual de <b>{param["nombre"]}</b> en {punto["codigo"]} '
         f'<span style="color:#94a3b8;">vs ECA {eca_cod}</span></div>',
         unsafe_allow_html=True,
     )
     st.plotly_chart(
         fig, use_container_width=True,
         config={"displayModeBar": False},
-        key=f"boxplot_anual_{punto['id']}_{param['id']}",
+        key=f"barras_anual_{punto['id']}_{param['id']}",
     )
 
-
-def _render_heatmap_eca_mensual(punto: dict, parametros: list[dict]) -> None:
-    """
-    Heatmap compacto: top 4 indicadores clave × últimos 24 meses, coloreado
-    por estado ECA del valor mensual promedio. Usa get_historial_punto +
-    get_limite_eca_parametro (ambas cacheadas).
-    """
-    indicadores = _seleccionar_indicadores_clave(parametros, n=4)
-    if not indicadores:
-        st.caption("Sin indicadores clave disponibles.")
-        return
-
-    fecha_fin_dt = date.today()
-    n_meses = 18
-    meses_x: list[str] = []
-    meses_keys: list[tuple[int, int]] = []
-    for offset in range(n_meses - 1, -1, -1):
-        anio = fecha_fin_dt.year
-        mes = fecha_fin_dt.month - offset
-        while mes <= 0:
-            mes += 12
-            anio -= 1
-        meses_x.append(f"{MESES[mes-1]}\n{anio}")
-        meses_keys.append((anio, mes))
-
-    z_matrix: list[list[int]] = []
-    text_matrix: list[list[str]] = []
-    y_labels: list[str] = []
-
-    for param in indicadores:
-        historial = get_historial_punto(punto["id"], param["id"], limite=200)
-        lim = get_limite_eca_parametro(punto["id"], param["id"])
-        lim_max = lim.get("valor_maximo")
-        lim_min = lim.get("valor_minimo")
-
-        promedios: dict[tuple[int, int], float] = {}
-        if historial:
-            df = pd.DataFrame(historial)
-            df["fecha"] = pd.to_datetime(df["fecha"], errors="coerce")
-            df = df.dropna(subset=["fecha", "valor"])
-            df["anio"] = df["fecha"].dt.year
-            df["mes"] = df["fecha"].dt.month
-            for (a, m), grp in df.groupby(["anio", "mes"]):
-                promedios[(int(a), int(m))] = float(grp["valor"].mean())
-
-        fila_z: list[int] = []
-        fila_t: list[str] = []
-        for key in meses_keys:
-            valor = promedios.get(key)
-            estado = _clasificar_eca(valor, lim_min, lim_max) if valor is not None else 0
-            fila_z.append(estado)
-            if valor is None:
-                fila_t.append("Sin dato")
-            else:
-                etq = {1: "Cumple", 2: "Exc. leve", 3: "Exc. alta"}.get(estado, "Sin dato")
-                fila_t.append(f"{valor:.3g} · {etq}")
-
-        z_matrix.append(fila_z)
-        text_matrix.append(fila_t)
-        y_labels.append(param["nombre"])
-
-    # Discrete colorscale: 0=sin dato, 1=cumple, 2=leve, 3=alta
-    colorscale = [
-        [0.00, "#e2e8f0"],     # 0
-        [0.25, "#e2e8f0"],
-        [0.26, "#10B981"],     # 1
-        [0.50, "#10B981"],
-        [0.51, "#F59E0B"],     # 2
-        [0.75, "#F59E0B"],
-        [0.76, "#EF4444"],     # 3
-        [1.00, "#EF4444"],
-    ]
-
-    fig = go.Figure(go.Heatmap(
-        z=z_matrix,
-        x=meses_x,
-        y=y_labels,
-        text=text_matrix,
-        hovertemplate="<b>%{y}</b> · %{x}<br>%{text}<extra></extra>",
-        colorscale=colorscale,
-        zmin=0, zmax=3,
-        showscale=False,
-        xgap=2, ygap=2,
-    ))
-
-    fig.update_layout(
-        height=max(180, len(y_labels) * 38 + 70),
-        margin=dict(l=10, r=10, t=10, b=40),
-        plot_bgcolor="#ffffff",
-        paper_bgcolor="rgba(0,0,0,0)",
-        xaxis=dict(
-            tickfont=dict(size=8.5, color="#64748b"),
-            tickangle=-45,
-            showgrid=False,
-        ),
-        yaxis=dict(
-            tickfont=dict(size=10, color="#1e293b"),
-            showgrid=False,
-            automargin=True,
-        ),
-    )
-    st.plotly_chart(
-        fig, use_container_width=True,
-        config={"displayModeBar": False},
-        key=f"heatmap_eca_{punto['id']}",
-    )
-
-    # Mini-leyenda inline para el heatmap
+    # Mini-leyenda inline (3 chips)
     st.markdown(
         '<div style="display:flex; gap:14px; font-size:0.7rem; '
-        'color:#64748b; margin:2px 0 8px 0; flex-wrap:wrap;">'
+        'color:#64748b; margin:2px 0 4px 0; flex-wrap:wrap;">'
         '<span><span style="display:inline-block; width:10px; height:10px; '
-        'background:#10B981; border-radius:2px; margin-right:4px; vertical-align:-1px;"></span>Cumple</span>'
+        'background:#10B981; border-radius:2px; margin-right:4px; vertical-align:-1px;"></span>Cumple ECA</span>'
         '<span><span style="display:inline-block; width:10px; height:10px; '
-        'background:#F59E0B; border-radius:2px; margin-right:4px; vertical-align:-1px;"></span>Exc. leve</span>'
+        'background:#F59E0B; border-radius:2px; margin-right:4px; vertical-align:-1px;"></span>Bajo ECA mín</span>'
         '<span><span style="display:inline-block; width:10px; height:10px; '
-        'background:#EF4444; border-radius:2px; margin-right:4px; vertical-align:-1px;"></span>Exc. alta</span>'
-        '<span><span style="display:inline-block; width:10px; height:10px; '
-        'background:#e2e8f0; border-radius:2px; margin-right:4px; vertical-align:-1px;"></span>Sin dato</span>'
+        'background:#EF4444; border-radius:2px; margin-right:4px; vertical-align:-1px;"></span>Excede ECA</span>'
         '</div>',
         unsafe_allow_html=True,
     )
@@ -1519,7 +1372,9 @@ def main() -> None:
                 st.session_state["geo_punto"] = closest_label
                 st.rerun()
 
-    # Panel lateral (col derecha) — ficha + Análisis Avanzado (boxplot + heatmap)
+    # Panel lateral (col derecha) — Análisis Avanzado arriba (gráfico de
+    # barras anual con ECA), ficha del punto debajo. El gráfico se reactiva
+    # con cada click en el mapa via punto_sel.
     with col_panel:
         sel_punto_label = st.selectbox(
             "Punto seleccionado",
@@ -1528,16 +1383,11 @@ def main() -> None:
             help="Click en un marcador del mapa también cambia esta selección.",
         )
         punto_sel = opciones_punto[sel_punto_label]
-        _render_panel_punto(punto_sel)
 
-        # ── Análisis Avanzado de Calidad (mockup mockup "Integrated Eco-Aura")
-        # Boxplot de Tendencia anual + Heatmap mensual ECA — ambos compactos
-        # para caber en la columna estrecha. Contenido siempre visible (no
-        # tabs) para que el técnico vea el patrón estacional y outliers de
-        # un vistazo, sin clic adicional.
+        # ── Análisis Avanzado: bar chart anual reactivo al punto seleccionado
         st.markdown(
-            '<div style="margin-top:14px; display:flex; align-items:center; '
-            'gap:8px; padding:0 0 6px 0;">'
+            '<div style="margin-top:6px; display:flex; align-items:center; '
+            'gap:8px; padding:0 0 4px 0;">'
             '<span class="material-symbols-rounded" '
             'style="font-size:20px; color:#1E6091;">analytics</span>'
             '<span style="font-size:0.95rem; font-weight:700; color:#0F172A; '
@@ -1545,28 +1395,10 @@ def main() -> None:
             '</div>',
             unsafe_allow_html=True,
         )
-        _render_boxplot_anual(punto_sel, parametros)
+        _render_barras_tendencia_anual(punto_sel, parametros)
 
-        st.markdown(
-            '<div style="margin-top:10px; display:flex; align-items:center; '
-            'gap:8px; padding:0 0 4px 0;">'
-            '<span class="material-symbols-rounded" '
-            'style="font-size:18px; color:#64748b;">grid_on</span>'
-            '<span style="font-size:0.85rem; font-weight:600; color:#1e293b;">'
-            'Monitoreo Temporal: Cumplimiento ECA por Parámetro</span>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-        _render_heatmap_eca_mensual(punto_sel, parametros)
-
-        st.markdown(
-            '<div style="font-size:0.7rem; color:#94a3b8; line-height:1.5; '
-            'margin:4px 0 0 0;">'
-            '<b>Guía de lectura:</b> el color de la celda indica el estado '
-            'promedio del mes según el ECA aplicable.'
-            '</div>',
-            unsafe_allow_html=True,
-        )
+        # ── Ficha del punto (debajo del gráfico)
+        _render_panel_punto(punto_sel)
 
     st.divider()
 
