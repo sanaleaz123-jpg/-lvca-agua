@@ -141,6 +141,30 @@ _FONT_LINK = (
 )
 
 _GLOBAL_CSS = """<style>
+/* ── Variables CSS centralizadas (paleta "Integrated Eco-Aura") ──────────
+   Fuente única de verdad de los colores de marca + acentos semánticos
+   ECA. Cualquier color usado en HTML inyectado debe referenciar estas
+   variables vía `var(--lvca-...)` en lugar de hex literales. */
+:root {
+    --lvca-brand-azul:        #1E6091;
+    --lvca-brand-azul-dark:   #0D47A1;
+    --lvca-brand-azul-light:  #2563EB;
+    --lvca-acento-verde:      #10B981;
+    --lvca-acento-verde-dark: #047857;
+    --lvca-acento-amarillo:   #F59E0B;
+    --lvca-acento-amarillo-dark: #B45309;
+    --lvca-acento-rojo:       #EF4444;
+    --lvca-acento-rojo-dark:  #B91C1C;
+    --lvca-acento-teal:       #0a9396;
+    --lvca-bg-app:            #F8FAFC;
+    --lvca-bg-card:           #FFFFFF;
+    --lvca-border:            #E2E8F0;
+    --lvca-border-soft:       #F1F5F9;
+    --lvca-text:              #0F172A;
+    --lvca-text-muted:        #64748B;
+    --lvca-text-faint:        #94A3B8;
+}
+
 /* Tipografía global Inter — densidad ajustada para minimalismo */
 html, body, [class*="css"], [data-testid="stAppViewContainer"] {
     font-family: 'Inter', -apple-system, 'Segoe UI', Roboto, sans-serif !important;
@@ -904,6 +928,216 @@ hr {
 .lvca-inline-note.success{ border-left-color: #2e7d32; background:#f0faf2; }
 .lvca-inline-note .lvca-inline-icon { flex: 0 0 auto; margin-top: 1px; opacity: 0.85; }
 
+/* ── KPI cards "bold" (estilo mockup Integrated Eco-Aura) ────────────────
+   Tarjetas con fondo sólido en color semántico, valor grande contrastado,
+   ícono Material Symbol esquina superior derecha y bullet-list opcional
+   debajo. Pensadas para el geoportal y dashboards de resumen ejecutivo. */
+.lvca-kpi-bold {
+    border-radius: 14px;
+    padding: 18px 20px 16px 20px;
+    min-height: 140px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    box-shadow: 0 4px 14px rgba(15,23,42,0.06),
+                0 1px 3px rgba(15,23,42,0.04);
+    transition: transform 0.18s cubic-bezier(0.4,0,0.2,1),
+                box-shadow 0.18s cubic-bezier(0.4,0,0.2,1);
+    position: relative;
+    overflow: hidden;
+}
+.lvca-kpi-bold:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 22px rgba(15,23,42,0.10),
+                0 2px 6px rgba(15,23,42,0.06);
+}
+.lvca-kpi-bold .lvca-kpi-head {
+    display: flex; align-items: flex-start;
+    justify-content: space-between; gap: 10px;
+}
+.lvca-kpi-bold .lvca-kpi-title {
+    font-size: 0.92rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+    flex: 1;
+}
+.lvca-kpi-bold .lvca-kpi-icon {
+    width: 38px; height: 38px;
+    border-radius: 10px;
+    display: inline-flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    background: rgba(255,255,255,0.18);
+}
+.lvca-kpi-bold .lvca-kpi-icon .material-symbols-rounded {
+    font-size: 24px; line-height: 1;
+}
+.lvca-kpi-bold .lvca-kpi-value {
+    font-size: 2.6rem;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.03em;
+    margin: 6px 0 4px 0;
+    font-variant-numeric: tabular-nums;
+}
+.lvca-kpi-bold .lvca-kpi-bullets {
+    list-style: none;
+    padding: 0; margin: 6px 0 0 0;
+    font-size: 0.78rem;
+    line-height: 1.6;
+    font-weight: 500;
+}
+.lvca-kpi-bold .lvca-kpi-bullets li::before {
+    content: "• ";
+    margin-right: 4px;
+    opacity: 0.9;
+}
+.lvca-kpi-bold .lvca-kpi-foot {
+    font-size: 0.7rem;
+    opacity: 0.85;
+    margin-top: 6px;
+    font-weight: 500;
+}
+
+/* Variantes por color semántico */
+.lvca-kpi-bold.azul {
+    background: linear-gradient(135deg, var(--lvca-brand-azul) 0%, var(--lvca-brand-azul-dark) 100%);
+    color: #ffffff;
+}
+.lvca-kpi-bold.amarillo {
+    background: linear-gradient(135deg, var(--lvca-acento-amarillo) 0%, var(--lvca-acento-amarillo-dark) 100%);
+    color: #1a1a1a;
+}
+.lvca-kpi-bold.rojo {
+    background: linear-gradient(135deg, var(--lvca-acento-rojo) 0%, var(--lvca-acento-rojo-dark) 100%);
+    color: #ffffff;
+}
+.lvca-kpi-bold.verde {
+    background: linear-gradient(135deg, var(--lvca-acento-verde) 0%, var(--lvca-acento-verde-dark) 100%);
+    color: #ffffff;
+}
+.lvca-kpi-bold.gris {
+    background: linear-gradient(135deg, #94a3b8 0%, #64748b 100%);
+    color: #ffffff;
+}
+
+/* Sparkline contenedor — SVG pintado en blanco semitransparente */
+.lvca-kpi-bold .lvca-kpi-spark {
+    margin-top: 8px;
+    height: 32px;
+    width: 100%;
+    opacity: 0.85;
+}
+.lvca-kpi-bold .lvca-kpi-spark svg {
+    width: 100%; height: 100%;
+    display: block;
+}
+
+/* ── Toast flotante de éxito (top-right, auto-fade) ────────────────────── */
+.lvca-toast-success {
+    position: fixed;
+    top: 78px;
+    right: 22px;
+    z-index: 1500;
+    background: #ECFDF5;
+    border: 1px solid #A7F3D0;
+    border-left: 4px solid var(--lvca-acento-verde);
+    border-radius: 10px;
+    padding: 12px 16px 12px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #065F46;
+    font-size: 0.84rem;
+    font-weight: 500;
+    box-shadow: 0 8px 24px rgba(16,185,129,0.18),
+                0 2px 6px rgba(15,23,42,0.06);
+    max-width: 340px;
+    animation: lvcaToastIn 0.32s cubic-bezier(0.4,0,0.2,1),
+               lvcaToastOut 0.4s cubic-bezier(0.4,0,0.2,1) 4.6s forwards;
+}
+.lvca-toast-success .material-symbols-rounded {
+    font-size: 22px;
+    color: var(--lvca-acento-verde);
+    background: #ffffff;
+    border-radius: 50%;
+    padding: 2px;
+    flex-shrink: 0;
+}
+@keyframes lvcaToastIn {
+    from { opacity: 0; transform: translateY(-8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes lvcaToastOut {
+    to { opacity: 0; transform: translateY(-8px); pointer-events: none; }
+}
+
+/* ── Panel del punto integrado (estilo "ficha embebida") ────────────────
+   Tarjeta blanca con bordes redondeados que se siente parte del mismo
+   contenedor que el mapa: misma sombra, mismo radius, mismo borde. */
+.lvca-panel-punto {
+    background: #ffffff;
+    border-radius: 12px;
+    border: 1px solid var(--lvca-border-soft);
+    box-shadow: 0 4px 14px rgba(15,23,42,0.05),
+                0 1px 3px rgba(15,23,42,0.03);
+    padding: 0;
+    overflow: hidden;
+}
+.lvca-panel-punto .lvca-panel-head {
+    padding: 14px 16px 12px 16px;
+    border-bottom: 1px solid var(--lvca-border-soft);
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px;
+    background: linear-gradient(180deg, #F8FAFC 0%, #FFFFFF 100%);
+}
+.lvca-panel-punto .lvca-panel-head .lvca-panel-codigo {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--lvca-text);
+    letter-spacing: -0.01em;
+}
+.lvca-panel-punto .lvca-panel-head .lvca-panel-nombre {
+    font-size: 0.78rem;
+    color: var(--lvca-text-muted);
+    margin-top: 2px;
+    line-height: 1.3;
+}
+.lvca-panel-punto .lvca-panel-body {
+    padding: 12px 16px 14px 16px;
+}
+.lvca-panel-punto .lvca-panel-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 16px;
+    font-size: 0.74rem;
+    line-height: 1.45;
+}
+.lvca-panel-punto .lvca-panel-grid .lbl {
+    color: var(--lvca-text-faint);
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 600;
+}
+.lvca-panel-punto .lvca-panel-grid .val {
+    color: var(--lvca-text);
+    font-weight: 600;
+    font-size: 0.82rem;
+}
+.lvca-panel-punto .lvca-panel-utm {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--lvca-border-soft);
+    font-size: 0.74rem;
+    color: var(--lvca-text-muted);
+}
+.lvca-panel-punto .lvca-panel-utm .val {
+    color: var(--lvca-text);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
 html { scroll-behavior: smooth; }
 </style>
 """
@@ -1241,6 +1475,148 @@ def info_box(texto: str) -> None:
     """Caja informativa con barra lateral verde."""
     st.markdown(
         f'<div class="lvca-info-box">{texto}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def sparkline_svg(
+    values: list[float],
+    width: int = 180,
+    height: int = 32,
+    stroke: str = "#ffffff",
+    fill: str = "rgba(255,255,255,0.20)",
+    stroke_width: float = 1.8,
+) -> str:
+    """
+    Genera un SVG inline de sparkline (línea + área) a partir de una lista
+    de valores. Pensado para usar dentro de las tarjetas KPI bold.
+
+    No depende de matplotlib — el path lo construimos a mano para evitar
+    overhead. Si la lista está vacía, devuelve un SVG vacío del mismo tamaño.
+    """
+    if not values:
+        return f'<svg viewBox="0 0 {width} {height}"></svg>'
+
+    if len(values) == 1:
+        values = [values[0], values[0]]
+
+    vmin = min(values)
+    vmax = max(values)
+    rng = vmax - vmin if vmax != vmin else 1.0
+
+    pad_y = 3
+    h_eff = height - 2 * pad_y
+    n = len(values)
+    step = width / (n - 1)
+
+    points = []
+    for i, v in enumerate(values):
+        x = i * step
+        y = pad_y + (h_eff - (v - vmin) / rng * h_eff)
+        points.append((x, y))
+
+    line_path = "M " + " L ".join(f"{x:.2f},{y:.2f}" for x, y in points)
+    area_path = (
+        line_path
+        + f" L {points[-1][0]:.2f},{height} L {points[0][0]:.2f},{height} Z"
+    )
+
+    return (
+        f'<svg viewBox="0 0 {width} {height}" preserveAspectRatio="none" '
+        f'xmlns="http://www.w3.org/2000/svg">'
+        f'<path d="{area_path}" fill="{fill}" stroke="none"/>'
+        f'<path d="{line_path}" fill="none" stroke="{stroke}" '
+        f'stroke-width="{stroke_width}" stroke-linecap="round" '
+        f'stroke-linejoin="round"/>'
+        f'</svg>'
+    )
+
+
+def kpi_bold_card(
+    valor: int | float | str,
+    label: str,
+    color: str = "azul",
+    icon_material: str = "insights",
+    bullets: list[str] | None = None,
+    foot: str = "",
+    sparkline: list[float] | None = None,
+) -> str:
+    """
+    HTML de una tarjeta KPI estilo "Integrated Eco-Aura" (mockup LVCA).
+
+    Args:
+        valor:          número grande mostrado (15, 10, 3...).
+        label:          título superior izquierdo ("Total Muestras (30 d)").
+        color:          variante semántica — "azul", "amarillo", "rojo",
+                        "verde" o "gris".
+        icon_material:  nombre del ícono Material Symbols Rounded
+                        (sin prefijo `:material/`).
+        bullets:        lista corta de strings que se renderizan como
+                        viñetas debajo del valor (• pH, • Turbidez...).
+        foot:           texto pequeño debajo de bullets (legend / hint).
+        sparkline:      lista de floats para mini-gráfico (solo se ve bien
+                        en variante "azul" — el blanco contrasta).
+
+    Devuelve un string HTML para insertar con `st.markdown(unsafe_allow_html=True)`.
+    """
+    bullets_html = ""
+    if bullets:
+        items = "".join(f"<li>{b}</li>" for b in bullets)
+        bullets_html = f'<ul class="lvca-kpi-bullets">{items}</ul>'
+
+    foot_html = (
+        f'<div class="lvca-kpi-foot">{foot}</div>' if foot else ""
+    )
+
+    spark_html = ""
+    if sparkline:
+        # En variante "amarillo" usamos un trazo oscuro para contraste.
+        if color == "amarillo":
+            spark_svg = sparkline_svg(
+                sparkline, stroke="#1a1a1a",
+                fill="rgba(0,0,0,0.10)",
+            )
+        else:
+            spark_svg = sparkline_svg(sparkline)
+        spark_html = f'<div class="lvca-kpi-spark">{spark_svg}</div>'
+
+    return (
+        f'<div class="lvca-kpi-bold {color}">'
+        f'  <div class="lvca-kpi-head">'
+        f'    <div class="lvca-kpi-title">{label}</div>'
+        f'    <div class="lvca-kpi-icon">'
+        f'      <span class="material-symbols-rounded">{icon_material}</span>'
+        f'    </div>'
+        f'  </div>'
+        f'  <div>'
+        f'    <div class="lvca-kpi-value">{valor}</div>'
+        f'    {bullets_html}'
+        f'    {foot_html}'
+        f'    {spark_html}'
+        f'  </div>'
+        f'</div>'
+    )
+
+
+def success_toast(mensaje: str, key: str | None = None) -> None:
+    """
+    Toast verde flotante arriba-derecha — se desvanece a ~5 s vía CSS.
+
+    Si `key` se provee, solo se muestra una vez por sesión: la segunda
+    llamada con la misma key no rendea nada. Útil para "Datos actualizados
+    exitosamente" al primer load del geoportal sin spamear en cada rerun.
+    """
+    if key:
+        flag = f"_lvca_toast_{key}"
+        if st.session_state.get(flag):
+            return
+        st.session_state[flag] = True
+
+    st.markdown(
+        f'<div class="lvca-toast-success">'
+        f'<span class="material-symbols-rounded">check_circle</span>'
+        f'<span>{mensaje}</span>'
+        f'</div>',
         unsafe_allow_html=True,
     )
 
