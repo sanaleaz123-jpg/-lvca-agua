@@ -1480,13 +1480,13 @@ def info_box(texto: str) -> None:
 
 
 def sparkline_svg(
-    values: list[float],
-    width: int = 180,
-    height: int = 32,
-    stroke: str = "#ffffff",
-    fill: str = "rgba(255,255,255,0.20)",
-    stroke_width: float = 1.8,
-) -> str:
+    values,
+    width=180,
+    height=32,
+    stroke="#ffffff",
+    fill="rgba(255,255,255,0.20)",
+    stroke_width=1.8,
+):
     """
     Genera un SVG inline de sparkline (línea + área) a partir de una lista
     de valores. Pensado para usar dentro de las tarjetas KPI bold.
@@ -1533,14 +1533,14 @@ def sparkline_svg(
 
 
 def kpi_bold_card(
-    valor: int | float | str,
-    label: str,
-    color: str = "azul",
-    icon_material: str = "insights",
-    bullets: list[str] | None = None,
-    foot: str = "",
-    sparkline: list[float] | None = None,
-) -> str:
+    valor,
+    label,
+    color="azul",
+    icon_material="insights",
+    bullets=None,
+    foot="",
+    sparkline=None,
+):
     """
     HTML de una tarjeta KPI estilo "Integrated Eco-Aura" (mockup LVCA).
 
@@ -1598,7 +1598,7 @@ def kpi_bold_card(
     )
 
 
-def success_toast(mensaje: str, key: str | None = None) -> None:
+def success_toast(mensaje, key=None):
     """
     Toast verde flotante arriba-derecha — se desvanece a ~5 s vía CSS.
 
