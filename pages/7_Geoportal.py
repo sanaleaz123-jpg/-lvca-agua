@@ -285,7 +285,7 @@ def _render_barras_tendencia_anual(punto: dict, parametros: list[dict]) -> None:
         '<span><span style="display:inline-block; width:10px; height:10px; '
         'background:#F59E0B; border-radius:2px; margin-right:4px; vertical-align:-1px;"></span>Bajo ECA mín</span>'
         '<span><span style="display:inline-block; width:10px; height:10px; '
-        'background:#EF4444; border-radius:2px; margin-right:4px; vertical-align:-1px;"></span>Excede ECA</span>'
+        'background:#EF4444; border-radius:2px; margin-right:4px; vertical-align:-1px;"></span>No cumple ECA</span>'
         '</div>',
         unsafe_allow_html=True,
     )
@@ -300,6 +300,8 @@ def _render_grafico_campana_comparativo(
     campana: dict,
     parametro: dict,
     puntos: list[dict],
+    fi_buscar: str | None = None,
+    ff_buscar: str | None = None,
 ) -> None:
     """
     Replica visual de la referencia del usuario: para cada punto de la
@@ -309,21 +311,28 @@ def _render_grafico_campana_comparativo(
 
     Si un punto no tiene el parámetro medido → muestra "—" como label, sin dot.
     Si un punto no tiene ECA aplicable → zona gris fallback.
+
+    `fi_buscar`/`ff_buscar`: rango ampliado para la query de últimos
+    valores (los análisis de laboratorio pueden salir meses después de la
+    fecha de muestreo). Si no se pasan, se usan las fechas oficiales
+    de la campaña (con riesgo de perder puntos con análisis tardíos).
     """
     if not puntos:
         st.info("La campaña seleccionada no tiene puntos asociados.")
         return
 
-    fi = (campana.get("fecha_inicio") or "")[:10]
-    ff = (campana.get("fecha_fin") or "")[:10]
+    fi = fi_buscar or (campana.get("fecha_inicio") or "")[:10]
+    ff = ff_buscar or (campana.get("fecha_fin") or "")[:10]
     if not fi or not ff:
         st.warning("La campaña no tiene fechas de inicio/fin definidas.")
         return
 
-    # Última medición del parámetro por punto en el rango de la campaña.
-    # `info["fecha"]` ya viene de fecha_muestreo (modificación reciente
-    # en services/mapa_service.py: 2026-05-03).
-    ultimos = get_ultimo_valor_parametro_por_punto(parametro["id"], fi, ff)
+    # Última medición del parámetro por punto, scoped al campana_id para
+    # garantizar que solo cuente muestras de ESA campaña. `info["fecha"]`
+    # ya viene de fecha_muestreo (cambio en services/mapa_service.py).
+    ultimos = get_ultimo_valor_parametro_por_punto(
+        parametro["id"], fi, ff, campana_id=campana.get("id"),
+    )
     es_temp = _es_temperatura(parametro)
 
     items: list[dict] = []
@@ -534,7 +543,7 @@ def _render_grafico_campana_comparativo(
         'font-size:0.72rem; color:#475569;">'
         '<span style="display:inline-block; width:11px; height:11px; '
         'background:#EF4444; border-radius:50%; border:1px solid #0F172A;"></span>'
-        'Excede ECA</span>'
+        'No cumple ECA</span>'
         '<span style="display:inline-flex; align-items:center; gap:5px; '
         'font-size:0.72rem; color:#475569;">'
         '<span style="display:inline-block; width:11px; height:11px; '
@@ -741,7 +750,7 @@ def _render_linea_estacionalidad(
             '<span style="display:inline-flex; align-items:center; gap:5px;">'
             '<span style="display:inline-block; width:11px; height:11px; '
             'background:#EF4444; border-radius:50%; border:1px solid #0F172A;"></span>'
-            'Excede ECA</span>'
+            'No cumple ECA</span>'
             '<span style="display:inline-flex; align-items:center; gap:5px;">'
             '<span style="display:inline-block; width:11px; height:11px; '
             'background:#94A3B8; border-radius:50%; border:1px solid #0F172A;"></span>'
@@ -1945,21 +1954,33 @@ def _render_modo_campana(parametros: list[dict], campanas: list[dict]) -> None:
     campana = opciones_camp[sel_camp_lbl]
     parametro = opciones_param[sel_param_lbl]
 
-    # Cargar puntos de la campaña con sus ecas (reuso geoportal+filter)
-    pts_camp_ids = {p["id"] for p in get_puntos_de_campana(campana["id"])}
     fi = (campana.get("fecha_inicio") or "")[:10]
     ff = (campana.get("fecha_fin") or "")[:10]
     if not fi or not ff:
         st.warning("La campaña no tiene rango de fechas válido.")
         return
 
-    todos_pts = get_puntos_geoportal(fi, ff, campana["id"])
-    pts_camp = [p for p in todos_pts if p["id"] in pts_camp_ids]
+    # Ampliar el rango de búsqueda: las muestras de campo se toman dentro
+    # de fecha_inicio/fecha_fin pero el laboratorio puede analizar varios
+    # meses después. Si filtramos estricto al rango de la campaña, perdemos
+    # los puntos cuyos análisis salieron tarde — bug reportado por el usuario.
+    try:
+        fi_d = date.fromisoformat(fi)
+        ff_d = date.fromisoformat(ff)
+        fi_buscar = (fi_d - timedelta(days=180)).isoformat()
+        ff_buscar = (ff_d + timedelta(days=365)).isoformat()
+    except ValueError:
+        fi_buscar, ff_buscar = fi, ff
+
+    # Sin intersección con get_puntos_de_campana — dejamos a campana_puntos
+    # como única fuente de verdad de "puntos asignados". Los puntos sin
+    # medición del parámetro se muestran con dot gris y "—".
+    pts_camp = get_puntos_geoportal(fi_buscar, ff_buscar, campana["id"])
     if not pts_camp:
-        st.info("La campaña no tiene puntos con resultados en su rango de fechas.")
+        st.info("La campaña no tiene puntos asignados.")
         return
 
-    _render_grafico_campana_comparativo(campana, parametro, pts_camp)
+    _render_grafico_campana_comparativo(campana, parametro, pts_camp, fi_buscar, ff_buscar)
 
 
 def _render_modo_punto(
