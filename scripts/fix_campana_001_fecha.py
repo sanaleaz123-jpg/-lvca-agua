@@ -6,10 +6,10 @@ la fecha real de monitoreo fue 2026-03-11 pero quedó registrada como
 2026-04-11.
 
 Actualiza:
-  1. campanas.fecha_inicio  (2026-04-11 → 2026-03-11)
-  2. campanas.fecha_fin     (2026-04-11 → 2026-03-11) si coinciden
+  1. campanas.fecha_inicio  (2026-04-11 -> 2026-03-11)
+  2. campanas.fecha_fin     (2026-04-11 -> 2026-03-11) si coinciden
   3. muestras.fecha_muestreo de TODAS las muestras de esa campaña
-     que estén en 2026-04-11 → 2026-03-11
+     que estén en 2026-04-11 -> 2026-03-11
 
 NO toca fecha_analisis (la fecha del lab es real).
 
@@ -79,10 +79,10 @@ def main() -> int:
     # 3. Resumen del cambio
     print(f"\n========== CAMBIOS PROPUESTOS ==========")
     if (camp["fecha_inicio"] or "")[:10] == FECHA_VIEJA.isoformat():
-        print(f"  campanas.fecha_inicio: {camp['fecha_inicio']}  →  {FECHA_NUEVA.isoformat()}")
+        print(f"  campanas.fecha_inicio: {camp['fecha_inicio']}  ->  {FECHA_NUEVA.isoformat()}")
     if (camp["fecha_fin"] or "")[:10] == FECHA_VIEJA.isoformat():
-        print(f"  campanas.fecha_fin:    {camp['fecha_fin']}  →  {FECHA_NUEVA.isoformat()}")
-    print(f"  muestras.fecha_muestreo: {len(muestras_a_tocar)} filas → {FECHA_NUEVA.isoformat()}")
+        print(f"  campanas.fecha_fin:    {camp['fecha_fin']}  ->  {FECHA_NUEVA.isoformat()}")
+    print(f"  muestras.fecha_muestreo: {len(muestras_a_tocar)} filas -> {FECHA_NUEVA.isoformat()}")
     print(f"========================================\n")
 
     if not muestras_a_tocar and (camp["fecha_inicio"] or "")[:10] != FECHA_VIEJA.isoformat():
@@ -103,7 +103,7 @@ def main() -> int:
         update_camp["fecha_fin"] = FECHA_NUEVA.isoformat()
     if update_camp:
         db.table("campanas").update(update_camp).eq("id", camp_id).execute()
-        print(f"  ✓ campanas actualizada con {update_camp}")
+        print(f"  OK campanas actualizada con {update_camp}")
 
     n = 0
     for m in muestras_a_tocar:
@@ -111,7 +111,7 @@ def main() -> int:
             {"fecha_muestreo": FECHA_NUEVA.isoformat()}
         ).eq("id", m["id"]).execute()
         n += 1
-    print(f"  ✓ {n} muestras actualizadas a fecha_muestreo = {FECHA_NUEVA.isoformat()}")
+    print(f"  OK {n} muestras actualizadas a fecha_muestreo = {FECHA_NUEVA.isoformat()}")
 
     print("\nListo. Recuerda hacer rerun del geoportal para ver los cambios.")
     return 0
