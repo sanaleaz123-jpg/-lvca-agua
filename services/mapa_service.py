@@ -218,7 +218,13 @@ def get_historial_punto(
     """
     Serie temporal de un parámetro en un punto.
 
-    Retorna lista de {fecha, valor, muestra_codigo} ordenados por fecha asc.
+    Retorna lista de {fecha, fecha_muestreo, fecha_analisis, valor,
+    muestra_codigo} ordenados por fecha de muestreo asc.
+
+    `fecha` queda como alias de `fecha_muestreo` (la fecha en que el técnico
+    de campo tomó la muestra) por ser la semánticamente correcta para gráficos
+    de tendencia. `fecha_analisis` se conserva por si alguna pantalla la
+    necesita explícitamente.
     """
     db = get_admin_client()
 
@@ -249,14 +255,22 @@ def get_historial_punto(
         .execute()
     )
 
-    return [
-        {
-            "fecha":           (r.get("fecha_analisis") or "")[:10],
+    items: list[dict] = []
+    for r in (r_res.data or []):
+        m = r.get("muestras") or {}
+        fecha_muestreo = (m.get("fecha_muestreo") or "")[:10]
+        fecha_analisis = (r.get("fecha_analisis") or "")[:10]
+        items.append({
+            "fecha":           fecha_muestreo or fecha_analisis,
+            "fecha_muestreo":  fecha_muestreo,
+            "fecha_analisis":  fecha_analisis,
             "valor":           r["valor_numerico"],
-            "muestra_codigo":  (r.get("muestras") or {}).get("codigo", ""),
-        }
-        for r in (r_res.data or [])
-    ]
+            "muestra_codigo":  m.get("codigo", ""),
+        })
+
+    # Orden cronológico por fecha de muestreo (fallback fecha_analisis)
+    items.sort(key=lambda x: x["fecha"] or "")
+    return items
 
 
 @cached(ttl=600)
@@ -511,7 +525,7 @@ def get_ultimo_valor_parametro_por_punto(
         db.table("resultados_laboratorio")
         .select(
             "valor_numerico, fecha_analisis, "
-            "muestras(punto_muestreo_id, campana_id, "
+            "muestras(punto_muestreo_id, campana_id, fecha_muestreo, "
             "  puntos_muestreo(eca_id))"
         )
         .eq("parametro_id", parametro_id)
@@ -528,7 +542,10 @@ def get_ultimo_valor_parametro_por_punto(
             if (r.get("muestras") or {}).get("campana_id") == campana_id
         ]
 
-    # Deduplicar por punto, quedándonos con el más reciente
+    # Deduplicar por punto, quedándonos con el más reciente.
+    # `fecha` retorna fecha_muestreo (cuando el campo tomó la muestra) si
+    # está disponible — semánticamente correcta para charts comparativos —
+    # con fallback a fecha_analisis para muestras heredadas.
     por_punto: dict[str, dict] = {}
     eca_ids: set[str] = set()
     for r in rows:
@@ -537,10 +554,14 @@ def get_ultimo_valor_parametro_por_punto(
         if not pid or pid in por_punto:
             continue
         eca_id = (m.get("puntos_muestreo") or {}).get("eca_id")
+        f_muestreo = (m.get("fecha_muestreo") or "")[:10]
+        f_analisis = (r.get("fecha_analisis") or "")[:10]
         por_punto[pid] = {
-            "valor":   r["valor_numerico"],
-            "fecha":   (r.get("fecha_analisis") or "")[:10],
-            "eca_id":  eca_id,
+            "valor":           r["valor_numerico"],
+            "fecha":           f_muestreo or f_analisis,
+            "fecha_muestreo":  f_muestreo,
+            "fecha_analisis":  f_analisis,
+            "eca_id":          eca_id,
         }
         if eca_id:
             eca_ids.add(eca_id)
