@@ -320,22 +320,27 @@ def _render_grafico_campana_comparativo(
         st.warning("La campaña no tiene fechas de inicio/fin definidas.")
         return
 
-    # Última medición del parámetro por punto en el rango de la campaña
+    # Última medición del parámetro por punto en el rango de la campaña.
+    # `info["fecha"]` ya viene de fecha_muestreo (modificación reciente
+    # en services/mapa_service.py: 2026-05-03).
     ultimos = get_ultimo_valor_parametro_por_punto(parametro["id"], fi, ff)
+    es_temp = _es_temperatura(parametro)
 
     items: list[dict] = []
     for p in puntos:
         info = ultimos.get(p["id"]) or {}
         lim = get_limite_eca_parametro(p["id"], parametro["id"])
         eca_cod = (p.get("ecas") or {}).get("codigo") or lim.get("eca_codigo", "")
+        # Para Temperatura nunca dibujamos zonas ECA (DS define un Δ,
+        # no un valor absoluto comparable directamente).
         items.append({
             "codigo":   p.get("codigo", ""),
             "nombre":   p.get("nombre", ""),
             "valor":    info.get("valor"),
             "fecha":    info.get("fecha"),
-            "lim_min":  lim.get("valor_minimo"),
-            "lim_max":  lim.get("valor_maximo"),
-            "eca_cod":  (eca_cod or "").strip(),
+            "lim_min":  None if es_temp else lim.get("valor_minimo"),
+            "lim_max":  None if es_temp else lim.get("valor_maximo"),
+            "eca_cod":  "" if es_temp else (eca_cod or "").strip(),
         })
 
     # Calcular extremos del eje Y para que las zonas ECA se vean centradas
@@ -361,47 +366,56 @@ def _render_grafico_campana_comparativo(
     shapes = []
     annotations = []
 
-    # Dibujar las zonas ECA detrás de cada punto (banda vertical de ancho 0.7)
+    # Dibujar las zonas ECA detrás de cada punto SOLO si tiene límites
+    # definidos. Si lim_min y lim_max son ambos None (no hay ECA o es
+    # Temperatura) → no se dibuja rectángulo y el dot queda en gris.
     for idx, it in enumerate(items):
-        col = _color_zona_eca(it["eca_cod"])
-        # Zona: si tiene min y max → rectángulo entre ambos; si solo max →
-        # rectángulo desde y_lo hasta max; si solo min → desde min hasta y_hi.
-        z_lo = it["lim_min"] if it["lim_min"] is not None else y_lo
-        z_hi = it["lim_max"] if it["lim_max"] is not None else y_hi
+        tiene_lim = (it["lim_min"] is not None) or (it["lim_max"] is not None)
+        if tiene_lim:
+            col = _color_zona_eca(it["eca_cod"])
+            z_lo = it["lim_min"] if it["lim_min"] is not None else y_lo
+            z_hi = it["lim_max"] if it["lim_max"] is not None else y_hi
+
+            shapes.append(dict(
+                type="rect",
+                xref="x", yref="y",
+                x0=idx - 0.40, x1=idx + 0.40,
+                y0=z_lo, y1=z_hi,
+                fillcolor=col["fill"], opacity=0.30,
+                line=dict(color=col["stroke"], width=1),
+                layer="below",
+            ))
+
+            # Anotaciones de límites — más sutiles (gris medio, sin negrita)
+            if it["lim_max"] is not None:
+                annotations.append(dict(
+                    x=idx, y=it["lim_max"],
+                    xref="x", yref="y",
+                    text=f"{it['eca_cod'] or '—'} = {it['lim_max']:g}",
+                    showarrow=False,
+                    font=dict(size=8.5, color=col["stroke"]),
+                    yshift=10,
+                ))
+            if it["lim_min"] is not None:
+                annotations.append(dict(
+                    x=idx, y=it["lim_min"],
+                    xref="x", yref="y",
+                    text=f"{it['eca_cod'] or '—'} = {it['lim_min']:g}",
+                    showarrow=False,
+                    font=dict(size=8.5, color=col["stroke"]),
+                    yshift=-10,
+                ))
+
+    # Color del dot por punto: rojo si excede / azul si cumple / gris sin ECA
+    def _color_dot(it: dict) -> str:
+        if it["valor"] is None:
+            return "#94A3B8"
         if it["lim_min"] is None and it["lim_max"] is None:
-            # Sin ECA — zona translúcida cubriendo todo
-            z_lo, z_hi = y_lo, y_hi
-
-        shapes.append(dict(
-            type="rect",
-            xref="x", yref="y",
-            x0=idx - 0.40, x1=idx + 0.40,
-            y0=z_lo, y1=z_hi,
-            fillcolor=col["fill"], opacity=0.55,
-            line=dict(width=0),
-            layer="below",
-        ))
-
-        # Anotación de borde superior (límite máx) — texto pequeño
-        if it["lim_max"] is not None:
-            annotations.append(dict(
-                x=idx, y=it["lim_max"],
-                xref="x", yref="y",
-                text=f"<b>{it['eca_cod'] or '—'}</b> = {it['lim_max']:g}",
-                showarrow=False,
-                font=dict(size=9, color=col["stroke"]),
-                yshift=10,
-            ))
-        # Anotación de borde inferior (límite mín)
-        if it["lim_min"] is not None:
-            annotations.append(dict(
-                x=idx, y=it["lim_min"],
-                xref="x", yref="y",
-                text=f"{it['eca_cod'] or '—'} = {it['lim_min']:g}",
-                showarrow=False,
-                font=dict(size=9, color=col["stroke"]),
-                yshift=-10,
-            ))
+            return "#94A3B8"
+        if (it["lim_max"] is not None and it["valor"] > it["lim_max"]) or \
+           (it["lim_min"] is not None and it["valor"] < it["lim_min"]):
+            return "#EF4444"
+        return "#2563EB"
 
     # Trace de los puntos medidos (dot)
     x_vals = [it["codigo"] for it in items]
@@ -410,18 +424,26 @@ def _render_grafico_campana_comparativo(
         (f"<b>{it['valor']:.3g}</b>" if it["valor"] is not None else "—")
         for it in items
     ]
+    colores_dot = [_color_dot(it) for it in items]
     hover = [
         (
             f"<b>{it['codigo']}</b> — {it['nombre']}<br>"
             f"Valor: {it['valor']:.4g} {parametro.get('unidades_medida', {}).get('simbolo', '')}<br>"
-            f"ECA: {it['eca_cod'] or '—'} (mín {it['lim_min']} / máx {it['lim_max']})<br>"
-            f"Fecha: {it['fecha'] or '—'}"
+            f"ECA: {it['eca_cod'] or 'sin categoría'}"
+            + (
+                f" (mín {it['lim_min']:g} / máx {it['lim_max']:g})"
+                if (it["lim_min"] is not None and it["lim_max"] is not None) else
+                f" (máx {it['lim_max']:g})" if it["lim_max"] is not None else
+                f" (mín {it['lim_min']:g})" if it["lim_min"] is not None else
+                ""
+            )
+            + f"<br>Fecha de muestreo: {it['fecha'] or '—'}"
         )
         if it["valor"] is not None
         else (
             f"<b>{it['codigo']}</b> — {it['nombre']}<br>"
             f"Sin medición de {parametro['nombre']} en esta campaña.<br>"
-            f"ECA: {it['eca_cod'] or '—'}"
+            f"ECA: {it['eca_cod'] or 'sin categoría'}"
         )
         for it in items
     ]
@@ -430,7 +452,10 @@ def _render_grafico_campana_comparativo(
         x=x_vals,
         y=[v if v is not None else None for v in y_vals],
         mode="markers+text",
-        marker=dict(size=11, color="#0F172A", line=dict(color="#FFFFFF", width=1.5)),
+        marker=dict(
+            size=12, color=colores_dot,
+            line=dict(color="#0F172A", width=1.2),
+        ),
         text=text_vals,
         textposition="top center",
         textfont=dict(size=10, color="#1E293B"),
@@ -476,33 +501,61 @@ def _render_grafico_campana_comparativo(
         key=f"chart_camp_{campana['id']}_{parametro['id']}",
     )
 
-    # Leyenda de categorías ECA (chips, solo las que aparecen + sin ECA)
+    # Leyenda completa: dots de estado + zonas ECA por categoría.
+    # Pensada para que cualquier usuario (no solo el técnico) entienda
+    # qué significa cada elemento del chart.
     cats_presentes = {it["eca_cod"] for it in items if it["eca_cod"]}
-    chips = []
+    chips_cats = []
     for cat, paleta in ECA_CATEGORIA_COLORES.items():
         if cat in cats_presentes:
-            chips.append(
+            chips_cats.append(
                 f'<span style="display:inline-flex; align-items:center; gap:5px; '
                 f'font-size:0.72rem; color:#475569;">'
                 f'<span style="display:inline-block; width:14px; height:10px; '
-                f'background:{paleta["fill"]}; border:1px solid {paleta["stroke"]}; '
+                f'background:{paleta["fill"]}; opacity:0.6; '
+                f'border:1px solid {paleta["stroke"]}; '
                 f'border-radius:3px;"></span>'
-                f'{cat}</span>'
+                f'<b>{cat}</b></span>'
             )
-    if any(not it["eca_cod"] for it in items):
-        chips.append(
-            f'<span style="display:inline-flex; align-items:center; gap:5px; '
-            f'font-size:0.72rem; color:#475569;">'
-            f'<span style="display:inline-block; width:14px; height:10px; '
-            f'background:{ECA_FALLBACK["fill"]}; border:1px solid {ECA_FALLBACK["stroke"]}; '
-            f'border-radius:3px;"></span>'
-            f'Sin categoría</span>'
-        )
-    st.markdown(
-        '<div style="display:flex; flex-wrap:wrap; gap:14px; '
-        'margin:4px 0 2px 0;">' + "".join(chips) + '</div>',
-        unsafe_allow_html=True,
+
+    leyenda_html = (
+        '<div style="border-top:1px solid #f1f5f9; padding-top:8px; margin-top:4px;">'
+        '<div style="font-size:0.72rem; color:#94a3b8; '
+        'text-transform:uppercase; letter-spacing:0.05em; '
+        'font-weight:600; margin-bottom:4px;">Cómo leer el gráfico</div>'
+        '<div style="display:flex; flex-wrap:wrap; gap:14px; margin-bottom:6px;">'
+        # Dots de estado
+        '<span style="display:inline-flex; align-items:center; gap:5px; '
+        'font-size:0.72rem; color:#475569;">'
+        '<span style="display:inline-block; width:11px; height:11px; '
+        'background:#2563EB; border-radius:50%; border:1px solid #0F172A;"></span>'
+        'Cumple ECA</span>'
+        '<span style="display:inline-flex; align-items:center; gap:5px; '
+        'font-size:0.72rem; color:#475569;">'
+        '<span style="display:inline-block; width:11px; height:11px; '
+        'background:#EF4444; border-radius:50%; border:1px solid #0F172A;"></span>'
+        'Excede ECA</span>'
+        '<span style="display:inline-flex; align-items:center; gap:5px; '
+        'font-size:0.72rem; color:#475569;">'
+        '<span style="display:inline-block; width:11px; height:11px; '
+        'background:#94A3B8; border-radius:50%; border:1px solid #0F172A;"></span>'
+        'Sin ECA / sin medición</span>'
+        '</div>'
     )
+
+    if chips_cats:
+        leyenda_html += (
+            '<div style="font-size:0.7rem; color:#94a3b8; margin-bottom:3px;">'
+            'Zonas coloreadas = rango ECA según categoría aplicable a cada punto'
+            '</div>'
+            '<div style="display:flex; flex-wrap:wrap; gap:14px;">'
+            + "".join(chips_cats) +
+            '</div>'
+        )
+
+    leyenda_html += "</div>"
+
+    st.markdown(leyenda_html, unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -510,17 +563,32 @@ def _render_grafico_campana_comparativo(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def _render_barras_mensuales_individuales(
+def _es_temperatura(parametro: dict) -> bool:
+    """True si el parámetro es Temperatura — el ECA del DS-004-2017 es un Δ
+    sobre el natural, no un valor absoluto. Visualizamos sin coloreo ECA
+    para no confundir al usuario."""
+    nombre = (parametro.get("nombre") or "").lower()
+    codigo = (parametro.get("codigo") or "").upper()
+    return ("temperatura" in nombre) or codigo == "P008"
+
+
+def _render_linea_estacionalidad(
     punto: dict,
     parametro: dict,
     anio: int,
 ) -> None:
     """
-    12 slots Ene–Dic del año `anio`: cada medición del parámetro en el punto
-    es una barra individual posicionada en el día exacto del mes. Coloreo:
+    Estacionalidad estilo R-Studio: línea conectando todas las mediciones
+    cronológicamente, markers individuales coloreados por estado ECA, área
+    suave bajo la línea y líneas de referencia ECA horizontales.
+
+    Reglas de color del marker:
         - rojo  si excede ECA máx o cae bajo ECA mín
         - azul  si cumple ECA
-        - gris  si el parámetro no tiene ECA definido en este punto
+        - gris  si el parámetro no tiene ECA o es Temperatura
+
+    Para Temperatura no se dibujan líneas ECA (el DS define un Δ sobre el
+    natural, no un valor absoluto comparable directamente).
     """
     historial = get_historial_punto(punto["id"], parametro["id"], limite=400)
     if not historial:
@@ -535,49 +603,69 @@ def _render_barras_mensuales_individuales(
         st.info(f"Sin mediciones de **{parametro['nombre']}** en {punto['codigo']} / {anio}.")
         return
 
-    df = df.sort_values("fecha")
+    df = df.sort_values("fecha").reset_index(drop=True)
 
+    es_temp = _es_temperatura(parametro)
     lim = get_limite_eca_parametro(punto["id"], parametro["id"])
-    lim_max = lim.get("valor_maximo")
-    lim_min = lim.get("valor_minimo")
+    lim_max = None if es_temp else lim.get("valor_maximo")
+    lim_min = None if es_temp else lim.get("valor_minimo")
     eca_cod = lim.get("eca_codigo", "")
     tiene_eca = (lim_max is not None) or (lim_min is not None)
 
-    # Color por barra: rojo excede / azul cumple / gris sin ECA
-    colores: list[str] = []
+    # Color por marker (R-Studio style): rojo excede / azul cumple / gris sin ECA
+    colores_marker: list[str] = []
     for v in df["valor"]:
         if not tiene_eca:
-            colores.append("#94A3B8")
+            colores_marker.append("#94A3B8")
         elif (lim_max is not None and v > lim_max) or (lim_min is not None and v < lim_min):
-            colores.append("#EF4444")
+            colores_marker.append("#EF4444")
         else:
-            colores.append("#2563EB")
+            colores_marker.append("#2563EB")
 
     unidad = (parametro.get("unidades_medida") or {}).get("simbolo", "")
     y_label = f"{parametro['nombre']} ({unidad})" if unidad else parametro["nombre"]
+    color_linea = "#10B981" if tiene_eca else "#94A3B8"
 
-    fig = go.Figure(go.Bar(
-        x=df["fecha"],
-        y=df["valor"],
-        marker_color=colores,
-        marker_line_color="#1E293B",
-        marker_line_width=0.5,
-        text=[f"{v:.3g}" for v in df["valor"]],
-        textposition="outside",
-        textfont=dict(size=9, color="#1E293B"),
-        hovertemplate=(
-            f"<b>%{{x|%d/%m/%Y}}</b><br>"
-            f"{parametro['nombre']}: %{{y:.4g}}"
-            f"<extra></extra>"
-        ),
-        width=86400000 * 6,   # 6 días en ms — ancho fijo
+    fig = go.Figure()
+
+    # Área translúcida bajo la línea (estilo ggplot/R-Studio)
+    fig.add_trace(go.Scatter(
+        x=df["fecha"], y=df["valor"],
+        mode="lines",
+        line=dict(color=color_linea, width=0),
+        fill="tozeroy",
+        fillcolor="rgba(16,185,129,0.10)" if tiene_eca else "rgba(148,163,184,0.10)",
+        hoverinfo="skip",
+        showlegend=False,
     ))
 
+    # Línea + markers principales
+    fig.add_trace(go.Scatter(
+        x=df["fecha"], y=df["valor"],
+        mode="lines+markers",
+        line=dict(color=color_linea, width=2.2, shape="linear"),
+        marker=dict(
+            size=9, color=colores_marker,
+            line=dict(color="#0F172A", width=1.2),
+            symbol="circle",
+        ),
+        text=[f"{v:.3g}" for v in df["valor"]],
+        customdata=df[["fecha"]].astype(str).values,
+        hovertemplate=(
+            f"<b>%{{customdata[0]}}</b><br>"
+            f"{parametro['nombre']}: <b>%{{y:.4g}}</b>"
+            + (f" {unidad}" if unidad else "")
+            + "<extra></extra>"
+        ),
+        showlegend=False,
+    ))
+
+    # Líneas ECA — solo si NO es temperatura y existen
     if lim_max is not None:
         fig.add_hline(
             y=lim_max, line_dash="dash", line_color="#EF4444",
             line_width=1.4, opacity=0.85,
-            annotation_text=f"Máx ECA: {lim_max}",
+            annotation_text=f"Máx ECA: {lim_max:g}",
             annotation_position="top right",
             annotation_font_size=9, annotation_font_color="#EF4444",
         )
@@ -585,21 +673,26 @@ def _render_barras_mensuales_individuales(
         fig.add_hline(
             y=lim_min, line_dash="dash", line_color="#10B981",
             line_width=1.4, opacity=0.85,
-            annotation_text=f"Mín ECA: {lim_min}",
+            annotation_text=f"Mín ECA: {lim_min:g}",
             annotation_position="bottom right",
             annotation_font_size=9, annotation_font_color="#10B981",
         )
 
-    # Forzar el eje X a abarcar Ene-1 a Dic-31 del año seleccionado
+    titulo = (
+        f"<b>{parametro['nombre']}</b>"
+        + (f" ({unidad})" if unidad else "")
+        + f"  ·  {punto['codigo']} ({anio})"
+        + (f"  ·  ECA {eca_cod}" if (eca_cod and not es_temp) else "")
+    )
+
     fig.update_layout(
         title=dict(
-            text=f"<b>{parametro['nombre']}</b> — {punto['codigo']} ({anio})"
-                 + (f"  ·  ECA {eca_cod}" if eca_cod else ""),
+            text=titulo,
             x=0.02, xanchor="left",
             font=dict(size=12, color="#0F172A"),
         ),
         height=300,
-        margin=dict(l=40, r=20, t=40, b=40),
+        margin=dict(l=40, r=30, t=40, b=40),
         plot_bgcolor="#FFFFFF",
         paper_bgcolor="rgba(0,0,0,0)",
         xaxis=dict(
@@ -617,28 +710,53 @@ def _render_barras_mensuales_individuales(
             tickfont=dict(size=10, color="#64748b"),
         ),
         showlegend=False,
-        bargap=0,
+        hovermode="closest",
     )
 
     st.plotly_chart(
         fig, use_container_width=True,
         config={"displayModeBar": False},
-        key=f"barras_mes_{punto['id']}_{parametro['id']}_{anio}",
+        key=f"linea_estac_{punto['id']}_{parametro['id']}_{anio}",
     )
 
-    # Mini-leyenda (3 chips): cumple azul / excede rojo / sin ECA gris
-    st.markdown(
-        '<div style="display:flex; gap:14px; font-size:0.7rem; '
-        'color:#64748b; margin:2px 0 4px 0; flex-wrap:wrap;">'
-        '<span><span style="display:inline-block; width:10px; height:10px; '
-        'background:#2563EB; border-radius:2px; margin-right:4px; vertical-align:-1px;"></span>Cumple ECA</span>'
-        '<span><span style="display:inline-block; width:10px; height:10px; '
-        'background:#EF4444; border-radius:2px; margin-right:4px; vertical-align:-1px;"></span>Excede ECA</span>'
-        '<span><span style="display:inline-block; width:10px; height:10px; '
-        'background:#94A3B8; border-radius:2px; margin-right:4px; vertical-align:-1px;"></span>Sin ECA</span>'
-        '</div>',
-        unsafe_allow_html=True,
-    )
+    # Leyenda con descripción clara — para que cualquier usuario la entienda
+    if es_temp:
+        st.markdown(
+            '<div style="font-size:0.72rem; color:#64748b; line-height:1.5;">'
+            '<b>Nota:</b> Temperatura no tiene ECA absoluto en el '
+            'D.S. N° 004-2017-MINAM (se evalúa como Δ sobre el natural). '
+            'Los markers se muestran en gris.'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            '<div style="display:flex; gap:14px; font-size:0.72rem; '
+            'color:#475569; margin:2px 0 4px 0; flex-wrap:wrap; '
+            'border-top:1px solid #f1f5f9; padding-top:6px;">'
+            '<span style="display:inline-flex; align-items:center; gap:5px;">'
+            '<span style="display:inline-block; width:11px; height:11px; '
+            'background:#2563EB; border-radius:50%; border:1px solid #0F172A;"></span>'
+            'Cumple ECA</span>'
+            '<span style="display:inline-flex; align-items:center; gap:5px;">'
+            '<span style="display:inline-block; width:11px; height:11px; '
+            'background:#EF4444; border-radius:50%; border:1px solid #0F172A;"></span>'
+            'Excede ECA</span>'
+            '<span style="display:inline-flex; align-items:center; gap:5px;">'
+            '<span style="display:inline-block; width:11px; height:11px; '
+            'background:#94A3B8; border-radius:50%; border:1px solid #0F172A;"></span>'
+            'Sin ECA</span>'
+            '<span style="display:inline-flex; align-items:center; gap:5px;">'
+            '<span style="display:inline-block; width:14px; height:2px; '
+            'background:#EF4444;"></span>'
+            'Línea ECA máx</span>'
+            '<span style="display:inline-flex; align-items:center; gap:5px;">'
+            '<span style="display:inline-block; width:14px; height:2px; '
+            'background:#10B981;"></span>'
+            'Línea ECA mín</span>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -766,29 +884,6 @@ def _render_dashboard(puntos: list[dict]) -> None:
             ),
             unsafe_allow_html=True,
         )
-
-    st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
-
-    # Barra de cumplimiento general — ancho completo
-    color_barra = "#1b6b35" if ic_general >= 80 else "#e8870e" if ic_general >= 50 else "#c62828"
-    st.markdown(
-        f"""<div style="background:#ffffff; border-radius:12px; padding:18px 22px;
-             border:1px solid #f1f5f9;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-            <span style="font-size:0.7rem; color:#94a3b8; text-transform:uppercase;
-                 letter-spacing:0.05em; font-weight:600;">Índice de cumplimiento general ECA</span>
-            <span style="color:{color_barra}; font-weight:600; font-size:1.25rem; letter-spacing:-0.01em;">{ic_general}%</span>
-        </div>
-        <div style="background:#f1f5f9; border-radius:6px; height:10px; overflow:hidden;">
-            <div style="background:{color_barra}; width:{ic_general}%; height:100%;
-                 border-radius:6px; transition: width 0.5s;"></div>
-        </div>
-        <div style="font-size:0.72rem; color:#94a3b8; margin-top:10px;">
-            D.S. N° 004-2017-MINAM · promedio simple del índice por punto
-        </div>
-        </div>""",
-        unsafe_allow_html=True,
-    )
 
     # Panel de alertas críticas (global)
     criticos = sorted(
@@ -1683,12 +1778,6 @@ def main() -> None:
         unsafe_allow_html=True,
     )
 
-    page_header(
-        "Geoportal",
-        "Vigilancia de Calidad del Agua · LVCA",
-        ambito="Cuencas Quilca-Vítor-Chili y Colca-Camaná · AUTODEMA",
-    )
-
     try:
         import folium
         from streamlit_folium import st_folium
@@ -1711,6 +1800,11 @@ def main() -> None:
         st.session_state["geo_vista"] = vista
 
     if vista == "clasica":
+        page_header(
+            "Geoportal",
+            "Vigilancia de Calidad del Agua · LVCA",
+            ambito="Cuencas Quilca-Vítor-Chili y Colca-Camaná · AUTODEMA",
+        )
         _main_vista_clasica()
         return
 
@@ -1901,21 +1995,18 @@ def _render_modo_punto(
     punto = opciones_punto[sel_punto_lbl]
     parametro = opciones_param[sel_param_lbl]
 
-    # Mini-tabs: Estacionalidad | Estado ECA
-    tab_seas, tab_eca = st.tabs([
+    # Mini-tabs: Estacionalidad | Estado ECA | Ficha — los tres juntos para
+    # evitar que el usuario tenga que abrir un expander separado.
+    tab_seas, tab_eca, tab_ficha = st.tabs([
         ":material/calendar_month: Estacionalidad",
         ":material/shield: Estado ECA",
+        ":material/info: Ficha del punto",
     ])
     with tab_seas:
-        _render_barras_mensuales_individuales(punto, parametro, sel_anio)
+        _render_linea_estacionalidad(punto, parametro, sel_anio)
     with tab_eca:
         _render_estado_eca_compacto(punto, fecha_inicio, fecha_fin)
-
-    # Ficha del punto en expander (colapsado por defecto)
-    with st.expander(
-        f":material/info: Ficha — {punto['codigo']}",
-        expanded=False,
-    ):
+    with tab_ficha:
         _render_panel_punto(punto)
 
 
