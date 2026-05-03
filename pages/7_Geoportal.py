@@ -41,8 +41,34 @@ from services.mapa_service import (
     get_ultimo_valor_parametro_por_punto,
     get_ultimos_resultados_punto,
 )
-from services.resultado_service import get_campanas
+from services.resultado_service import get_campanas, get_puntos_de_campana
 from services.fitoplancton_service import get_alertas_oms_por_punto
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Paleta de zonas ECA por categoría (Modo Campaña — chart comparativo)
+# ─────────────────────────────────────────────────────────────────────────────
+# Coincide con la referencia visual del usuario: cada zona es el rectángulo
+# (lim_min → lim_max) dibujado detrás del valor del punto, coloreado según
+# la categoría ECA de ESE punto. Solo 4 categorías + fallback "sin_eca".
+ECA_CATEGORIA_COLORES: dict[str, dict[str, str]] = {
+    "1 A2": {"fill": "#A7F3D0", "stroke": "#10B981"},   # verde menta
+    "3 D1": {"fill": "#FED7AA", "stroke": "#EA580C"},   # naranja claro
+    "4 E1": {"fill": "#E9D5FF", "stroke": "#7C3AED"},   # lavanda
+    "4 E2": {"fill": "#BAE6FD", "stroke": "#0284C7"},   # celeste
+}
+ECA_FALLBACK = {"fill": "#E5E7EB", "stroke": "#94A3B8"}
+
+
+def _color_zona_eca(eca_codigo: str) -> dict[str, str]:
+    """Devuelve el dict {fill, stroke} para una categoría ECA. Match flexible."""
+    if not eca_codigo:
+        return ECA_FALLBACK
+    cod = eca_codigo.strip().upper().replace("  ", " ")
+    for clave, paleta in ECA_CATEGORIA_COLORES.items():
+        if clave.upper() == cod:
+            return paleta
+    return ECA_FALLBACK
 
 
 # ─── Constantes ──────────────────────────────────────────────────────────────
@@ -263,6 +289,370 @@ def _render_barras_tendencia_anual(punto: dict, parametros: list[dict]) -> None:
         '</div>',
         unsafe_allow_html=True,
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Modo Campaña — gráfico comparativo (dots + zonas ECA por punto)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _render_grafico_campana_comparativo(
+    campana: dict,
+    parametro: dict,
+    puntos: list[dict],
+) -> None:
+    """
+    Replica visual de la referencia del usuario: para cada punto de la
+    campaña, dibuja un rectángulo coloreado entre el límite mínimo y máximo
+    del ECA aplicable a ese punto, con la categoría como anotación arriba
+    y abajo. El valor medido se grafica como un punto sólido sobre la zona.
+
+    Si un punto no tiene el parámetro medido → muestra "—" como label, sin dot.
+    Si un punto no tiene ECA aplicable → zona gris fallback.
+    """
+    if not puntos:
+        st.info("La campaña seleccionada no tiene puntos asociados.")
+        return
+
+    fi = (campana.get("fecha_inicio") or "")[:10]
+    ff = (campana.get("fecha_fin") or "")[:10]
+    if not fi or not ff:
+        st.warning("La campaña no tiene fechas de inicio/fin definidas.")
+        return
+
+    # Última medición del parámetro por punto en el rango de la campaña
+    ultimos = get_ultimo_valor_parametro_por_punto(parametro["id"], fi, ff)
+
+    items: list[dict] = []
+    for p in puntos:
+        info = ultimos.get(p["id"]) or {}
+        lim = get_limite_eca_parametro(p["id"], parametro["id"])
+        eca_cod = (p.get("ecas") or {}).get("codigo") or lim.get("eca_codigo", "")
+        items.append({
+            "codigo":   p.get("codigo", ""),
+            "nombre":   p.get("nombre", ""),
+            "valor":    info.get("valor"),
+            "fecha":    info.get("fecha"),
+            "lim_min":  lim.get("valor_minimo"),
+            "lim_max":  lim.get("valor_maximo"),
+            "eca_cod":  (eca_cod or "").strip(),
+        })
+
+    # Calcular extremos del eje Y para que las zonas ECA se vean centradas
+    todos_lim_max = [i["lim_max"] for i in items if i["lim_max"] is not None]
+    todos_lim_min = [i["lim_min"] for i in items if i["lim_min"] is not None]
+    todos_valores = [i["valor"]   for i in items if i["valor"]   is not None]
+
+    universo = todos_lim_max + todos_lim_min + todos_valores
+    if not universo:
+        st.info(
+            f"Sin datos ni límites ECA para **{parametro['nombre']}** "
+            f"en los puntos de **{campana['codigo']}**."
+        )
+        return
+
+    y_min_data = min(universo)
+    y_max_data = max(universo)
+    pad = (y_max_data - y_min_data) * 0.15 if y_max_data > y_min_data else max(1.0, abs(y_max_data) * 0.15)
+    y_lo = y_min_data - pad
+    y_hi = y_max_data + pad
+
+    fig = go.Figure()
+    shapes = []
+    annotations = []
+
+    # Dibujar las zonas ECA detrás de cada punto (banda vertical de ancho 0.7)
+    for idx, it in enumerate(items):
+        col = _color_zona_eca(it["eca_cod"])
+        # Zona: si tiene min y max → rectángulo entre ambos; si solo max →
+        # rectángulo desde y_lo hasta max; si solo min → desde min hasta y_hi.
+        z_lo = it["lim_min"] if it["lim_min"] is not None else y_lo
+        z_hi = it["lim_max"] if it["lim_max"] is not None else y_hi
+        if it["lim_min"] is None and it["lim_max"] is None:
+            # Sin ECA — zona translúcida cubriendo todo
+            z_lo, z_hi = y_lo, y_hi
+
+        shapes.append(dict(
+            type="rect",
+            xref="x", yref="y",
+            x0=idx - 0.40, x1=idx + 0.40,
+            y0=z_lo, y1=z_hi,
+            fillcolor=col["fill"], opacity=0.55,
+            line=dict(width=0),
+            layer="below",
+        ))
+
+        # Anotación de borde superior (límite máx) — texto pequeño
+        if it["lim_max"] is not None:
+            annotations.append(dict(
+                x=idx, y=it["lim_max"],
+                xref="x", yref="y",
+                text=f"<b>{it['eca_cod'] or '—'}</b> = {it['lim_max']:g}",
+                showarrow=False,
+                font=dict(size=9, color=col["stroke"]),
+                yshift=10,
+            ))
+        # Anotación de borde inferior (límite mín)
+        if it["lim_min"] is not None:
+            annotations.append(dict(
+                x=idx, y=it["lim_min"],
+                xref="x", yref="y",
+                text=f"{it['eca_cod'] or '—'} = {it['lim_min']:g}",
+                showarrow=False,
+                font=dict(size=9, color=col["stroke"]),
+                yshift=-10,
+            ))
+
+    # Trace de los puntos medidos (dot)
+    x_vals = [it["codigo"] for it in items]
+    y_vals = [it["valor"] for it in items]
+    text_vals = [
+        (f"<b>{it['valor']:.3g}</b>" if it["valor"] is not None else "—")
+        for it in items
+    ]
+    hover = [
+        (
+            f"<b>{it['codigo']}</b> — {it['nombre']}<br>"
+            f"Valor: {it['valor']:.4g} {parametro.get('unidades_medida', {}).get('simbolo', '')}<br>"
+            f"ECA: {it['eca_cod'] or '—'} (mín {it['lim_min']} / máx {it['lim_max']})<br>"
+            f"Fecha: {it['fecha'] or '—'}"
+        )
+        if it["valor"] is not None
+        else (
+            f"<b>{it['codigo']}</b> — {it['nombre']}<br>"
+            f"Sin medición de {parametro['nombre']} en esta campaña.<br>"
+            f"ECA: {it['eca_cod'] or '—'}"
+        )
+        for it in items
+    ]
+
+    fig.add_trace(go.Scatter(
+        x=x_vals,
+        y=[v if v is not None else None for v in y_vals],
+        mode="markers+text",
+        marker=dict(size=11, color="#0F172A", line=dict(color="#FFFFFF", width=1.5)),
+        text=text_vals,
+        textposition="top center",
+        textfont=dict(size=10, color="#1E293B"),
+        hovertext=hover,
+        hovertemplate="%{hovertext}<extra></extra>",
+        showlegend=False,
+    ))
+
+    unidad = (parametro.get("unidades_medida") or {}).get("simbolo", "")
+    y_label = f"{parametro['nombre']} ({unidad})" if unidad else parametro["nombre"]
+
+    fig.update_layout(
+        title=dict(
+            text=f"<b>{parametro['nombre']}</b>" + (f" ({unidad})" if unidad else ""),
+            x=0.5, xanchor="center",
+            font=dict(size=14, color="#0F172A"),
+        ),
+        height=340,
+        margin=dict(l=50, r=20, t=50, b=80),
+        plot_bgcolor="#FFFFFF",
+        paper_bgcolor="rgba(0,0,0,0)",
+        shapes=shapes,
+        annotations=annotations,
+        xaxis=dict(
+            tickangle=-45,
+            tickfont=dict(size=10, color="#1E293B"),
+            showgrid=False,
+            zeroline=False,
+        ),
+        yaxis=dict(
+            title=dict(text=y_label, font=dict(size=10, color="#64748b")),
+            range=[y_lo, y_hi],
+            gridcolor="#F1F5F9",
+            zeroline=False,
+            tickfont=dict(size=10, color="#64748b"),
+        ),
+        showlegend=False,
+    )
+
+    st.plotly_chart(
+        fig, use_container_width=True,
+        config={"displayModeBar": False},
+        key=f"chart_camp_{campana['id']}_{parametro['id']}",
+    )
+
+    # Leyenda de categorías ECA (chips, solo las que aparecen + sin ECA)
+    cats_presentes = {it["eca_cod"] for it in items if it["eca_cod"]}
+    chips = []
+    for cat, paleta in ECA_CATEGORIA_COLORES.items():
+        if cat in cats_presentes:
+            chips.append(
+                f'<span style="display:inline-flex; align-items:center; gap:5px; '
+                f'font-size:0.72rem; color:#475569;">'
+                f'<span style="display:inline-block; width:14px; height:10px; '
+                f'background:{paleta["fill"]}; border:1px solid {paleta["stroke"]}; '
+                f'border-radius:3px;"></span>'
+                f'{cat}</span>'
+            )
+    if any(not it["eca_cod"] for it in items):
+        chips.append(
+            f'<span style="display:inline-flex; align-items:center; gap:5px; '
+            f'font-size:0.72rem; color:#475569;">'
+            f'<span style="display:inline-block; width:14px; height:10px; '
+            f'background:{ECA_FALLBACK["fill"]}; border:1px solid {ECA_FALLBACK["stroke"]}; '
+            f'border-radius:3px;"></span>'
+            f'Sin categoría</span>'
+        )
+    st.markdown(
+        '<div style="display:flex; flex-wrap:wrap; gap:14px; '
+        'margin:4px 0 2px 0;">' + "".join(chips) + '</div>',
+        unsafe_allow_html=True,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Modo Punto — barras mensuales con TODAS las mediciones individuales
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _render_barras_mensuales_individuales(
+    punto: dict,
+    parametro: dict,
+    anio: int,
+) -> None:
+    """
+    12 slots Ene–Dic del año `anio`: cada medición del parámetro en el punto
+    es una barra individual posicionada en el día exacto del mes. Coloreo:
+        - rojo  si excede ECA máx o cae bajo ECA mín
+        - azul  si cumple ECA
+        - gris  si el parámetro no tiene ECA definido en este punto
+    """
+    historial = get_historial_punto(punto["id"], parametro["id"], limite=400)
+    if not historial:
+        st.info(f"Sin mediciones de **{parametro['nombre']}** en {punto['codigo']} / {anio}.")
+        return
+
+    df = pd.DataFrame(historial)
+    df["fecha"] = pd.to_datetime(df["fecha"], errors="coerce")
+    df = df.dropna(subset=["fecha", "valor"])
+    df = df[df["fecha"].dt.year == int(anio)]
+    if df.empty:
+        st.info(f"Sin mediciones de **{parametro['nombre']}** en {punto['codigo']} / {anio}.")
+        return
+
+    df = df.sort_values("fecha")
+
+    lim = get_limite_eca_parametro(punto["id"], parametro["id"])
+    lim_max = lim.get("valor_maximo")
+    lim_min = lim.get("valor_minimo")
+    eca_cod = lim.get("eca_codigo", "")
+    tiene_eca = (lim_max is not None) or (lim_min is not None)
+
+    # Color por barra: rojo excede / azul cumple / gris sin ECA
+    colores: list[str] = []
+    for v in df["valor"]:
+        if not tiene_eca:
+            colores.append("#94A3B8")
+        elif (lim_max is not None and v > lim_max) or (lim_min is not None and v < lim_min):
+            colores.append("#EF4444")
+        else:
+            colores.append("#2563EB")
+
+    unidad = (parametro.get("unidades_medida") or {}).get("simbolo", "")
+    y_label = f"{parametro['nombre']} ({unidad})" if unidad else parametro["nombre"]
+
+    fig = go.Figure(go.Bar(
+        x=df["fecha"],
+        y=df["valor"],
+        marker_color=colores,
+        marker_line_color="#1E293B",
+        marker_line_width=0.5,
+        text=[f"{v:.3g}" for v in df["valor"]],
+        textposition="outside",
+        textfont=dict(size=9, color="#1E293B"),
+        hovertemplate=(
+            f"<b>%{{x|%d/%m/%Y}}</b><br>"
+            f"{parametro['nombre']}: %{{y:.4g}}"
+            f"<extra></extra>"
+        ),
+        width=86400000 * 6,   # 6 días en ms — ancho fijo
+    ))
+
+    if lim_max is not None:
+        fig.add_hline(
+            y=lim_max, line_dash="dash", line_color="#EF4444",
+            line_width=1.4, opacity=0.85,
+            annotation_text=f"Máx ECA: {lim_max}",
+            annotation_position="top right",
+            annotation_font_size=9, annotation_font_color="#EF4444",
+        )
+    if lim_min is not None:
+        fig.add_hline(
+            y=lim_min, line_dash="dash", line_color="#10B981",
+            line_width=1.4, opacity=0.85,
+            annotation_text=f"Mín ECA: {lim_min}",
+            annotation_position="bottom right",
+            annotation_font_size=9, annotation_font_color="#10B981",
+        )
+
+    # Forzar el eje X a abarcar Ene-1 a Dic-31 del año seleccionado
+    fig.update_layout(
+        title=dict(
+            text=f"<b>{parametro['nombre']}</b> — {punto['codigo']} ({anio})"
+                 + (f"  ·  ECA {eca_cod}" if eca_cod else ""),
+            x=0.02, xanchor="left",
+            font=dict(size=12, color="#0F172A"),
+        ),
+        height=300,
+        margin=dict(l=40, r=20, t=40, b=40),
+        plot_bgcolor="#FFFFFF",
+        paper_bgcolor="rgba(0,0,0,0)",
+        xaxis=dict(
+            range=[f"{anio}-01-01", f"{anio}-12-31"],
+            tickformat="%b",
+            dtick="M1",
+            tickfont=dict(size=10, color="#64748b"),
+            showgrid=True,
+            gridcolor="#F1F5F9",
+        ),
+        yaxis=dict(
+            title=dict(text=y_label, font=dict(size=10, color="#64748b")),
+            gridcolor="#F1F5F9",
+            zerolinecolor="#E2E8F0",
+            tickfont=dict(size=10, color="#64748b"),
+        ),
+        showlegend=False,
+        bargap=0,
+    )
+
+    st.plotly_chart(
+        fig, use_container_width=True,
+        config={"displayModeBar": False},
+        key=f"barras_mes_{punto['id']}_{parametro['id']}_{anio}",
+    )
+
+    # Mini-leyenda (3 chips): cumple azul / excede rojo / sin ECA gris
+    st.markdown(
+        '<div style="display:flex; gap:14px; font-size:0.7rem; '
+        'color:#64748b; margin:2px 0 4px 0; flex-wrap:wrap;">'
+        '<span><span style="display:inline-block; width:10px; height:10px; '
+        'background:#2563EB; border-radius:2px; margin-right:4px; vertical-align:-1px;"></span>Cumple ECA</span>'
+        '<span><span style="display:inline-block; width:10px; height:10px; '
+        'background:#EF4444; border-radius:2px; margin-right:4px; vertical-align:-1px;"></span>Excede ECA</span>'
+        '<span><span style="display:inline-block; width:10px; height:10px; '
+        'background:#94A3B8; border-radius:2px; margin-right:4px; vertical-align:-1px;"></span>Sin ECA</span>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Modo Punto — Estado ECA compacto (tabla)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _render_estado_eca_compacto(punto: dict, fecha_inicio: str, fecha_fin: str) -> None:
+    """Tabla compacta de comparativa ECA por parámetro para un punto."""
+    datos = get_comparativa_eca_punto(punto["id"], fecha_inicio, fecha_fin)
+    if not datos:
+        st.info("Sin datos para este punto en el periodo seleccionado.")
+        return
+    _render_comparativa_eca_filtered(datos, cat="punto_sidebar")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1249,6 +1639,50 @@ def _render_ultimos_resultados(punto: dict, cat: str = "") -> None:
 def main() -> None:
     aplicar_estilos()
     top_nav()
+
+    # Toggle "vista clásica / vista integrada" — feature flag visual.
+    # La vista integrada es el rediseño nuevo (sidebar derecha con todos los
+    # controles, sin scroll). La clásica conserva el layout anterior con
+    # tabs analíticas debajo del mapa, por si la integrada no convence.
+    st.session_state.setdefault("geo_vista", "integrada")
+
+    # CSS específico de la cabecera + vista compacta del geoportal
+    st.markdown(
+        """
+        <style>
+        /* Compactar el padding superior cuando la vista integrada está activa
+           para maximizar el espacio vertical disponible (cero scroll). */
+        [data-testid="stMainBlockContainer"]:has(.lvca-geo-vista-integrada) {
+            padding-top: 84px !important;
+            padding-bottom: 12px !important;
+        }
+        /* Eliminar gaps verticales de los st.columns en el sidebar derecha */
+        .lvca-geo-sidebar [data-testid="stVerticalBlock"] {
+            gap: 0.5rem !important;
+        }
+        .lvca-geo-sidebar [data-testid="stRadio"] {
+            margin-bottom: -8px;
+        }
+        .lvca-geo-sidebar .stRadio > div {
+            flex-direction: row !important;
+            gap: 10px !important;
+        }
+        .lvca-geo-sidebar [data-testid="stExpander"] details {
+            border-radius: 10px;
+            border: 1px solid #E2E8F0;
+            background: #F8FAFC;
+        }
+        .lvca-geo-sidebar [data-testid="stExpander"] summary {
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: #475569;
+            padding: 6px 10px;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     page_header(
         "Geoportal",
         "Vigilancia de Calidad del Agua · LVCA",
@@ -1262,7 +1696,237 @@ def main() -> None:
         st.error("Instala: `pip install folium streamlit-folium`")
         st.stop()
 
-    # ── Barra de filtros (en el área principal, no en sidebar) ──────────
+    # ── Toggle de vista (clásica vs integrada) — fila estrecha
+    vt_l, vt_r = st.columns([4, 1])
+    with vt_r:
+        vista = st.radio(
+            "Vista",
+            options=["integrada", "clasica"],
+            index=0 if st.session_state.get("geo_vista", "integrada") == "integrada" else 1,
+            key="geo_vista_radio",
+            horizontal=True,
+            label_visibility="collapsed",
+            format_func=lambda v: ("Vista integrada" if v == "integrada" else "Vista clásica"),
+        )
+        st.session_state["geo_vista"] = vista
+
+    if vista == "clasica":
+        _main_vista_clasica()
+        return
+
+    # ─────────────────────────────────────────────────────────────────────
+    # VISTA INTEGRADA — sin scroll, sidebar derecha con todos los controles
+    # ─────────────────────────────────────────────────────────────────────
+
+    st.markdown('<div class="lvca-geo-vista-integrada"></div>', unsafe_allow_html=True)
+
+    # Estado por defecto del modo (Campaña / Punto)
+    st.session_state.setdefault("geo_modo", "campana")
+
+    # Defaults para Desde/Hasta (los filtros viven ahora en la sidebar)
+    fecha_inicio = st.session_state.get("geo_desde") or (date.today() - timedelta(days=90))
+    fecha_fin    = st.session_state.get("geo_hasta") or date.today()
+    campana_id_global = None  # mapa muestra todos los puntos por defecto
+    solo_exc = st.session_state.get("geo_solo_exc", False)
+
+    with st.spinner("Cargando datos..."):
+        try:
+            puntos = get_puntos_geoportal(str(fecha_inicio), str(fecha_fin), campana_id_global)
+        except Exception as exc:
+            st.error(f"Error al cargar puntos: {exc}")
+            st.stop()
+
+    puntos_con_coords = [p for p in puntos if p.get("latitud") and p.get("longitud")]
+    if not puntos_con_coords:
+        st.warning("No hay puntos con coordenadas disponibles.")
+        st.stop()
+
+    opciones_punto = {f"{p['codigo']} — {p['nombre']}": p for p in puntos_con_coords}
+    parametros = get_parametros_selector()
+    campanas = get_campanas()
+
+    # ── 1. Dashboard global (4 KPIs full width — fijos arriba) ─────────
+    _render_dashboard(puntos_con_coords)
+    success_toast(
+        "Datos de monitoreo actualizados exitosamente.",
+        key="geoportal_load",
+    )
+
+    # ── 2. Mapa (7/12) + Sidebar derecha (5/12) ─────────────────────────
+    col_mapa, col_side = st.columns([7, 5], gap="medium")
+
+    with col_mapa:
+        mapa = _construir_mapa(puntos_con_coords, solo_exc)
+        map_data = st_folium(
+            mapa, use_container_width=True, height=540,
+            returned_objects=["last_object_clicked"],
+        )
+
+    # Click en marcador → cambia automáticamente a Modo Punto + selecciona el punto
+    if map_data and map_data.get("last_object_clicked"):
+        clicked = map_data["last_object_clicked"]
+        clat, clon = clicked.get("lat"), clicked.get("lng")
+        if clat and clon:
+            min_dist = float("inf")
+            closest_label = None
+            for label, p in opciones_punto.items():
+                dist = (p["latitud"] - clat) ** 2 + (p["longitud"] - clon) ** 2
+                if dist < min_dist:
+                    min_dist = dist
+                    closest_label = label
+            current = st.session_state.get("geo_punto")
+            if closest_label and min_dist < 0.01 and closest_label != current:
+                st.session_state["geo_punto"] = closest_label
+                st.session_state["geo_modo"] = "punto"
+                st.rerun()
+
+    # ── Sidebar derecha — todos los controles + chart activo
+    with col_side:
+        st.markdown('<div class="lvca-geo-sidebar">', unsafe_allow_html=True)
+
+        # Filtros globales (compactos en expander, colapsado por defecto)
+        with st.expander(":material/tune: Filtros del mapa", expanded=False):
+            ff_a, ff_b = st.columns(2)
+            with ff_a:
+                st.date_input(
+                    "Desde",
+                    value=fecha_inicio,
+                    key="geo_desde",
+                )
+            with ff_b:
+                st.date_input(
+                    "Hasta",
+                    value=fecha_fin,
+                    key="geo_hasta",
+                )
+            st.checkbox(
+                "Solo puntos con excedencias",
+                key="geo_solo_exc",
+                help="Oculta del mapa los puntos que cumplen ECA o sin datos.",
+            )
+
+        # Toggle de modo (Campaña vs Punto)
+        modo = st.radio(
+            "Modo",
+            options=["campana", "punto"],
+            format_func=lambda v: ("Por campaña" if v == "campana" else "Por punto"),
+            key="geo_modo",
+            horizontal=True,
+            label_visibility="collapsed",
+        )
+
+        if modo == "campana":
+            _render_modo_campana(parametros, campanas)
+        else:
+            _render_modo_punto(
+                opciones_punto, parametros,
+                str(fecha_inicio), str(fecha_fin),
+            )
+
+        st.markdown('</div>', unsafe_allow_html=True)
+
+
+def _render_modo_campana(parametros: list[dict], campanas: list[dict]) -> None:
+    """Sidebar — Modo Campaña: selector de campaña + parámetro + chart."""
+    if not campanas:
+        st.info("No hay campañas registradas.")
+        return
+
+    opciones_camp = {f"{c['codigo']} — {c['nombre']}": c for c in campanas}
+    cc_a, cc_b = st.columns(2)
+    with cc_a:
+        sel_camp_lbl = st.selectbox(
+            "Campaña",
+            list(opciones_camp.keys()),
+            key="geo_camp_chart",
+        )
+    with cc_b:
+        opciones_param = {f"{pr['codigo']} — {pr['nombre']}": pr for pr in parametros}
+        sel_param_lbl = st.selectbox(
+            "Parámetro",
+            list(opciones_param.keys()),
+            key="geo_camp_param",
+        )
+
+    campana = opciones_camp[sel_camp_lbl]
+    parametro = opciones_param[sel_param_lbl]
+
+    # Cargar puntos de la campaña con sus ecas (reuso geoportal+filter)
+    pts_camp_ids = {p["id"] for p in get_puntos_de_campana(campana["id"])}
+    fi = (campana.get("fecha_inicio") or "")[:10]
+    ff = (campana.get("fecha_fin") or "")[:10]
+    if not fi or not ff:
+        st.warning("La campaña no tiene rango de fechas válido.")
+        return
+
+    todos_pts = get_puntos_geoportal(fi, ff, campana["id"])
+    pts_camp = [p for p in todos_pts if p["id"] in pts_camp_ids]
+    if not pts_camp:
+        st.info("La campaña no tiene puntos con resultados en su rango de fechas.")
+        return
+
+    _render_grafico_campana_comparativo(campana, parametro, pts_camp)
+
+
+def _render_modo_punto(
+    opciones_punto: dict[str, dict],
+    parametros: list[dict],
+    fecha_inicio: str,
+    fecha_fin: str,
+) -> None:
+    """Sidebar — Modo Punto: selector punto+param+año + tabs Estacionalidad / Estado ECA + ficha."""
+    pp_a, pp_b = st.columns(2)
+    with pp_a:
+        sel_punto_lbl = st.selectbox(
+            "Punto",
+            list(opciones_punto.keys()),
+            key="geo_punto",
+            help="Sincronizado con el click en el marcador del mapa.",
+        )
+    with pp_b:
+        opciones_param = {f"{pr['codigo']} — {pr['nombre']}": pr for pr in parametros}
+        sel_param_lbl = st.selectbox(
+            "Parámetro",
+            list(opciones_param.keys()),
+            key="geo_punto_param",
+        )
+
+    anio_actual = date.today().year
+    sel_anio = st.selectbox(
+        "Año",
+        list(range(anio_actual, anio_actual - 6, -1)),
+        key="geo_punto_anio",
+    )
+
+    punto = opciones_punto[sel_punto_lbl]
+    parametro = opciones_param[sel_param_lbl]
+
+    # Mini-tabs: Estacionalidad | Estado ECA
+    tab_seas, tab_eca = st.tabs([
+        ":material/calendar_month: Estacionalidad",
+        ":material/shield: Estado ECA",
+    ])
+    with tab_seas:
+        _render_barras_mensuales_individuales(punto, parametro, sel_anio)
+    with tab_eca:
+        _render_estado_eca_compacto(punto, fecha_inicio, fecha_fin)
+
+    # Ficha del punto en expander (colapsado por defecto)
+    with st.expander(
+        f":material/info: Ficha — {punto['codigo']}",
+        expanded=False,
+    ):
+        _render_panel_punto(punto)
+
+
+def _main_vista_clasica() -> None:
+    """
+    Layout clásico (pre-rediseño) — KPIs + mapa+ficha+tabs analíticas debajo.
+    Se conserva como fallback bajo el toggle 'Vista clásica'.
+    """
+    import folium  # noqa: F401
+    from streamlit_folium import st_folium
+
     from components.ui_styles import filter_bar_open, filter_bar_close
     filter_bar_open()
     fc1, fc2, fc3, fc4 = st.columns([1, 1, 2, 2])
@@ -1288,74 +1952,30 @@ def main() -> None:
         )
     filter_bar_close()
 
-    # ── Cargar datos ────────────────────────────────────────────────────
     with st.spinner("Cargando datos..."):
         try:
             puntos = get_puntos_geoportal(str(fecha_inicio), str(fecha_fin), campana_id)
         except Exception as exc:
             st.error(f"Error al cargar puntos: {exc}")
             st.stop()
-
     puntos_con_coords = [p for p in puntos if p.get("latitud") and p.get("longitud")]
-
     if not puntos_con_coords:
         st.warning("No hay puntos con coordenadas disponibles para la campaña seleccionada.")
         st.stop()
-
     opciones_punto = {f"{p['codigo']} — {p['nombre']}": p for p in puntos_con_coords}
     parametros = get_parametros_selector()
 
-    # ── 1. Dashboard global ─────────────────────────────────────────────
     _render_dashboard(puntos_con_coords)
-
-    # Toast verde flotante: solo primera vez por sesión, no en cada rerun.
-    success_toast(
-        "Datos de monitoreo actualizados exitosamente.",
-        key="geoportal_load",
-    )
-
+    success_toast("Datos de monitoreo actualizados exitosamente.", key="geoportal_load")
     st.divider()
 
-    # ── 2. Mapa + panel lateral del punto seleccionado ──────────────────
-    # Layout 2 columnas: mapa a la izquierda, ficha del punto a la derecha.
-    # El click en el mapa actualiza el selectbox del panel sin scrollear.
     col_mapa, col_panel = st.columns([7, 5], gap="medium")
-
     with col_mapa:
         mapa = _construir_mapa(puntos_con_coords, solo_exc)
         map_data = st_folium(
             mapa, use_container_width=True, height=620,
             returned_objects=["last_object_clicked"],
         )
-        st.caption(
-            "Para zoom muy cerrado se recomienda la capa **Calles** — el satélite "
-            "Esri no tiene imágenes de alta resolución en zonas altiplánicas "
-            "remotas de la cuenca alta del Chili."
-        )
-
-        # Estado de la capa "Alerta OMS Cianobacterias" debajo del mapa.
-        cyano_meta = getattr(mapa, "_cyano_meta", {}) or {}
-        n_cyano = cyano_meta.get("n_puntos_con_analisis", 0)
-        cyano_err = cyano_meta.get("error")
-        if cyano_err:
-            st.caption(
-                f":material/warning: Capa Alerta OMS Cianobacterias: error al "
-                f"consultar análisis fitoplancton ({cyano_err})."
-            )
-        elif n_cyano == 0:
-            st.caption(
-                ":material/info: Capas **Alerta OMS 1999** y **Alerta OMS 2021** "
-                "disponibles en el control de capas pero vacías: ningún punto del "
-                "filtro tiene análisis Sedgewick-Rafter cargado todavía."
-            )
-        else:
-            st.caption(
-                f":material/biotech: **{n_cyano}** punto(s) con análisis "
-                "fitoplancton. Activa **OMS 1999** (anillo sólido, densidad celular) "
-                "u **OMS 2021** (anillo punteado, biovolumen) en el control de capas."
-            )
-
-    # Click en el mapa → actualiza la selección persistente del selectbox
     if map_data and map_data.get("last_object_clicked"):
         clicked = map_data["last_object_clicked"]
         clat, clon = clicked.get("lat"), clicked.get("lng")
@@ -1372,19 +1992,13 @@ def main() -> None:
                 st.session_state["geo_punto"] = closest_label
                 st.rerun()
 
-    # Panel lateral (col derecha) — Análisis Avanzado arriba (gráfico de
-    # barras anual con ECA), ficha del punto debajo. El gráfico se reactiva
-    # con cada click en el mapa via punto_sel.
     with col_panel:
         sel_punto_label = st.selectbox(
             "Punto seleccionado",
             list(opciones_punto.keys()),
             key="geo_punto",
-            help="Click en un marcador del mapa también cambia esta selección.",
         )
         punto_sel = opciones_punto[sel_punto_label]
-
-        # ── Análisis Avanzado: bar chart anual reactivo al punto seleccionado
         st.markdown(
             '<div style="margin-top:6px; display:flex; align-items:center; '
             'gap:8px; padding:0 0 4px 0;">'
@@ -1396,17 +2010,10 @@ def main() -> None:
             unsafe_allow_html=True,
         )
         _render_barras_tendencia_anual(punto_sel, parametros)
-
-        # ── Ficha del punto (debajo del gráfico)
         _render_panel_punto(punto_sel)
 
     st.divider()
-
-    # ── 3. Análisis del punto (ancho completo) ──────────────────────────
     section_header(f"Análisis · {punto_sel['codigo']} — {punto_sel['nombre']}", "analytics")
-
-    # Filtro de categoría sobre el selector de parámetro.
-    # Sustituye los antiguos tabs de Campo / Fisicoquímico / Hidrobiológico.
     cat_c1, cat_c2 = st.columns([1, 3])
     with cat_c1:
         categoria_filtro = st.radio(
@@ -1414,18 +2021,15 @@ def main() -> None:
             ["Todas", "Campo", "Fisicoquimico", "Hidrobiologico"],
             horizontal=False,
             key="geo_cat_filtro",
-            label_visibility="visible",
         )
     with cat_c2:
         if categoria_filtro == "Todas":
             params_filtrados = parametros
         else:
             params_filtrados = [pr for pr in parametros if _clasificar_cat(pr) == categoria_filtro]
-
         if not params_filtrados:
             st.warning(f"No hay parámetros en la categoría **{categoria_filtro}**.")
             st.stop()
-
         opciones_param_filt = {f"{pr['codigo']} — {pr['nombre']}": pr for pr in params_filtrados}
         sel_param_label = st.selectbox(
             "Parámetro a graficar",
@@ -1433,7 +2037,6 @@ def main() -> None:
             key="geo_param",
         )
         param_sel = opciones_param_filt[sel_param_label]
-
     _render_analisis_punto(
         punto_sel, param_sel, puntos_con_coords,
         str(fecha_inicio), str(fecha_fin), sel_camp,
