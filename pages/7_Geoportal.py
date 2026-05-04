@@ -894,35 +894,8 @@ def _render_dashboard(puntos: list[dict]) -> None:
             unsafe_allow_html=True,
         )
 
-    # Panel de alertas críticas (global)
-    criticos = sorted(
-        [p for p in puntos if p["estado"] == "excedencia"],
-        key=lambda x: x.get("n_excedencias", 0),
-        reverse=True,
-    )
-    if criticos:
-        st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
-        label_exp = f"{len(criticos)} punto(s) con excedencias activas"
-        with st.expander(label_exp, expanded=False):
-            for p in criticos[:5]:
-                exc_list = p.get("excedencias", [])
-                params_exc = ", ".join(
-                    f"{e['parametro']}" for e in exc_list[:4]
-                )
-                if len(exc_list) > 4:
-                    params_exc += f" (+{len(exc_list)-4})"
-                st.markdown(
-                    f"""<div style="display:flex; align-items:center; padding:10px 14px; margin:4px 0;
-                        background:#fef5f5; border-left:3px solid #c62828; border-radius:8px; font-size:0.82rem;">
-                        <div style="flex:1;">
-                            <b style="color:#0f172a;">{p['codigo']}</b>
-                            <span style="color:#475569;"> — {p['nombre']}</span>
-                            <span style="color:#94a3b8; margin-left:8px; font-size:0.76rem;">{params_exc}</span>
-                        </div>
-                        <span style="color:#c62828; font-weight:600; font-size:0.78rem;">{len(exc_list)}</span>
-                    </div>""",
-                    unsafe_allow_html=True,
-                )
+    # Panel de alertas críticas eliminado — los puntos con excedencias ya
+    # aparecen como bullets en la KPI roja "Con excedencias activas".
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1324,7 +1297,7 @@ def _construir_mapa(puntos: list[dict], solo_excedencias: bool):
     # son útiles para el técnico AUTODEMA pero no aparecen en el mockup
     # por ser un dashboard ejecutivo.
     leyenda_html = """
-    <div id="lvca-legend" style="position:absolute; bottom:18px; right:18px;
+    <div id="lvca-legend" style="position:absolute; bottom:18px; left:18px;
          z-index:1000; background:#ffffff; padding:12px 16px;
          border-radius:12px; font-size:12px; line-height:1.6;
          min-width:170px;
@@ -1744,23 +1717,56 @@ def main() -> None:
     aplicar_estilos()
     top_nav()
 
-    # Toggle "vista clásica / vista integrada" — feature flag visual.
-    # La vista integrada es el rediseño nuevo (sidebar derecha con todos los
-    # controles, sin scroll). La clásica conserva el layout anterior con
-    # tabs analíticas debajo del mapa, por si la integrada no convence.
-    st.session_state.setdefault("geo_vista", "integrada")
-
-    # CSS específico de la cabecera + vista compacta del geoportal
+    # CSS específico de la vista integrada — compacto, sin scroll en 1080p.
     st.markdown(
         """
         <style>
-        /* Compactar el padding superior cuando la vista integrada está activa
-           para maximizar el espacio vertical disponible (cero scroll). */
+        /* Padding superior compacto para maximizar espacio vertical */
         [data-testid="stMainBlockContainer"]:has(.lvca-geo-vista-integrada) {
             padding-top: 84px !important;
             padding-bottom: 12px !important;
         }
-        /* Eliminar gaps verticales de los st.columns en el sidebar derecha */
+        /* KPI cards más compactas */
+        .lvca-geo-vista-integrada ~ div .lvca-kpi-bold,
+        .lvca-geo-kpis .lvca-kpi-bold {
+            min-height: 102px !important;
+            padding: 12px 16px 10px 16px !important;
+            border-radius: 11px !important;
+        }
+        .lvca-geo-vista-integrada ~ div .lvca-kpi-bold .lvca-kpi-value,
+        .lvca-geo-kpis .lvca-kpi-bold .lvca-kpi-value {
+            font-size: 1.95rem !important;
+            margin: 2px 0 0 0 !important;
+        }
+        .lvca-geo-vista-integrada ~ div .lvca-kpi-bold .lvca-kpi-title,
+        .lvca-geo-kpis .lvca-kpi-bold .lvca-kpi-title {
+            font-size: 0.82rem !important;
+        }
+        .lvca-geo-vista-integrada ~ div .lvca-kpi-bold .lvca-kpi-icon,
+        .lvca-geo-kpis .lvca-kpi-bold .lvca-kpi-icon {
+            width: 32px !important; height: 32px !important;
+            border-radius: 8px !important;
+        }
+        .lvca-geo-vista-integrada ~ div .lvca-kpi-bold .lvca-kpi-icon .material-symbols-rounded,
+        .lvca-geo-kpis .lvca-kpi-bold .lvca-kpi-icon .material-symbols-rounded {
+            font-size: 20px !important;
+        }
+        .lvca-geo-vista-integrada ~ div .lvca-kpi-bold .lvca-kpi-bullets,
+        .lvca-geo-kpis .lvca-kpi-bold .lvca-kpi-bullets {
+            font-size: 0.7rem !important;
+            line-height: 1.4 !important;
+            margin: 2px 0 0 0 !important;
+        }
+        .lvca-geo-vista-integrada ~ div .lvca-kpi-bold .lvca-kpi-foot,
+        .lvca-geo-kpis .lvca-kpi-bold .lvca-kpi-foot {
+            font-size: 0.62rem !important;
+            margin-top: 2px !important;
+        }
+        .lvca-geo-vista-integrada ~ div .lvca-kpi-bold .lvca-kpi-spark,
+        .lvca-geo-kpis .lvca-kpi-bold .lvca-kpi-spark {
+            margin-top: 4px !important; height: 22px !important;
+        }
+        /* Sidebar derecha del geoportal — gaps mínimos */
         .lvca-geo-sidebar [data-testid="stVerticalBlock"] {
             gap: 0.5rem !important;
         }
@@ -1770,17 +1776,6 @@ def main() -> None:
         .lvca-geo-sidebar .stRadio > div {
             flex-direction: row !important;
             gap: 10px !important;
-        }
-        .lvca-geo-sidebar [data-testid="stExpander"] details {
-            border-radius: 10px;
-            border: 1px solid #E2E8F0;
-            background: #F8FAFC;
-        }
-        .lvca-geo-sidebar [data-testid="stExpander"] summary {
-            font-size: 0.82rem;
-            font-weight: 600;
-            color: #475569;
-            padding: 6px 10px;
         }
         </style>
         """,
@@ -1794,47 +1789,22 @@ def main() -> None:
         st.error("Instala: `pip install folium streamlit-folium`")
         st.stop()
 
-    # ── Toggle de vista (clásica vs integrada) — fila estrecha
-    vt_l, vt_r = st.columns([4, 1])
-    with vt_r:
-        vista = st.radio(
-            "Vista",
-            options=["integrada", "clasica"],
-            index=0 if st.session_state.get("geo_vista", "integrada") == "integrada" else 1,
-            key="geo_vista_radio",
-            horizontal=True,
-            label_visibility="collapsed",
-            format_func=lambda v: ("Vista integrada" if v == "integrada" else "Vista clásica"),
-        )
-        st.session_state["geo_vista"] = vista
-
-    if vista == "clasica":
-        page_header(
-            "Geoportal",
-            "Vigilancia de Calidad del Agua · LVCA",
-            ambito="Cuencas Quilca-Vítor-Chili y Colca-Camaná · AUTODEMA",
-        )
-        _main_vista_clasica()
-        return
-
-    # ─────────────────────────────────────────────────────────────────────
-    # VISTA INTEGRADA — sin scroll, sidebar derecha con todos los controles
-    # ─────────────────────────────────────────────────────────────────────
-
+    # Marker para que el CSS de KPIs apunte solo a esta página
     st.markdown('<div class="lvca-geo-vista-integrada"></div>', unsafe_allow_html=True)
 
     # Estado por defecto del modo (Campaña / Punto)
     st.session_state.setdefault("geo_modo", "campana")
 
-    # Defaults para Desde/Hasta (los filtros viven ahora en la sidebar)
-    fecha_inicio = st.session_state.get("geo_desde") or (date.today() - timedelta(days=90))
-    fecha_fin    = st.session_state.get("geo_hasta") or date.today()
-    campana_id_global = None  # mapa muestra todos los puntos por defecto
-    solo_exc = st.session_state.get("geo_solo_exc", False)
+    # Rango de fechas defaults (180 días) — el filtro de fechas del mapa
+    # se eliminó por feedback del usuario: la búsqueda de "Modo Campaña"
+    # ya tiene su propio rango ampliado y el chart de "Modo Punto" tiene
+    # selector de año independiente, así que un filtro global no aporta.
+    fecha_inicio = date.today() - timedelta(days=180)
+    fecha_fin    = date.today()
 
     with st.spinner("Cargando datos..."):
         try:
-            puntos = get_puntos_geoportal(str(fecha_inicio), str(fecha_fin), campana_id_global)
+            puntos = get_puntos_geoportal(str(fecha_inicio), str(fecha_fin), None)
         except Exception as exc:
             st.error(f"Error al cargar puntos: {exc}")
             st.stop()
@@ -1848,8 +1818,10 @@ def main() -> None:
     parametros = get_parametros_selector()
     campanas = get_campanas()
 
-    # ── 1. Dashboard global (4 KPIs full width — fijos arriba) ─────────
+    # ── 1. Dashboard global (4 KPIs full width — compactas) ─────────────
+    st.markdown('<div class="lvca-geo-kpis">', unsafe_allow_html=True)
     _render_dashboard(puntos_con_coords)
+    st.markdown('</div>', unsafe_allow_html=True)
     success_toast(
         "Datos de monitoreo actualizados exitosamente.",
         key="geoportal_load",
@@ -1859,7 +1831,7 @@ def main() -> None:
     col_mapa, col_side = st.columns([7, 5], gap="medium")
 
     with col_mapa:
-        mapa = _construir_mapa(puntos_con_coords, solo_exc)
+        mapa = _construir_mapa(puntos_con_coords, solo_excedencias=False)
         map_data = st_folium(
             mapa, use_container_width=True, height=540,
             returned_objects=["last_object_clicked"],
@@ -1883,30 +1855,9 @@ def main() -> None:
                 st.session_state["geo_modo"] = "punto"
                 st.rerun()
 
-    # ── Sidebar derecha — todos los controles + chart activo
+    # ── Sidebar derecha — modo Campaña/Punto + chart
     with col_side:
         st.markdown('<div class="lvca-geo-sidebar">', unsafe_allow_html=True)
-
-        # Filtros globales (compactos en expander, colapsado por defecto)
-        with st.expander(":material/tune: Filtros del mapa", expanded=False):
-            ff_a, ff_b = st.columns(2)
-            with ff_a:
-                st.date_input(
-                    "Desde",
-                    value=fecha_inicio,
-                    key="geo_desde",
-                )
-            with ff_b:
-                st.date_input(
-                    "Hasta",
-                    value=fecha_fin,
-                    key="geo_hasta",
-                )
-            st.checkbox(
-                "Solo puntos con excedencias",
-                key="geo_solo_exc",
-                help="Oculta del mapa los puntos que cumplen ECA o sin datos.",
-            )
 
         # Toggle de modo (Campaña vs Punto)
         modo = st.radio(
@@ -2029,130 +1980,6 @@ def _render_modo_punto(
         _render_estado_eca_compacto(punto, fecha_inicio, fecha_fin)
     with tab_ficha:
         _render_panel_punto(punto)
-
-
-def _main_vista_clasica() -> None:
-    """
-    Layout clásico (pre-rediseño) — KPIs + mapa+ficha+tabs analíticas debajo.
-    Se conserva como fallback bajo el toggle 'Vista clásica'.
-    """
-    import folium  # noqa: F401
-    from streamlit_folium import st_folium
-
-    from components.ui_styles import filter_bar_open, filter_bar_close
-    filter_bar_open()
-    fc1, fc2, fc3, fc4 = st.columns([1, 1, 2, 2])
-    with fc1:
-        fecha_inicio = st.date_input(
-            "Desde", value=date.today() - timedelta(days=90), key="geo_desde",
-        )
-    with fc2:
-        fecha_fin = st.date_input(
-            "Hasta", value=date.today(), key="geo_hasta",
-        )
-    with fc3:
-        campanas = get_campanas()
-        opciones_camp = {"Todas": None}
-        opciones_camp.update({f"{c['codigo']} — {c['nombre']}": c["id"] for c in campanas})
-        sel_camp = st.selectbox("Campaña", list(opciones_camp.keys()), key="geo_camp")
-        campana_id = opciones_camp[sel_camp]
-    with fc4:
-        solo_exc = st.checkbox(
-            "Solo puntos con excedencias",
-            key="geo_solo_exc",
-            help="Oculta del mapa los puntos que cumplen ECA o sin datos.",
-        )
-    filter_bar_close()
-
-    with st.spinner("Cargando datos..."):
-        try:
-            puntos = get_puntos_geoportal(str(fecha_inicio), str(fecha_fin), campana_id)
-        except Exception as exc:
-            st.error(f"Error al cargar puntos: {exc}")
-            st.stop()
-    puntos_con_coords = [p for p in puntos if p.get("latitud") and p.get("longitud")]
-    if not puntos_con_coords:
-        st.warning("No hay puntos con coordenadas disponibles para la campaña seleccionada.")
-        st.stop()
-    opciones_punto = {f"{p['codigo']} — {p['nombre']}": p for p in puntos_con_coords}
-    parametros = get_parametros_selector()
-
-    _render_dashboard(puntos_con_coords)
-    success_toast("Datos de monitoreo actualizados exitosamente.", key="geoportal_load")
-    st.divider()
-
-    col_mapa, col_panel = st.columns([7, 5], gap="medium")
-    with col_mapa:
-        mapa = _construir_mapa(puntos_con_coords, solo_exc)
-        map_data = st_folium(
-            mapa, use_container_width=True, height=620,
-            returned_objects=["last_object_clicked"],
-        )
-    if map_data and map_data.get("last_object_clicked"):
-        clicked = map_data["last_object_clicked"]
-        clat, clon = clicked.get("lat"), clicked.get("lng")
-        if clat and clon:
-            min_dist = float("inf")
-            closest_label = None
-            for label, p in opciones_punto.items():
-                dist = (p["latitud"] - clat) ** 2 + (p["longitud"] - clon) ** 2
-                if dist < min_dist:
-                    min_dist = dist
-                    closest_label = label
-            current = st.session_state.get("geo_punto")
-            if closest_label and min_dist < 0.01 and closest_label != current:
-                st.session_state["geo_punto"] = closest_label
-                st.rerun()
-
-    with col_panel:
-        sel_punto_label = st.selectbox(
-            "Punto seleccionado",
-            list(opciones_punto.keys()),
-            key="geo_punto",
-        )
-        punto_sel = opciones_punto[sel_punto_label]
-        st.markdown(
-            '<div style="margin-top:6px; display:flex; align-items:center; '
-            'gap:8px; padding:0 0 4px 0;">'
-            '<span class="material-symbols-rounded" '
-            'style="font-size:20px; color:#1E6091;">analytics</span>'
-            '<span style="font-size:0.95rem; font-weight:700; color:#0F172A; '
-            'letter-spacing:-0.01em;">Análisis Avanzado de Calidad</span>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-        _render_barras_tendencia_anual(punto_sel, parametros)
-        _render_panel_punto(punto_sel)
-
-    st.divider()
-    section_header(f"Análisis · {punto_sel['codigo']} — {punto_sel['nombre']}", "analytics")
-    cat_c1, cat_c2 = st.columns([1, 3])
-    with cat_c1:
-        categoria_filtro = st.radio(
-            "Categoría",
-            ["Todas", "Campo", "Fisicoquimico", "Hidrobiologico"],
-            horizontal=False,
-            key="geo_cat_filtro",
-        )
-    with cat_c2:
-        if categoria_filtro == "Todas":
-            params_filtrados = parametros
-        else:
-            params_filtrados = [pr for pr in parametros if _clasificar_cat(pr) == categoria_filtro]
-        if not params_filtrados:
-            st.warning(f"No hay parámetros en la categoría **{categoria_filtro}**.")
-            st.stop()
-        opciones_param_filt = {f"{pr['codigo']} — {pr['nombre']}": pr for pr in params_filtrados}
-        sel_param_label = st.selectbox(
-            "Parámetro a graficar",
-            list(opciones_param_filt.keys()),
-            key="geo_param",
-        )
-        param_sel = opciones_param_filt[sel_param_label]
-    _render_analisis_punto(
-        punto_sel, param_sel, puntos_con_coords,
-        str(fecha_inicio), str(fecha_fin), sel_camp,
-    )
 
 
 def _render_panel_punto(punto_sel: dict) -> None:
