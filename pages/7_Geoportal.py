@@ -1837,11 +1837,19 @@ def main() -> None:
             returned_objects=["last_object_clicked"],
         )
 
-    # Click en marcador → cambia automáticamente a Modo Punto + selecciona el punto
+    # Click en marcador → cambia automáticamente a Modo Punto + selecciona el punto.
+    # IMPORTANTE: st_folium retorna `last_object_clicked` cacheado en cada rerun
+    # (incluso cuando el rerun fue causado por OTRO widget como el selectbox de
+    # campaña). Sin firma de click, cada cambio de campaña reactivaba el handler
+    # y forzaba un salto a "Por punto" no deseado. Guardamos la firma del último
+    # click procesado para que solo se dispare con clicks NUEVOS.
     if map_data and map_data.get("last_object_clicked"):
         clicked = map_data["last_object_clicked"]
-        clat, clon = clicked.get("lat"), clicked.get("lng")
-        if clat and clon:
+        clat = clicked.get("lat")
+        clon = clicked.get("lng")
+        firma = (clat, clon)
+        firma_anterior = st.session_state.get("geo_ultimo_click")
+        if clat is not None and clon is not None and firma != firma_anterior:
             min_dist = float("inf")
             closest_label = None
             for label, p in opciones_punto.items():
@@ -1849,8 +1857,8 @@ def main() -> None:
                 if dist < min_dist:
                     min_dist = dist
                     closest_label = label
-            current = st.session_state.get("geo_punto")
-            if closest_label and min_dist < 0.01 and closest_label != current:
+            if closest_label and min_dist < 0.01:
+                st.session_state["geo_ultimo_click"] = firma
                 st.session_state["geo_punto"] = closest_label
                 st.session_state["geo_modo"] = "punto"
                 st.rerun()
