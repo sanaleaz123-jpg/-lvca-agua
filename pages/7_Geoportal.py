@@ -42,7 +42,10 @@ from services.mapa_service import (
     get_ultimos_resultados_punto,
 )
 from services.resultado_service import get_campanas, get_puntos_de_campana
-from services.fitoplancton_service import get_alertas_oms_por_punto
+from services.fitoplancton_service import (
+    get_alertas_oms_por_punto,
+    get_phyllum_dominante_punto,
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -69,6 +72,124 @@ def _color_zona_eca(eca_codigo: str) -> dict[str, str]:
         if clave.upper() == cod:
             return paleta
     return ECA_FALLBACK
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Paleta de phyllums fitoplancton — coloreo del dot/marker en charts
+# hidrobiológicos. La búsqueda es por substring case-insensitive en el
+# nombre/código del parámetro.
+# ─────────────────────────────────────────────────────────────────────────────
+PHYLLUM_COLORES: list[tuple[str, str]] = [
+    # (substring a buscar, color hex)
+    ("cianobacter", "#0D9488"),   # verde-azul (teal)
+    ("cyano",       "#0D9488"),
+    ("bacillario",  "#92400E"),   # marrón
+    ("diatomea",    "#92400E"),
+    ("clorof",      "#16A34A"),   # verde
+    ("chlorophy",   "#16A34A"),
+    ("ochrop",      "#EAB308"),   # amarillo
+    ("ocrof",       "#EAB308"),
+    ("cryptof",     "#06B6D4"),   # celeste (cyan)
+    ("cryptoph",    "#06B6D4"),
+    ("euglen",      "#EC4899"),   # rosa
+    ("dinofla",     "#7C3AED"),   # morado
+    ("rhodophy",    "#DC2626"),   # rojo (algas rojas)
+    ("rodof",       "#DC2626"),
+]
+PHYLLUM_DEFAULT_COLOR = "#64748B"  # slate gris fallback
+
+
+def _color_phyllum(parametro: dict) -> str:
+    """Color del dot/línea para un parámetro hidrobiológico según phyllum."""
+    busca = (
+        f"{parametro.get('nombre','') or ''} "
+        f"{parametro.get('codigo','') or ''}"
+    ).lower()
+    for clave, color in PHYLLUM_COLORES:
+        if clave in busca:
+            return color
+    return PHYLLUM_DEFAULT_COLOR
+
+
+def _display_nombre_parametro(parametro: dict) -> str:
+    """Nombre user-friendly del parámetro. Normaliza Cyanobacteria/Cyanophyta
+    → 'Cianobacteria' a nivel de plataforma para consistencia visual."""
+    nombre = parametro.get("nombre") or ""
+    nl = nombre.lower()
+    if "cyano" in nl or "cianobacter" in nl:
+        return "Cianobacteria"
+    return nombre
+
+
+def _es_cianobacteria(parametro: dict) -> bool:
+    """True si el parámetro corresponde a cianobacterias (por nombre o código)."""
+    busca = (
+        f"{parametro.get('nombre','') or ''} "
+        f"{parametro.get('codigo','') or ''}"
+    ).lower()
+    return ("cyano" in busca) or ("cianobacter" in busca)
+
+
+def _es_hidrobiologico(parametro: dict) -> bool:
+    """True si el parámetro está en la categoría Hidrobiológico."""
+    return _clasificar_cat(parametro) == "Hidrobiologico"
+
+
+def _oms_bandas_cianobacteria(parametro: dict) -> list[dict]:
+    """
+    Devuelve las bandas horizontales OMS para cianobacterias según la unidad
+    del parámetro:
+        - cel/mL → OMS 1999, Drinking-water Alert Levels Framework
+        - mm³/L  → OMS 2021, biovolumen para agua recreativa
+
+    Cada banda: {lo, hi, color, label}. `hi` puede ser None (banda superior).
+    Los colores siguen las filas de la tabla oficial OMS:
+        verde menta = vigilancia / nivel inicial
+        amarillo    = alerta 1
+        rojo        = alerta 2
+    """
+    unidad = ((parametro.get("unidades_medida") or {}).get("simbolo") or "").lower()
+    if any(t in unidad for t in ("cel/ml", "cel.ml", "cel·ml", "cel ml")):
+        return [
+            {"lo": 200,    "hi": 2000,   "color": "#A7F3D0",
+             "stroke": "#10B981", "label": "Vigilancia (>200 cél/mL)"},
+            {"lo": 2000,   "hi": 100000, "color": "#FDE68A",
+             "stroke": "#F59E0B", "label": "Alerta 1 (≥2000 cél/mL)"},
+            {"lo": 100000, "hi": None,   "color": "#FECACA",
+             "stroke": "#EF4444", "label": "Alerta 2 (>100 000 cél/mL)"},
+        ]
+    if "mm" in unidad and ("3" in unidad or "³" in unidad):
+        return [
+            {"lo": 0,    "hi": 0.3,  "color": "#A7F3D0",
+             "stroke": "#10B981", "label": "Vigilancia (<0.3 mm³/L)"},
+            {"lo": 0.3,  "hi": 4.0,  "color": "#FDE68A",
+             "stroke": "#F59E0B", "label": "Alerta 1 (0.3-4.0 mm³/L)"},
+            {"lo": 4.0,  "hi": None, "color": "#FECACA",
+             "stroke": "#EF4444", "label": "Alerta 2 (≥4.0 mm³/L)"},
+        ]
+    return []
+
+
+def _format_valor(v) -> str:
+    """Formatea un número sin notación científica.
+
+    Reglas:
+        |v| ≥ 10 000 → entero con separador de miles ("100,000")
+        |v| ≥ 100   → 1 decimal ("1,060.5", trailing zeros stripped)
+        |v| ≥ 1     → 3 cifras significativas ("7.44")
+        |v| < 1     → 4 decimales ("0.0123")
+    """
+    if v is None:
+        return "—"
+    av = abs(v)
+    if av >= 10000:
+        return f"{v:,.0f}"
+    if av >= 100:
+        s = f"{v:,.1f}"
+        return s.rstrip("0").rstrip(".") if "." in s else s
+    if av >= 1:
+        return f"{v:.3g}"
+    return f"{v:.4f}".rstrip("0").rstrip(".")
 
 
 # ─── Constantes ──────────────────────────────────────────────────────────────
@@ -304,18 +425,21 @@ def _render_grafico_campana_comparativo(
     ff_buscar: str | None = None,
 ) -> None:
     """
-    Replica visual de la referencia del usuario: para cada punto de la
-    campaña, dibuja un rectángulo coloreado entre el límite mínimo y máximo
-    del ECA aplicable a ese punto, con la categoría como anotación arriba
-    y abajo. El valor medido se grafica como un punto sólido sobre la zona.
+    Chart comparativo del Modo Campaña. Casos:
 
-    Si un punto no tiene el parámetro medido → muestra "—" como label, sin dot.
-    Si un punto no tiene ECA aplicable → zona gris fallback.
+    1. Físico-químico/Campo con ECA → para cada punto se dibuja la zona
+       (rectángulo) entre lim_min y lim_max del ECA aplicable. Dot rojo si
+       excede, azul si cumple, gris si sin ECA. Anotaciones de límites.
 
-    `fi_buscar`/`ff_buscar`: rango ampliado para la query de últimos
-    valores (los análisis de laboratorio pueden salir meses después de la
-    fecha de muestreo). Si no se pasan, se usan las fechas oficiales
-    de la campaña (con riesgo de perder puntos con análisis tardíos).
+    2. Cianobacteria → bandas horizontales globales OMS (1999 cel/mL o
+       2021 mm³/L). NO zonas por punto. Dot color verde-azul.
+
+    3. Otros hidrobiológicos (no cianobacteria) → sin zonas, sin líneas.
+       Dot color del phyllum (marrón Bacillariophyta, verde Clorofitas,
+       amarillo Ochrophyta, celeste Cryptofitas, etc).
+
+    4. Temperatura → sin ECA (DS define un Δ, no valor absoluto). Dots
+       grises con caption explicativo.
     """
     if not puntos:
         st.info("La campaña seleccionada no tiene puntos asociados.")
@@ -327,98 +451,150 @@ def _render_grafico_campana_comparativo(
         st.warning("La campaña no tiene fechas de inicio/fin definidas.")
         return
 
-    # Última medición del parámetro por punto, scoped al campana_id para
-    # garantizar que solo cuente muestras de ESA campaña. `info["fecha"]`
-    # ya viene de fecha_muestreo (cambio en services/mapa_service.py).
     ultimos = get_ultimo_valor_parametro_por_punto(
         parametro["id"], fi, ff, campana_id=campana.get("id"),
     )
+
+    # ── Detección de tipo de parámetro
     es_temp = _es_temperatura(parametro)
+    es_hb   = _es_hidrobiologico(parametro)
+    es_cyano = _es_cianobacteria(parametro)
+    bandas_oms = _oms_bandas_cianobacteria(parametro) if es_cyano else []
+
+    # En hidrobiológicos (excepto cianobacteria) NO hay ECA. En cianobacteria
+    # tampoco hay ECA por punto — usamos OMS global. En Temperatura tampoco.
+    aplicar_eca_por_punto = not (es_hb or es_temp)
 
     items: list[dict] = []
     for p in puntos:
         info = ultimos.get(p["id"]) or {}
-        lim = get_limite_eca_parametro(p["id"], parametro["id"])
-        eca_cod = (p.get("ecas") or {}).get("codigo") or lim.get("eca_codigo", "")
-        # Para Temperatura nunca dibujamos zonas ECA (DS define un Δ,
-        # no un valor absoluto comparable directamente).
+        lim = get_limite_eca_parametro(p["id"], parametro["id"]) if aplicar_eca_por_punto else {}
+        eca_cod = (
+            ((p.get("ecas") or {}).get("codigo") or lim.get("eca_codigo", ""))
+            if aplicar_eca_por_punto else ""
+        )
         items.append({
             "codigo":   p.get("codigo", ""),
             "nombre":   p.get("nombre", ""),
             "valor":    info.get("valor"),
             "fecha":    info.get("fecha"),
-            "lim_min":  None if es_temp else lim.get("valor_minimo"),
-            "lim_max":  None if es_temp else lim.get("valor_maximo"),
-            "eca_cod":  "" if es_temp else (eca_cod or "").strip(),
+            "lim_min":  lim.get("valor_minimo") if aplicar_eca_por_punto else None,
+            "lim_max":  lim.get("valor_maximo") if aplicar_eca_por_punto else None,
+            "eca_cod":  (eca_cod or "").strip() if aplicar_eca_por_punto else "",
         })
 
-    # Calcular extremos del eje Y para que las zonas ECA se vean centradas
+    # Calcular extremos del eje Y. Y MIN = 0 SIEMPRE (no hay valores
+    # negativos en parámetros LVCA — fix solicitado por el usuario).
     todos_lim_max = [i["lim_max"] for i in items if i["lim_max"] is not None]
     todos_lim_min = [i["lim_min"] for i in items if i["lim_min"] is not None]
     todos_valores = [i["valor"]   for i in items if i["valor"]   is not None]
 
     universo = todos_lim_max + todos_lim_min + todos_valores
+    # Si es cianobacteria, considerar también los thresholds OMS para el rango
+    if bandas_oms:
+        for b in bandas_oms:
+            if b["lo"] is not None:
+                universo.append(b["lo"])
+            if b["hi"] is not None:
+                universo.append(b["hi"])
+
     if not universo:
         st.info(
-            f"Sin datos ni límites ECA para **{parametro['nombre']}** "
+            f"Sin datos ni límites para **{_display_nombre_parametro(parametro)}** "
             f"en los puntos de **{campana['codigo']}**."
         )
         return
 
-    y_min_data = min(universo)
     y_max_data = max(universo)
-    pad = (y_max_data - y_min_data) * 0.15 if y_max_data > y_min_data else max(1.0, abs(y_max_data) * 0.15)
-    y_lo = y_min_data - pad
-    y_hi = y_max_data + pad
+    pad_top = y_max_data * 0.18 if y_max_data > 0 else 1.0
+    y_lo = 0.0
+    y_hi = y_max_data + pad_top
 
     fig = go.Figure()
     shapes = []
     annotations = []
 
-    # Dibujar las zonas ECA detrás de cada punto SOLO si tiene límites
-    # definidos. Si lim_min y lim_max son ambos None (no hay ECA o es
-    # Temperatura) → no se dibuja rectángulo y el dot queda en gris.
-    for idx, it in enumerate(items):
-        tiene_lim = (it["lim_min"] is not None) or (it["lim_max"] is not None)
-        if tiene_lim:
-            col = _color_zona_eca(it["eca_cod"])
-            z_lo = it["lim_min"] if it["lim_min"] is not None else y_lo
-            z_hi = it["lim_max"] if it["lim_max"] is not None else y_hi
-
+    # ── Caso A: Cianobacteria → bandas horizontales globales OMS
+    if bandas_oms:
+        for b in bandas_oms:
+            b_hi = b["hi"] if b["hi"] is not None else y_hi
             shapes.append(dict(
                 type="rect",
-                xref="x", yref="y",
-                x0=idx - 0.40, x1=idx + 0.40,
-                y0=z_lo, y1=z_hi,
-                fillcolor=col["fill"], opacity=0.30,
-                line=dict(color=col["stroke"], width=1),
+                xref="paper", yref="y",
+                x0=0, x1=1,
+                y0=b["lo"], y1=b_hi,
+                fillcolor=b["color"], opacity=0.55,
+                line=dict(width=0),
                 layer="below",
             ))
-
-            # Anotaciones de límites — más sutiles (gris medio, sin negrita)
-            if it["lim_max"] is not None:
-                annotations.append(dict(
-                    x=idx, y=it["lim_max"],
-                    xref="x", yref="y",
-                    text=f"{it['eca_cod'] or '—'} = {it['lim_max']:g}",
-                    showarrow=False,
-                    font=dict(size=8.5, color=col["stroke"]),
-                    yshift=10,
+            # Línea horizontal en el TOP de cada banda (excepto la superior)
+            if b["hi"] is not None:
+                shapes.append(dict(
+                    type="line",
+                    xref="paper", yref="y",
+                    x0=0, x1=1,
+                    y0=b_hi, y1=b_hi,
+                    line=dict(color=b["stroke"], width=1.4, dash="dash"),
+                    layer="below",
                 ))
-            if it["lim_min"] is not None:
-                annotations.append(dict(
-                    x=idx, y=it["lim_min"],
-                    xref="x", yref="y",
-                    text=f"{it['eca_cod'] or '—'} = {it['lim_min']:g}",
-                    showarrow=False,
-                    font=dict(size=8.5, color=col["stroke"]),
-                    yshift=-10,
-                ))
+            # Anotación a la derecha del chart
+            y_pos = (b["lo"] + b_hi) / 2 if b["hi"] is not None else (b["lo"] + b["lo"] * 0.2 + 1)
+            annotations.append(dict(
+                x=1.0, y=y_pos,
+                xref="paper", yref="y",
+                text=f"<b>{b['label']}</b>",
+                showarrow=False,
+                xanchor="right",
+                font=dict(size=9, color=b["stroke"]),
+            ))
 
-    # Color del dot por punto: rojo si excede / azul si cumple / gris sin ECA
+    # ── Caso B: Físico-químico/Campo con ECA → zonas por punto
+    elif aplicar_eca_por_punto:
+        for idx, it in enumerate(items):
+            tiene_lim = (it["lim_min"] is not None) or (it["lim_max"] is not None)
+            if tiene_lim:
+                col = _color_zona_eca(it["eca_cod"])
+                z_lo = it["lim_min"] if it["lim_min"] is not None else y_lo
+                z_hi = it["lim_max"] if it["lim_max"] is not None else y_hi
+
+                shapes.append(dict(
+                    type="rect",
+                    xref="x", yref="y",
+                    x0=idx - 0.40, x1=idx + 0.40,
+                    y0=z_lo, y1=z_hi,
+                    fillcolor=col["fill"], opacity=0.30,
+                    line=dict(color=col["stroke"], width=1),
+                    layer="below",
+                ))
+                if it["lim_max"] is not None:
+                    annotations.append(dict(
+                        x=idx, y=it["lim_max"],
+                        xref="x", yref="y",
+                        text=f"{it['eca_cod'] or '—'} = {_format_valor(it['lim_max'])}",
+                        showarrow=False,
+                        font=dict(size=8.5, color=col["stroke"]),
+                        yshift=10,
+                    ))
+                if it["lim_min"] is not None:
+                    annotations.append(dict(
+                        x=idx, y=it["lim_min"],
+                        xref="x", yref="y",
+                        text=f"{it['eca_cod'] or '—'} = {_format_valor(it['lim_min'])}",
+                        showarrow=False,
+                        font=dict(size=8.5, color=col["stroke"]),
+                        yshift=-10,
+                    ))
+
+    # ── Color del dot
+    color_phyllum_unico = _color_phyllum(parametro) if (es_hb or es_cyano) else None
+
     def _color_dot(it: dict) -> str:
         if it["valor"] is None:
             return "#94A3B8"
+        # Hidrobiológicos (incluyendo cyano) → color del phyllum, fijo
+        if color_phyllum_unico is not None:
+            return color_phyllum_unico
+        # Físico-químicos: rojo no cumple / azul cumple / gris sin ECA
         if it["lim_min"] is None and it["lim_max"] is None:
             return "#94A3B8"
         if (it["lim_max"] is not None and it["valor"] > it["lim_max"]) or \
@@ -426,36 +602,46 @@ def _render_grafico_campana_comparativo(
             return "#EF4444"
         return "#2563EB"
 
-    # Trace de los puntos medidos (dot)
+    # ── Trace dots
     x_vals = [it["codigo"] for it in items]
     y_vals = [it["valor"] for it in items]
-    text_vals = [
-        (f"<b>{it['valor']:.3g}</b>" if it["valor"] is not None else "—")
-        for it in items
-    ]
+    text_vals = [_format_valor(it["valor"]) if it["valor"] is not None else "—" for it in items]
+    text_vals_b = [f"<b>{t}</b>" for t in text_vals]
     colores_dot = [_color_dot(it) for it in items]
-    hover = [
-        (
-            f"<b>{it['codigo']}</b> — {it['nombre']}<br>"
-            f"Valor: {it['valor']:.4g} {parametro.get('unidades_medida', {}).get('simbolo', '')}<br>"
-            f"ECA: {it['eca_cod'] or 'sin categoría'}"
-            + (
-                f" (mín {it['lim_min']:g} / máx {it['lim_max']:g})"
-                if (it["lim_min"] is not None and it["lim_max"] is not None) else
-                f" (máx {it['lim_max']:g})" if it["lim_max"] is not None else
-                f" (mín {it['lim_min']:g})" if it["lim_min"] is not None else
-                ""
+
+    unidad = (parametro.get("unidades_medida") or {}).get("simbolo", "")
+    nombre_dis = _display_nombre_parametro(parametro)
+
+    hover_lines = []
+    for it in items:
+        if it["valor"] is None:
+            hover_lines.append(
+                f"<b>{it['codigo']}</b> — {it['nombre']}<br>"
+                f"Sin medición de {nombre_dis} en esta campaña.<br>"
+                + (f"ECA: {it['eca_cod'] or 'sin categoría'}" if aplicar_eca_por_punto else "")
             )
-            + f"<br>Fecha de muestreo: {it['fecha'] or '—'}"
-        )
-        if it["valor"] is not None
-        else (
-            f"<b>{it['codigo']}</b> — {it['nombre']}<br>"
-            f"Sin medición de {parametro['nombre']} en esta campaña.<br>"
-            f"ECA: {it['eca_cod'] or 'sin categoría'}"
-        )
-        for it in items
-    ]
+        else:
+            base = (
+                f"<b>{it['codigo']}</b> — {it['nombre']}<br>"
+                f"Valor: {_format_valor(it['valor'])} {unidad}"
+            )
+            if aplicar_eca_por_punto:
+                eca_txt = (
+                    f"<br>ECA: {it['eca_cod'] or 'sin categoría'}"
+                    + (
+                        f" (mín {_format_valor(it['lim_min'])} / máx {_format_valor(it['lim_max'])})"
+                        if (it["lim_min"] is not None and it["lim_max"] is not None) else
+                        f" (máx {_format_valor(it['lim_max'])})" if it["lim_max"] is not None else
+                        f" (mín {_format_valor(it['lim_min'])})" if it["lim_min"] is not None else ""
+                    )
+                )
+                base += eca_txt
+            elif bandas_oms:
+                base += "<br>Estándar: OMS (cianobacterias)"
+            elif es_hb:
+                base += "<br>Hidrobiológico — sin ECA aplicable"
+            base += f"<br>Fecha de muestreo: {it['fecha'] or '—'}"
+            hover_lines.append(base)
 
     fig.add_trace(go.Scatter(
         x=x_vals,
@@ -465,25 +651,24 @@ def _render_grafico_campana_comparativo(
             size=12, color=colores_dot,
             line=dict(color="#0F172A", width=1.2),
         ),
-        text=text_vals,
+        text=text_vals_b,
         textposition="top center",
         textfont=dict(size=10, color="#1E293B"),
-        hovertext=hover,
+        hovertext=hover_lines,
         hovertemplate="%{hovertext}<extra></extra>",
         showlegend=False,
     ))
 
-    unidad = (parametro.get("unidades_medida") or {}).get("simbolo", "")
-    y_label = f"{parametro['nombre']} ({unidad})" if unidad else parametro["nombre"]
+    y_label = f"{nombre_dis} ({unidad})" if unidad else nombre_dis
 
     fig.update_layout(
         title=dict(
-            text=f"<b>{parametro['nombre']}</b>" + (f" ({unidad})" if unidad else ""),
+            text=f"<b>{nombre_dis}</b>" + (f" ({unidad})" if unidad else ""),
             x=0.5, xanchor="center",
             font=dict(size=14, color="#0F172A"),
         ),
         height=340,
-        margin=dict(l=50, r=20, t=50, b=80),
+        margin=dict(l=50, r=140 if bandas_oms else 20, t=50, b=80),
         plot_bgcolor="#FFFFFF",
         paper_bgcolor="rgba(0,0,0,0)",
         shapes=shapes,
@@ -497,9 +682,12 @@ def _render_grafico_campana_comparativo(
         yaxis=dict(
             title=dict(text=y_label, font=dict(size=10, color="#64748b")),
             range=[y_lo, y_hi],
+            rangemode="tozero",
             gridcolor="#F1F5F9",
-            zeroline=False,
+            zeroline=True, zerolinecolor="#E2E8F0",
             tickfont=dict(size=10, color="#64748b"),
+            exponentformat="none",
+            separatethousands=True,
         ),
         showlegend=False,
     )
@@ -510,60 +698,112 @@ def _render_grafico_campana_comparativo(
         key=f"chart_camp_{campana['id']}_{parametro['id']}",
     )
 
-    # Leyenda completa: dots de estado + zonas ECA por categoría.
-    # Pensada para que cualquier usuario (no solo el técnico) entienda
-    # qué significa cada elemento del chart.
-    cats_presentes = {it["eca_cod"] for it in items if it["eca_cod"]}
-    chips_cats = []
-    for cat, paleta in ECA_CATEGORIA_COLORES.items():
-        if cat in cats_presentes:
-            chips_cats.append(
-                f'<span style="display:inline-flex; align-items:center; gap:5px; '
-                f'font-size:0.72rem; color:#475569;">'
-                f'<span style="display:inline-block; width:14px; height:10px; '
-                f'background:{paleta["fill"]}; opacity:0.6; '
-                f'border:1px solid {paleta["stroke"]}; '
-                f'border-radius:3px;"></span>'
-                f'<b>{cat}</b></span>'
-            )
-
+    # Leyenda contextual según el caso del chart
     leyenda_html = (
         '<div style="border-top:1px solid #f1f5f9; padding-top:8px; margin-top:4px;">'
         '<div style="font-size:0.72rem; color:#94a3b8; '
         'text-transform:uppercase; letter-spacing:0.05em; '
         'font-weight:600; margin-bottom:4px;">Cómo leer el gráfico</div>'
-        '<div style="display:flex; flex-wrap:wrap; gap:14px; margin-bottom:6px;">'
-        # Dots de estado
-        '<span style="display:inline-flex; align-items:center; gap:5px; '
-        'font-size:0.72rem; color:#475569;">'
-        '<span style="display:inline-block; width:11px; height:11px; '
-        'background:#2563EB; border-radius:50%; border:1px solid #0F172A;"></span>'
-        'Cumple ECA</span>'
-        '<span style="display:inline-flex; align-items:center; gap:5px; '
-        'font-size:0.72rem; color:#475569;">'
-        '<span style="display:inline-block; width:11px; height:11px; '
-        'background:#EF4444; border-radius:50%; border:1px solid #0F172A;"></span>'
-        'No cumple ECA</span>'
-        '<span style="display:inline-flex; align-items:center; gap:5px; '
-        'font-size:0.72rem; color:#475569;">'
-        '<span style="display:inline-block; width:11px; height:11px; '
-        'background:#94A3B8; border-radius:50%; border:1px solid #0F172A;"></span>'
-        'Sin ECA / sin medición</span>'
-        '</div>'
     )
 
-    if chips_cats:
+    if bandas_oms:
+        # Cianobacteria — leyenda OMS
+        chips_oms = "".join(
+            f'<span style="display:inline-flex; align-items:center; gap:5px; '
+            f'font-size:0.72rem; color:#475569;">'
+            f'<span style="display:inline-block; width:14px; height:10px; '
+            f'background:{b["color"]}; opacity:0.65; '
+            f'border:1px solid {b["stroke"]}; border-radius:3px;"></span>'
+            f'{b["label"]}</span>'
+            for b in bandas_oms
+        )
+        unidad = ((parametro.get("unidades_medida") or {}).get("simbolo") or "").lower()
+        fuente = (
+            "OMS 1999 (Drinking-water Alert Levels Framework)"
+            if "cel" in unidad else
+            "OMS 2021 (biovolumen — agua recreativa)"
+        )
         leyenda_html += (
-            '<div style="font-size:0.7rem; color:#94a3b8; margin-bottom:3px;">'
-            'Zonas coloreadas = rango ECA según categoría aplicable a cada punto'
+            f'<div style="display:flex; flex-wrap:wrap; gap:14px; margin-bottom:4px;">'
+            '<span style="display:inline-flex; align-items:center; gap:5px; '
+            'font-size:0.72rem; color:#475569;">'
+            f'<span style="display:inline-block; width:11px; height:11px; '
+            f'background:{_color_phyllum(parametro)}; border-radius:50%; '
+            'border:1px solid #0F172A;"></span>'
+            'Cianobacteria</span>'
+            f'{chips_oms}'
             '</div>'
-            '<div style="display:flex; flex-wrap:wrap; gap:14px;">'
-            + "".join(chips_cats) +
+            f'<div style="font-size:0.68rem; color:#94a3b8;">'
+            f'Bandas globales según {fuente}'
             '</div>'
         )
+    elif es_hb:
+        # Hidrobiológico no cianobacteria — sin estándar
+        leyenda_html += (
+            '<div style="display:flex; flex-wrap:wrap; gap:14px; margin-bottom:4px;">'
+            '<span style="display:inline-flex; align-items:center; gap:5px; '
+            'font-size:0.72rem; color:#475569;">'
+            f'<span style="display:inline-block; width:11px; height:11px; '
+            f'background:{_color_phyllum(parametro)}; border-radius:50%; '
+            'border:1px solid #0F172A;"></span>'
+            f'{_display_nombre_parametro(parametro)}</span>'
+            '</div>'
+            '<div style="font-size:0.68rem; color:#94a3b8;">'
+            'Parámetro hidrobiológico — sin ECA aplicable en el D.S. N° 004-2017-MINAM'
+            '</div>'
+        )
+    elif es_temp:
+        leyenda_html += (
+            '<div style="font-size:0.72rem; color:#475569;">'
+            '<b>Temperatura:</b> el ECA se evalúa como Δ sobre el natural, '
+            'no como valor absoluto. Dots informativos sin coloreo de cumplimiento.'
+            '</div>'
+        )
+    else:
+        # Físico-químico/Campo con ECA — leyenda completa
+        cats_presentes = {it["eca_cod"] for it in items if it["eca_cod"]}
+        chips_cats = []
+        for cat, paleta in ECA_CATEGORIA_COLORES.items():
+            if cat in cats_presentes:
+                chips_cats.append(
+                    f'<span style="display:inline-flex; align-items:center; gap:5px; '
+                    f'font-size:0.72rem; color:#475569;">'
+                    f'<span style="display:inline-block; width:14px; height:10px; '
+                    f'background:{paleta["fill"]}; opacity:0.6; '
+                    f'border:1px solid {paleta["stroke"]}; '
+                    f'border-radius:3px;"></span>'
+                    f'<b>{cat}</b></span>'
+                )
+        leyenda_html += (
+            '<div style="display:flex; flex-wrap:wrap; gap:14px; margin-bottom:6px;">'
+            '<span style="display:inline-flex; align-items:center; gap:5px; '
+            'font-size:0.72rem; color:#475569;">'
+            '<span style="display:inline-block; width:11px; height:11px; '
+            'background:#2563EB; border-radius:50%; border:1px solid #0F172A;"></span>'
+            'Cumple ECA</span>'
+            '<span style="display:inline-flex; align-items:center; gap:5px; '
+            'font-size:0.72rem; color:#475569;">'
+            '<span style="display:inline-block; width:11px; height:11px; '
+            'background:#EF4444; border-radius:50%; border:1px solid #0F172A;"></span>'
+            'No cumple ECA</span>'
+            '<span style="display:inline-flex; align-items:center; gap:5px; '
+            'font-size:0.72rem; color:#475569;">'
+            '<span style="display:inline-block; width:11px; height:11px; '
+            'background:#94A3B8; border-radius:50%; border:1px solid #0F172A;"></span>'
+            'Sin ECA / sin medición</span>'
+            '</div>'
+        )
+        if chips_cats:
+            leyenda_html += (
+                '<div style="font-size:0.7rem; color:#94a3b8; margin-bottom:3px;">'
+                'Zonas coloreadas = rango ECA según categoría aplicable a cada punto'
+                '</div>'
+                '<div style="display:flex; flex-wrap:wrap; gap:14px;">'
+                + "".join(chips_cats) +
+                '</div>'
+            )
 
     leyenda_html += "</div>"
-
     st.markdown(leyenda_html, unsafe_allow_html=True)
 
 
@@ -587,21 +827,22 @@ def _render_linea_estacionalidad(
     anio: int,
 ) -> None:
     """
-    Estacionalidad estilo R-Studio: línea conectando todas las mediciones
-    cronológicamente, markers individuales coloreados por estado ECA, área
-    suave bajo la línea y líneas de referencia ECA horizontales.
+    Estacionalidad estilo R-Studio (línea + markers). Casos:
 
-    Reglas de color del marker:
-        - rojo  si excede ECA máx o cae bajo ECA mín
-        - azul  si cumple ECA
-        - gris  si el parámetro no tiene ECA o es Temperatura
-
-    Para Temperatura no se dibujan líneas ECA (el DS define un Δ sobre el
-    natural, no un valor absoluto comparable directamente).
+    - Físico-químico/Campo con ECA → línea verde + markers coloreados
+      (rojo no cumple / azul cumple / gris sin ECA), con líneas ECA
+      máx (rojo) y mín (verde) como referencia. Sombreado: rojo arriba
+      del máx, rojo bajo el mín, verde claro entre ambos (cumplimiento).
+    - Cianobacteria → bandas horizontales globales OMS (cel/mL o mm³/L).
+      Línea y markers en color phyllum (verde-azul).
+    - Otros hidrobiológicos → línea + markers en color del phyllum, sin
+      líneas ECA ni sombreado.
+    - Temperatura → markers grises, sin líneas ECA (el DS define un Δ).
     """
     historial = get_historial_punto(punto["id"], parametro["id"], limite=400)
+    nombre_dis = _display_nombre_parametro(parametro)
     if not historial:
-        st.info(f"Sin mediciones de **{parametro['nombre']}** en {punto['codigo']} / {anio}.")
+        st.info(f"Sin mediciones de **{nombre_dis}** en {punto['codigo']} / {anio}.")
         return
 
     df = pd.DataFrame(historial)
@@ -609,22 +850,46 @@ def _render_linea_estacionalidad(
     df = df.dropna(subset=["fecha", "valor"])
     df = df[df["fecha"].dt.year == int(anio)]
     if df.empty:
-        st.info(f"Sin mediciones de **{parametro['nombre']}** en {punto['codigo']} / {anio}.")
+        st.info(f"Sin mediciones de **{nombre_dis}** en {punto['codigo']} / {anio}.")
         return
 
     df = df.sort_values("fecha").reset_index(drop=True)
 
     es_temp = _es_temperatura(parametro)
-    lim = get_limite_eca_parametro(punto["id"], parametro["id"])
-    lim_max = None if es_temp else lim.get("valor_maximo")
-    lim_min = None if es_temp else lim.get("valor_minimo")
-    eca_cod = lim.get("eca_codigo", "")
+    es_hb = _es_hidrobiologico(parametro)
+    es_cyano = _es_cianobacteria(parametro)
+    bandas_oms = _oms_bandas_cianobacteria(parametro) if es_cyano else []
+
+    # En hidrobiológicos no aplica ECA (sólo OMS para cianobacteria).
+    # Temperatura tampoco.
+    aplicar_eca = not (es_hb or es_temp)
+    lim = get_limite_eca_parametro(punto["id"], parametro["id"]) if aplicar_eca else {}
+    lim_max = lim.get("valor_maximo") if aplicar_eca else None
+    lim_min = lim.get("valor_minimo") if aplicar_eca else None
+    eca_cod = lim.get("eca_codigo", "") if aplicar_eca else ""
     tiene_eca = (lim_max is not None) or (lim_min is not None)
 
-    # Color por marker (R-Studio style): rojo excede / azul cumple / gris sin ECA
+    # Rango Y — siempre desde 0
+    valores = df["valor"].tolist()
+    universo = list(valores)
+    if lim_max is not None: universo.append(lim_max)
+    if lim_min is not None: universo.append(lim_min)
+    if bandas_oms:
+        for b in bandas_oms:
+            if b["lo"] is not None: universo.append(b["lo"])
+            if b["hi"] is not None: universo.append(b["hi"])
+    y_max_data = max(universo) if universo else 1.0
+    y_lo = 0.0
+    y_hi = y_max_data * 1.18 if y_max_data > 0 else 1.0
+
+    # Color del marker
+    color_phyllum_unico = _color_phyllum(parametro) if (es_hb or es_cyano) else None
+
     colores_marker: list[str] = []
     for v in df["valor"]:
-        if not tiene_eca:
+        if color_phyllum_unico is not None:
+            colores_marker.append(color_phyllum_unico)
+        elif not tiene_eca:
             colores_marker.append("#94A3B8")
         elif (lim_max is not None and v > lim_max) or (lim_min is not None and v < lim_min):
             colores_marker.append("#EF4444")
@@ -632,21 +897,102 @@ def _render_linea_estacionalidad(
             colores_marker.append("#2563EB")
 
     unidad = (parametro.get("unidades_medida") or {}).get("simbolo", "")
-    y_label = f"{parametro['nombre']} ({unidad})" if unidad else parametro["nombre"]
-    color_linea = "#10B981" if tiene_eca else "#94A3B8"
+    y_label = f"{nombre_dis} ({unidad})" if unidad else nombre_dis
+    color_linea = (
+        color_phyllum_unico
+        if color_phyllum_unico is not None
+        else ("#10B981" if tiene_eca else "#94A3B8")
+    )
 
     fig = go.Figure()
 
-    # Área translúcida bajo la línea (estilo ggplot/R-Studio)
-    fig.add_trace(go.Scatter(
-        x=df["fecha"], y=df["valor"],
-        mode="lines",
-        line=dict(color=color_linea, width=0),
-        fill="tozeroy",
-        fillcolor="rgba(16,185,129,0.10)" if tiene_eca else "rgba(148,163,184,0.10)",
-        hoverinfo="skip",
-        showlegend=False,
-    ))
+    # ── Sombreado de fondo según el caso
+    shapes = []
+    annotations = []
+
+    if bandas_oms:
+        for b in bandas_oms:
+            b_hi = b["hi"] if b["hi"] is not None else y_hi
+            shapes.append(dict(
+                type="rect",
+                xref="paper", yref="y",
+                x0=0, x1=1,
+                y0=b["lo"], y1=b_hi,
+                fillcolor=b["color"], opacity=0.45,
+                line=dict(width=0),
+                layer="below",
+            ))
+            if b["hi"] is not None:
+                shapes.append(dict(
+                    type="line",
+                    xref="paper", yref="y",
+                    x0=0, x1=1,
+                    y0=b_hi, y1=b_hi,
+                    line=dict(color=b["stroke"], width=1.4, dash="dash"),
+                    layer="below",
+                ))
+                annotations.append(dict(
+                    x=1.0, y=b_hi,
+                    xref="paper", yref="y",
+                    text=f"{b['label']}",
+                    showarrow=False,
+                    xanchor="right",
+                    font=dict(size=8.5, color=b["stroke"]),
+                    yshift=8,
+                ))
+    elif tiene_eca:
+        # Sombreado ECA: rojo arriba de máx, rojo bajo mín, verde claro entre
+        if lim_max is not None:
+            shapes.append(dict(
+                type="rect",
+                xref="paper", yref="y",
+                x0=0, x1=1,
+                y0=lim_max, y1=y_hi,
+                fillcolor="#FECACA", opacity=0.40,
+                line=dict(width=0),
+                layer="below",
+            ))
+        if lim_min is not None:
+            shapes.append(dict(
+                type="rect",
+                xref="paper", yref="y",
+                x0=0, x1=1,
+                y0=y_lo, y1=lim_min,
+                fillcolor="#FECACA", opacity=0.40,
+                line=dict(width=0),
+                layer="below",
+            ))
+        # Banda de cumplimiento (verde claro)
+        if lim_max is not None and lim_min is not None:
+            shapes.append(dict(
+                type="rect",
+                xref="paper", yref="y",
+                x0=0, x1=1,
+                y0=lim_min, y1=lim_max,
+                fillcolor="#A7F3D0", opacity=0.25,
+                line=dict(width=0),
+                layer="below",
+            ))
+        elif lim_max is not None:
+            shapes.append(dict(
+                type="rect",
+                xref="paper", yref="y",
+                x0=0, x1=1,
+                y0=y_lo, y1=lim_max,
+                fillcolor="#A7F3D0", opacity=0.20,
+                line=dict(width=0),
+                layer="below",
+            ))
+        elif lim_min is not None:
+            shapes.append(dict(
+                type="rect",
+                xref="paper", yref="y",
+                x0=0, x1=1,
+                y0=lim_min, y1=y_hi,
+                fillcolor="#A7F3D0", opacity=0.20,
+                line=dict(width=0),
+                layer="below",
+            ))
 
     # Línea + markers principales
     fig.add_trace(go.Scatter(
@@ -658,40 +1004,40 @@ def _render_linea_estacionalidad(
             line=dict(color="#0F172A", width=1.2),
             symbol="circle",
         ),
-        text=[f"{v:.3g}" for v in df["valor"]],
+        text=[_format_valor(v) for v in df["valor"]],
         customdata=df[["fecha"]].astype(str).values,
         hovertemplate=(
             f"<b>%{{customdata[0]}}</b><br>"
-            f"{parametro['nombre']}: <b>%{{y:.4g}}</b>"
+            f"{nombre_dis}: <b>%{{text}}</b>"
             + (f" {unidad}" if unidad else "")
             + "<extra></extra>"
         ),
         showlegend=False,
     ))
 
-    # Líneas ECA — solo si NO es temperatura y existen
+    # Líneas ECA solo en físico-químico/campo con ECA
     if lim_max is not None:
         fig.add_hline(
             y=lim_max, line_dash="dash", line_color="#EF4444",
-            line_width=1.4, opacity=0.85,
-            annotation_text=f"Máx ECA: {lim_max:g}",
+            line_width=1.6, opacity=0.95,
+            annotation_text=f"Máx ECA: {_format_valor(lim_max)}",
             annotation_position="top right",
             annotation_font_size=9, annotation_font_color="#EF4444",
         )
     if lim_min is not None:
         fig.add_hline(
             y=lim_min, line_dash="dash", line_color="#10B981",
-            line_width=1.4, opacity=0.85,
-            annotation_text=f"Mín ECA: {lim_min:g}",
+            line_width=1.6, opacity=0.95,
+            annotation_text=f"Mín ECA: {_format_valor(lim_min)}",
             annotation_position="bottom right",
             annotation_font_size=9, annotation_font_color="#10B981",
         )
 
     titulo = (
-        f"<b>{parametro['nombre']}</b>"
+        f"<b>{nombre_dis}</b>"
         + (f" ({unidad})" if unidad else "")
         + f"  ·  {punto['codigo']} ({anio})"
-        + (f"  ·  ECA {eca_cod}" if (eca_cod and not es_temp) else "")
+        + (f"  ·  ECA {eca_cod}" if (eca_cod and aplicar_eca) else "")
     )
 
     fig.update_layout(
@@ -701,9 +1047,11 @@ def _render_linea_estacionalidad(
             font=dict(size=12, color="#0F172A"),
         ),
         height=300,
-        margin=dict(l=40, r=30, t=40, b=40),
+        margin=dict(l=40, r=120 if bandas_oms else 30, t=40, b=40),
         plot_bgcolor="#FFFFFF",
         paper_bgcolor="rgba(0,0,0,0)",
+        shapes=shapes,
+        annotations=annotations,
         xaxis=dict(
             range=[f"{anio}-01-01", f"{anio}-12-31"],
             tickformat="%b",
@@ -714,9 +1062,13 @@ def _render_linea_estacionalidad(
         ),
         yaxis=dict(
             title=dict(text=y_label, font=dict(size=10, color="#64748b")),
+            range=[y_lo, y_hi],
+            rangemode="tozero",
             gridcolor="#F1F5F9",
-            zerolinecolor="#E2E8F0",
+            zeroline=True, zerolinecolor="#E2E8F0",
             tickfont=dict(size=10, color="#64748b"),
+            exponentformat="none",
+            separatethousands=True,
         ),
         showlegend=False,
         hovermode="closest",
@@ -728,19 +1080,43 @@ def _render_linea_estacionalidad(
         key=f"linea_estac_{punto['id']}_{parametro['id']}_{anio}",
     )
 
-    # Leyenda con descripción clara — para que cualquier usuario la entienda
-    if es_temp:
+    # Leyenda contextual
+    if bandas_oms:
+        chips_oms = "".join(
+            f'<span style="display:inline-flex; align-items:center; gap:5px;">'
+            f'<span style="display:inline-block; width:14px; height:10px; '
+            f'background:{b["color"]}; opacity:0.65; '
+            f'border:1px solid {b["stroke"]}; border-radius:3px;"></span>'
+            f'{b["label"]}</span>'
+            for b in bandas_oms
+        )
         st.markdown(
-            '<div style="font-size:0.72rem; color:#64748b; line-height:1.5;">'
-            '<b>Nota:</b> Temperatura no tiene ECA absoluto en el '
-            'D.S. N° 004-2017-MINAM (se evalúa como Δ sobre el natural). '
-            'Los markers se muestran en gris.'
+            '<div style="display:flex; gap:14px; font-size:0.7rem; '
+            'color:#475569; flex-wrap:wrap; border-top:1px solid #f1f5f9; '
+            f'padding-top:6px;">{chips_oms}</div>',
+            unsafe_allow_html=True,
+        )
+    elif es_hb:
+        st.markdown(
+            f'<div style="font-size:0.7rem; color:#64748b; line-height:1.5; '
+            f'border-top:1px solid #f1f5f9; padding-top:6px;">'
+            f'<b>{nombre_dis}</b> — sin ECA aplicable en el '
+            f'D.S. N° 004-2017-MINAM. Línea y markers en color del phyllum.'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+    elif es_temp:
+        st.markdown(
+            '<div style="font-size:0.72rem; color:#64748b; line-height:1.5; '
+            'border-top:1px solid #f1f5f9; padding-top:6px;">'
+            '<b>Temperatura</b> — el ECA se evalúa como Δ sobre el natural, '
+            'no como valor absoluto.'
             '</div>',
             unsafe_allow_html=True,
         )
     else:
         st.markdown(
-            '<div style="display:flex; gap:14px; font-size:0.72rem; '
+            '<div style="display:flex; gap:14px; font-size:0.7rem; '
             'color:#475569; margin:2px 0 4px 0; flex-wrap:wrap; '
             'border-top:1px solid #f1f5f9; padding-top:6px;">'
             '<span style="display:inline-flex; align-items:center; gap:5px;">'
@@ -752,17 +1128,13 @@ def _render_linea_estacionalidad(
             'background:#EF4444; border-radius:50%; border:1px solid #0F172A;"></span>'
             'No cumple ECA</span>'
             '<span style="display:inline-flex; align-items:center; gap:5px;">'
-            '<span style="display:inline-block; width:11px; height:11px; '
-            'background:#94A3B8; border-radius:50%; border:1px solid #0F172A;"></span>'
-            'Sin ECA</span>'
+            '<span style="display:inline-block; width:14px; height:10px; '
+            'background:#FECACA; opacity:0.6; border:1px solid #EF4444; '
+            'border-radius:2px;"></span>Zona no cumple</span>'
             '<span style="display:inline-flex; align-items:center; gap:5px;">'
-            '<span style="display:inline-block; width:14px; height:2px; '
-            'background:#EF4444;"></span>'
-            'Línea ECA máx</span>'
-            '<span style="display:inline-flex; align-items:center; gap:5px;">'
-            '<span style="display:inline-block; width:14px; height:2px; '
-            'background:#10B981;"></span>'
-            'Línea ECA mín</span>'
+            '<span style="display:inline-block; width:14px; height:10px; '
+            'background:#A7F3D0; opacity:0.5; border:1px solid #10B981; '
+            'border-radius:2px;"></span>Zona cumple</span>'
             '</div>',
             unsafe_allow_html=True,
         )
@@ -1888,30 +2260,115 @@ def main() -> None:
         st.markdown('</div>', unsafe_allow_html=True)
 
 
+def _on_change_param_cat(cat: str) -> None:
+    """Callback de selectores 3-categorías — marca cuál fue el último cambiado."""
+    st.session_state["geo_param_active_cat"] = cat
+
+
+def _render_3_selectores_parametro(
+    parametros: list[dict],
+    key_prefix: str,
+) -> dict | None:
+    """
+    Renderiza 3 selectboxes side-by-side (Campo / Fisicoquímicos / Hidrobiológicos)
+    con sus parámetros filtrados por categoría. El último cambiado gana — se
+    rastrea con `st.session_state["geo_param_active_cat"]` actualizado vía
+    on_change callbacks.
+
+    Args:
+        parametros:  lista completa de parámetros (sin filtrar)
+        key_prefix:  prefijo para las keys de session_state (ej. "camp" o "punto")
+
+    Returns:
+        El parámetro seleccionado (dict) o None si no hay ninguno disponible.
+    """
+    cats: dict[str, dict] = {
+        "campo":         {"label": "Campo",            "params": []},
+        "fisicoquimico": {"label": "Fisicoquímicos",   "params": []},
+        "hidrobiologico":{"label": "Hidrobiológicos",  "params": []},
+    }
+    for p in parametros:
+        c = _clasificar_cat(p)
+        if c == "Campo":
+            cats["campo"]["params"].append(p)
+        elif c == "Fisicoquimico":
+            cats["fisicoquimico"]["params"].append(p)
+        elif c == "Hidrobiologico":
+            cats["hidrobiologico"]["params"].append(p)
+
+    # Construir opciones por categoría con display name normalizado
+    for c in cats.values():
+        c["opciones"] = {
+            f"{p['codigo']} — {_display_nombre_parametro(p)}": p
+            for p in c["params"]
+        }
+
+    # Default activa: la primera categoría con parámetros
+    if "geo_param_active_cat" not in st.session_state:
+        for k, c in cats.items():
+            if c["opciones"]:
+                st.session_state["geo_param_active_cat"] = k
+                break
+
+    c1, c2, c3 = st.columns(3)
+    cols = {"campo": c1, "fisicoquimico": c2, "hidrobiologico": c3}
+    for cat_key, col in cols.items():
+        with col:
+            opc = cats[cat_key]["opciones"]
+            label = cats[cat_key]["label"]
+            if opc:
+                st.selectbox(
+                    label,
+                    list(opc.keys()),
+                    key=f"{key_prefix}_param_{cat_key}",
+                    on_change=_on_change_param_cat,
+                    args=(cat_key,),
+                )
+            else:
+                st.markdown(
+                    f'<div style="font-size:0.78rem; color:#94a3b8;">'
+                    f'<div style="font-size:0.84rem; color:#475569; '
+                    f'font-weight:500; margin-bottom:4px;">{label}</div>'
+                    f'<div style="padding:7px 0;">— sin parámetros</div></div>',
+                    unsafe_allow_html=True,
+                )
+
+    # Resolver parámetro activo
+    active = st.session_state.get("geo_param_active_cat", "campo")
+    sel_lbl = st.session_state.get(f"{key_prefix}_param_{active}")
+    parametro = cats[active]["opciones"].get(sel_lbl) if sel_lbl else None
+
+    # Fallback: si la categoría activa no tiene selección, usar la primera disponible
+    if parametro is None:
+        for k, c in cats.items():
+            if c["opciones"]:
+                first_label = next(iter(c["opciones"]))
+                parametro = c["opciones"][first_label]
+                st.session_state["geo_param_active_cat"] = k
+                break
+
+    return parametro
+
+
 def _render_modo_campana(parametros: list[dict], campanas: list[dict]) -> None:
-    """Sidebar — Modo Campaña: selector de campaña + parámetro + chart."""
+    """Sidebar — Modo Campaña: selector de campaña + 3 selectores parámetro + chart."""
     if not campanas:
         st.info("No hay campañas registradas.")
         return
 
     opciones_camp = {f"{c['codigo']} — {c['nombre']}": c for c in campanas}
-    cc_a, cc_b = st.columns(2)
-    with cc_a:
-        sel_camp_lbl = st.selectbox(
-            "Campaña",
-            list(opciones_camp.keys()),
-            key="geo_camp_chart",
-        )
-    with cc_b:
-        opciones_param = {f"{pr['codigo']} — {pr['nombre']}": pr for pr in parametros}
-        sel_param_lbl = st.selectbox(
-            "Parámetro",
-            list(opciones_param.keys()),
-            key="geo_camp_param",
-        )
+    sel_camp_lbl = st.selectbox(
+        "Campaña",
+        list(opciones_camp.keys()),
+        key="geo_camp_chart",
+    )
+
+    parametro = _render_3_selectores_parametro(parametros, key_prefix="camp")
+    if parametro is None:
+        st.info("No hay parámetros disponibles.")
+        return
 
     campana = opciones_camp[sel_camp_lbl]
-    parametro = opciones_param[sel_param_lbl]
 
     fi = (campana.get("fecha_inicio") or "")[:10]
     ff = (campana.get("fecha_fin") or "")[:10]
@@ -1948,8 +2405,8 @@ def _render_modo_punto(
     fecha_inicio: str,
     fecha_fin: str,
 ) -> None:
-    """Sidebar — Modo Punto: selector punto+param+año + tabs Estacionalidad / Estado ECA + ficha."""
-    pp_a, pp_b = st.columns(2)
+    """Sidebar — Modo Punto: selector punto + 3 selectores parámetro + año + tabs."""
+    pp_a, pp_b = st.columns([2, 1])
     with pp_a:
         sel_punto_lbl = st.selectbox(
             "Punto",
@@ -1958,22 +2415,19 @@ def _render_modo_punto(
             help="Sincronizado con el click en el marcador del mapa.",
         )
     with pp_b:
-        opciones_param = {f"{pr['codigo']} — {pr['nombre']}": pr for pr in parametros}
-        sel_param_lbl = st.selectbox(
-            "Parámetro",
-            list(opciones_param.keys()),
-            key="geo_punto_param",
+        anio_actual = date.today().year
+        sel_anio = st.selectbox(
+            "Año",
+            list(range(anio_actual, anio_actual - 6, -1)),
+            key="geo_punto_anio",
         )
 
-    anio_actual = date.today().year
-    sel_anio = st.selectbox(
-        "Año",
-        list(range(anio_actual, anio_actual - 6, -1)),
-        key="geo_punto_anio",
-    )
+    parametro = _render_3_selectores_parametro(parametros, key_prefix="punto")
+    if parametro is None:
+        st.info("No hay parámetros disponibles.")
+        return
 
     punto = opciones_punto[sel_punto_lbl]
-    parametro = opciones_param[sel_param_lbl]
 
     # Mini-tabs: Estacionalidad | Estado ECA | Ficha — los tres juntos para
     # evitar que el usuario tenga que abrir un expander separado.
@@ -2062,6 +2516,44 @@ def _render_panel_punto(punto_sel: dict) -> None:
         </div>""",
         unsafe_allow_html=True,
     )
+
+    # ── Phyllum dominante (último análisis fitoplancton)
+    try:
+        phyllum_info = get_phyllum_dominante_punto(punto_sel["id"])
+    except Exception:
+        phyllum_info = None
+    if phyllum_info:
+        # Construimos un parametro "fake" para reusar _color_phyllum
+        nombre_filo = phyllum_info["filo"]
+        param_fake = {"nombre": nombre_filo, "codigo": nombre_filo}
+        col_phy = _color_phyllum(param_fake)
+        nombre_dis = _display_nombre_parametro(param_fake)
+        cel_str = _format_valor(phyllum_info["cel_ml_equiv"])
+        st.markdown(
+            f'<div style="background:#ffffff; border:1px solid #f1f5f9; '
+            f'border-left:4px solid {col_phy}; border-radius:8px; '
+            f'padding:10px 12px; margin-top:10px; font-size:0.78rem;">'
+            f'<div style="color:var(--lvca-text-faint); font-size:0.66rem; '
+            f'text-transform:uppercase; letter-spacing:0.04em; '
+            f'font-weight:600;">Phyllum dominante</div>'
+            f'<div style="display:flex; align-items:center; '
+            f'justify-content:space-between; gap:10px; margin-top:4px;">'
+            f'<div>'
+            f'<span style="display:inline-block; width:10px; height:10px; '
+            f'background:{col_phy}; border-radius:50%; '
+            f'margin-right:6px; vertical-align:-1px;"></span>'
+            f'<b style="color:#0F172A;">{nombre_dis}</b>'
+            f'<span style="color:#94A3B8; margin-left:8px; font-size:0.72rem;">'
+            f'{phyllum_info["n_filos"]} filo(s) detectado(s)</span>'
+            f'</div>'
+            f'<div style="font-size:0.72rem; color:#475569;">'
+            f'{cel_str} <span style="color:#94A3B8;">cel/mL</span>'
+            f'</div></div>'
+            f'<div style="font-size:0.66rem; color:#94A3B8; margin-top:3px;">'
+            f'Muestra {phyllum_info["muestra_codigo"]} · {phyllum_info["fecha_muestreo"]}'
+            f'</div></div>',
+            unsafe_allow_html=True,
+        )
 
     _render_gauge(punto_sel)
 
