@@ -958,6 +958,78 @@ def borrar_analisis_fitoplancton(
 # Histórico por punto (serie temporal de cianobacterias)
 # ─────────────────────────────────────────────────────────────────────────────
 
+def get_phyllum_dominante_punto(punto_muestreo_id: str) -> Optional[dict]:
+    """
+    Retorna el filo con MAYOR densidad celular (cel/mL equivalente) en el
+    último análisis fitoplancton del punto.
+
+    Estructura del retorno:
+        {
+            "filo":            str,        # nombre del filo dominante
+            "cel_ml_equiv":    float,      # densidad total del filo
+            "biovolumen_mm3_l":float,      # biovolumen del filo
+            "muestra_codigo":  str,        # código de la muestra fuente
+            "fecha_muestreo":  str,        # ISO date de la fecha de campo
+            "n_filos":         int,        # cantidad total de filos detectados
+        }
+
+    Retorna None si:
+        - El punto no tiene muestras con análisis fitoplancton cargado.
+        - El último análisis no tiene conteos > 0.
+    """
+    db = get_admin_client()
+    res = (
+        db.table("muestras")
+        .select("id, codigo, fecha_muestreo, datos_fitoplancton")
+        .eq("punto_muestreo_id", punto_muestreo_id)
+        .not_.is_("datos_fitoplancton", "null")
+        .order("fecha_muestreo", desc=True)
+        .limit(1)
+        .execute()
+    )
+    rows = res.data or []
+    if not rows:
+        return None
+
+    m = rows[0]
+    datos = m.get("datos_fitoplancton") or {}
+    # `datos` puede tener "filos" como sub-key o ser plano. Soportamos ambos.
+    filos_dict = datos.get("filos") if isinstance(datos.get("filos"), dict) else datos
+    if not isinstance(filos_dict, dict):
+        return None
+
+    totales: list[dict] = []
+    for filo, especies in filos_dict.items():
+        if not isinstance(especies, dict):
+            continue
+        cel_total = 0.0
+        bio_total = 0.0
+        for esp_data in especies.values():
+            if isinstance(esp_data, dict):
+                cel_total += float(esp_data.get("cel_ml_equiv", 0) or 0)
+                bio_total += float(esp_data.get("biovolumen_mm3_l", 0) or 0)
+        if cel_total > 0:
+            totales.append({
+                "filo":             filo,
+                "cel_ml_equiv":     cel_total,
+                "biovolumen_mm3_l": bio_total,
+            })
+
+    if not totales:
+        return None
+
+    totales.sort(key=lambda x: x["cel_ml_equiv"], reverse=True)
+    top = totales[0]
+    return {
+        "filo":             top["filo"],
+        "cel_ml_equiv":     round(top["cel_ml_equiv"], 4),
+        "biovolumen_mm3_l": round(top["biovolumen_mm3_l"], 6),
+        "muestra_codigo":   m.get("codigo", ""),
+        "fecha_muestreo":   (m.get("fecha_muestreo") or "")[:10],
+        "n_filos":          len(totales),
+    }
+
+
 def get_historico_cianobacterias_por_punto(
     punto_muestreo_id: str,
     limite: int = 50,
