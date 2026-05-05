@@ -2260,9 +2260,21 @@ def main() -> None:
         st.markdown('</div>', unsafe_allow_html=True)
 
 
-def _on_change_param_cat(cat: str) -> None:
-    """Callback de selectores 3-categorías — marca cuál fue el último cambiado."""
+_TRES_CATS = ("campo", "fisicoquimico", "hidrobiologico")
+
+
+def _on_change_param_cat(cat: str, key_prefix: str) -> None:
+    """
+    Callback exclusivo: cuando el usuario cambia el selectbox de UNA categoría,
+    marca esa categoría como activa Y limpia las selecciones de las otras dos
+    para que solo una a la vez esté "elegida".
+    """
     st.session_state["geo_param_active_cat"] = cat
+    for otra in _TRES_CATS:
+        if otra != cat:
+            otra_key = f"{key_prefix}_param_{otra}"
+            if otra_key in st.session_state:
+                st.session_state[otra_key] = None
 
 
 def _render_3_selectores_parametro(
@@ -2270,22 +2282,21 @@ def _render_3_selectores_parametro(
     key_prefix: str,
 ) -> dict | None:
     """
-    Renderiza 3 selectboxes side-by-side (Campo / Fisicoquímicos / Hidrobiológicos)
-    con sus parámetros filtrados por categoría. El último cambiado gana — se
-    rastrea con `st.session_state["geo_param_active_cat"]` actualizado vía
-    on_change callbacks.
+    Renderiza 3 selectboxes side-by-side (Campo / Fisicoquímicos /
+    Hidrobiológicos) con sus parámetros filtrados por categoría.
 
-    Args:
-        parametros:  lista completa de parámetros (sin filtrar)
-        key_prefix:  prefijo para las keys de session_state (ej. "camp" o "punto")
+    Comportamiento exclusivo:
+      - Inicio: los 3 selectores están en BLANCO (index=None, placeholder).
+      - Al elegir uno → ese se vuelve "activo" y los otros 2 quedan en blanco.
+      - Al elegir otro → ese se vuelve activo y el anterior queda en blanco.
 
     Returns:
-        El parámetro seleccionado (dict) o None si no hay ninguno disponible.
+        El parámetro seleccionado (dict) o None si ninguno está activo.
     """
     cats: dict[str, dict] = {
-        "campo":         {"label": "Campo",            "params": []},
-        "fisicoquimico": {"label": "Fisicoquímicos",   "params": []},
-        "hidrobiologico":{"label": "Hidrobiológicos",  "params": []},
+        "campo":          {"label": "Campo",           "params": []},
+        "fisicoquimico":  {"label": "Fisicoquímicos",  "params": []},
+        "hidrobiologico": {"label": "Hidrobiológicos", "params": []},
     }
     for p in parametros:
         c = _clasificar_cat(p)
@@ -2296,19 +2307,11 @@ def _render_3_selectores_parametro(
         elif c == "Hidrobiologico":
             cats["hidrobiologico"]["params"].append(p)
 
-    # Construir opciones por categoría con display name normalizado
     for c in cats.values():
         c["opciones"] = {
             f"{p['codigo']} — {_display_nombre_parametro(p)}": p
             for p in c["params"]
         }
-
-    # Default activa: la primera categoría con parámetros
-    if "geo_param_active_cat" not in st.session_state:
-        for k, c in cats.items():
-            if c["opciones"]:
-                st.session_state["geo_param_active_cat"] = k
-                break
 
     c1, c2, c3 = st.columns(3)
     cols = {"campo": c1, "fisicoquimico": c2, "hidrobiologico": c3}
@@ -2321,8 +2324,10 @@ def _render_3_selectores_parametro(
                     label,
                     list(opc.keys()),
                     key=f"{key_prefix}_param_{cat_key}",
+                    index=None,
+                    placeholder="Seleccionar…",
                     on_change=_on_change_param_cat,
-                    args=(cat_key,),
+                    args=(cat_key, key_prefix),
                 )
             else:
                 st.markdown(
@@ -2333,21 +2338,24 @@ def _render_3_selectores_parametro(
                     unsafe_allow_html=True,
                 )
 
-    # Resolver parámetro activo
-    active = st.session_state.get("geo_param_active_cat", "campo")
-    sel_lbl = st.session_state.get(f"{key_prefix}_param_{active}")
-    parametro = cats[active]["opciones"].get(sel_lbl) if sel_lbl else None
+    # Resolver parámetro activo: solo un selector debería tener valor distinto
+    # de None gracias al callback exclusivo. Buscamos cuál tiene selección.
+    active = st.session_state.get("geo_param_active_cat")
+    if active and active in cats:
+        sel_lbl = st.session_state.get(f"{key_prefix}_param_{active}")
+        if sel_lbl:
+            return cats[active]["opciones"].get(sel_lbl)
 
-    # Fallback: si la categoría activa no tiene selección, usar la primera disponible
-    if parametro is None:
-        for k, c in cats.items():
-            if c["opciones"]:
-                first_label = next(iter(c["opciones"]))
-                parametro = c["opciones"][first_label]
-                st.session_state["geo_param_active_cat"] = k
-                break
+    # Si la categoría activa quedó sin selección (o no hay activa), revisar
+    # si algún otro selector tiene valor — esto puede pasar al primer render
+    # tras un cambio de modo Campaña↔Punto que comparte session_state.
+    for cat_key in _TRES_CATS:
+        sel_lbl = st.session_state.get(f"{key_prefix}_param_{cat_key}")
+        if sel_lbl and cats[cat_key]["opciones"].get(sel_lbl):
+            st.session_state["geo_param_active_cat"] = cat_key
+            return cats[cat_key]["opciones"][sel_lbl]
 
-    return parametro
+    return None
 
 
 def _render_modo_campana(parametros: list[dict], campanas: list[dict]) -> None:
@@ -2365,7 +2373,18 @@ def _render_modo_campana(parametros: list[dict], campanas: list[dict]) -> None:
 
     parametro = _render_3_selectores_parametro(parametros, key_prefix="camp")
     if parametro is None:
-        st.info("No hay parámetros disponibles.")
+        st.markdown(
+            '<div style="background:#F8FAFC; border:1px dashed #CBD5E1; '
+            'border-radius:10px; padding:24px 18px; margin-top:8px; '
+            'text-align:center; color:#64748B; font-size:0.86rem;">'
+            '<span class="material-symbols-rounded" '
+            'style="font-size:24px; color:#94A3B8; vertical-align:middle; '
+            'margin-right:6px;">touch_app</span>'
+            'Selecciona un parámetro de Campo, Fisicoquímicos o '
+            'Hidrobiológicos para ver el gráfico.'
+            '</div>',
+            unsafe_allow_html=True,
+        )
         return
 
     campana = opciones_camp[sel_camp_lbl]
@@ -2423,21 +2442,32 @@ def _render_modo_punto(
         )
 
     parametro = _render_3_selectores_parametro(parametros, key_prefix="punto")
-    if parametro is None:
-        st.info("No hay parámetros disponibles.")
-        return
-
     punto = opciones_punto[sel_punto_lbl]
 
-    # Mini-tabs: Estacionalidad | Estado ECA | Ficha — los tres juntos para
-    # evitar que el usuario tenga que abrir un expander separado.
+    # Mini-tabs: Estacionalidad | Estado ECA | Ficha
+    # Estacionalidad depende del parámetro elegido (placeholder si no hay).
+    # Estado ECA y Ficha funcionan sin parámetro.
     tab_seas, tab_eca, tab_ficha = st.tabs([
         ":material/calendar_month: Estacionalidad",
         ":material/shield: Estado ECA",
         ":material/info: Ficha del punto",
     ])
     with tab_seas:
-        _render_linea_estacionalidad(punto, parametro, sel_anio)
+        if parametro is None:
+            st.markdown(
+                '<div style="background:#F8FAFC; border:1px dashed #CBD5E1; '
+                'border-radius:10px; padding:24px 18px; margin-top:8px; '
+                'text-align:center; color:#64748B; font-size:0.86rem;">'
+                '<span class="material-symbols-rounded" '
+                'style="font-size:24px; color:#94A3B8; vertical-align:middle; '
+                'margin-right:6px;">touch_app</span>'
+                'Selecciona un parámetro de Campo, Fisicoquímicos o '
+                'Hidrobiológicos para ver la estacionalidad.'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            _render_linea_estacionalidad(punto, parametro, sel_anio)
     with tab_eca:
         _render_estado_eca_compacto(punto, fecha_inicio, fecha_fin)
     with tab_ficha:

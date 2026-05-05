@@ -958,26 +958,35 @@ def borrar_analisis_fitoplancton(
 # Histórico por punto (serie temporal de cianobacterias)
 # ─────────────────────────────────────────────────────────────────────────────
 
+_FITO_CODIGO_A_FILO: dict[str, str] = {
+    "FITO_CYANOBACTERIA_CEL":    "Cianobacteria",
+    "FITO_CYANOBACTERIA_BIOVOL": "Cianobacteria",
+    "FITO_BACILLARIOPHYTA":      "Bacillariophyta",
+    "FITO_CHLOROPHYTA":          "Chlorophyta",
+    "FITO_OCHROPHYTA":           "Ochrophyta",
+    "FITO_CHAROPHYTA":           "Charophyta",
+    "FITO_EUGLENOPHYTA":         "Euglenophyta",
+    "FITO_DINOPHYTA":            "Dinophyta",
+    "FITO_CRYPTOPHYTA":          "Cryptophyta",
+    "FITO_RHODOPHYTA":           "Rhodophyta",
+}
+
+
 def get_phyllum_dominante_punto(punto_muestreo_id: str) -> Optional[dict]:
     """
-    Retorna el filo con MAYOR densidad celular (cel/mL equivalente) en el
-    último análisis fitoplancton del punto.
+    Retorna el filo con MAYOR densidad celular en el último análisis
+    fitoplancton del punto.
 
-    Estructura del retorno:
-        {
-            "filo":            str,        # nombre del filo dominante
-            "cel_ml_equiv":    float,      # densidad total del filo
-            "biovolumen_mm3_l":float,      # biovolumen del filo
-            "muestra_codigo":  str,        # código de la muestra fuente
-            "fecha_muestreo":  str,        # ISO date de la fecha de campo
-            "n_filos":         int,        # cantidad total de filos detectados
-        }
+    Lee de DOS fuentes en orden de preferencia:
+        1. muestras.datos_fitoplancton (JSONB del Sedgewick-Rafter detallado)
+        2. resultados_laboratorio para los parámetros agregados FITO_*
+           (cuando la entrada se hizo por la pestaña Resultados clásica)
 
-    Retorna None si:
-        - El punto no tiene muestras con análisis fitoplancton cargado.
-        - El último análisis no tiene conteos > 0.
+    Retorna None si el punto no tiene ningún análisis fitoplancton.
     """
     db = get_admin_client()
+
+    # Ruta A: JSONB Sedgewick-Rafter
     res = (
         db.table("muestras")
         .select("id, codigo, fecha_muestreo, datos_fitoplancton")
@@ -988,46 +997,107 @@ def get_phyllum_dominante_punto(punto_muestreo_id: str) -> Optional[dict]:
         .execute()
     )
     rows = res.data or []
-    if not rows:
+    if rows:
+        m = rows[0]
+        datos = m.get("datos_fitoplancton") or {}
+        filos_dict = datos.get("filos") if isinstance(datos.get("filos"), dict) else datos
+        if isinstance(filos_dict, dict):
+            totales: list[dict] = []
+            for filo, especies in filos_dict.items():
+                if not isinstance(especies, dict):
+                    continue
+                cel_total = 0.0
+                bio_total = 0.0
+                for esp_data in especies.values():
+                    if isinstance(esp_data, dict):
+                        cel_total += float(esp_data.get("cel_ml_equiv", 0) or 0)
+                        bio_total += float(esp_data.get("biovolumen_mm3_l", 0) or 0)
+                if cel_total > 0:
+                    totales.append({
+                        "filo":             filo,
+                        "cel_ml_equiv":     cel_total,
+                        "biovolumen_mm3_l": bio_total,
+                    })
+            if totales:
+                totales.sort(key=lambda x: x["cel_ml_equiv"], reverse=True)
+                top = totales[0]
+                return {
+                    "filo":             top["filo"],
+                    "cel_ml_equiv":     round(top["cel_ml_equiv"], 4),
+                    "biovolumen_mm3_l": round(top["biovolumen_mm3_l"], 6),
+                    "muestra_codigo":   m.get("codigo", ""),
+                    "fecha_muestreo":   (m.get("fecha_muestreo") or "")[:10],
+                    "n_filos":          len(totales),
+                    "_fuente":          "datos_fitoplancton",
+                }
+
+    # Ruta B (fallback): resultados_laboratorio agregados por phyllum
+    res_param = (
+        db.table("parametros")
+        .select("id, codigo")
+        .in_("codigo", list(_FITO_CODIGO_A_FILO.keys()))
+        .execute()
+    )
+    by_id = {p["id"]: p["codigo"] for p in (res_param.data or [])}
+    if not by_id:
         return None
 
-    m = rows[0]
-    datos = m.get("datos_fitoplancton") or {}
-    # `datos` puede tener "filos" como sub-key o ser plano. Soportamos ambos.
-    filos_dict = datos.get("filos") if isinstance(datos.get("filos"), dict) else datos
-    if not isinstance(filos_dict, dict):
+    # Muestras del punto, ordenadas por fecha desc
+    res_m = (
+        db.table("muestras")
+        .select("id, codigo, fecha_muestreo")
+        .eq("punto_muestreo_id", punto_muestreo_id)
+        .order("fecha_muestreo", desc=True)
+        .execute()
+    )
+    muestras = res_m.data or []
+    if not muestras:
         return None
 
-    totales: list[dict] = []
-    for filo, especies in filos_dict.items():
-        if not isinstance(especies, dict):
+    muestra_ids = [m["id"] for m in muestras]
+    res_r = (
+        db.table("resultados_laboratorio")
+        .select("muestra_id, parametro_id, valor_numerico")
+        .in_("muestra_id", muestra_ids)
+        .in_("parametro_id", list(by_id.keys()))
+        .not_.is_("valor_numerico", "null")
+        .execute()
+    )
+    by_muestra: dict[str, list[dict]] = {}
+    for r in (res_r.data or []):
+        by_muestra.setdefault(r["muestra_id"], []).append(r)
+    if not by_muestra:
+        return None
+
+    # Encontrar la primera muestra (más reciente) con datos fito
+    for m in muestras:
+        if m["id"] not in by_muestra:
             continue
-        cel_total = 0.0
-        bio_total = 0.0
-        for esp_data in especies.values():
-            if isinstance(esp_data, dict):
-                cel_total += float(esp_data.get("cel_ml_equiv", 0) or 0)
-                bio_total += float(esp_data.get("biovolumen_mm3_l", 0) or 0)
-        if cel_total > 0:
-            totales.append({
-                "filo":             filo,
-                "cel_ml_equiv":     cel_total,
-                "biovolumen_mm3_l": bio_total,
-            })
+        # Sumar por filo (sólo cel/mL — FITO_*_BIOVOL se trata aparte)
+        cel_por_filo: dict[str, float] = {}
+        bio_por_filo: dict[str, float] = {}
+        for r in by_muestra[m["id"]]:
+            cod = by_id[r["parametro_id"]]
+            filo = _FITO_CODIGO_A_FILO.get(cod, cod)
+            v = float(r["valor_numerico"])
+            if "BIOVOL" in cod:
+                bio_por_filo[filo] = bio_por_filo.get(filo, 0.0) + v
+            else:
+                cel_por_filo[filo] = cel_por_filo.get(filo, 0.0) + v
+        if not cel_por_filo:
+            continue
+        top_filo = max(cel_por_filo, key=cel_por_filo.get)
+        return {
+            "filo":             top_filo,
+            "cel_ml_equiv":     round(cel_por_filo[top_filo], 4),
+            "biovolumen_mm3_l": round(bio_por_filo.get(top_filo, 0.0), 6),
+            "muestra_codigo":   m.get("codigo", ""),
+            "fecha_muestreo":   (m.get("fecha_muestreo") or "")[:10],
+            "n_filos":          len(cel_por_filo),
+            "_fuente":          "resultados_laboratorio",
+        }
 
-    if not totales:
-        return None
-
-    totales.sort(key=lambda x: x["cel_ml_equiv"], reverse=True)
-    top = totales[0]
-    return {
-        "filo":             top["filo"],
-        "cel_ml_equiv":     round(top["cel_ml_equiv"], 4),
-        "biovolumen_mm3_l": round(top["biovolumen_mm3_l"], 6),
-        "muestra_codigo":   m.get("codigo", ""),
-        "fecha_muestreo":   (m.get("fecha_muestreo") or "")[:10],
-        "n_filos":          len(totales),
-    }
+    return None
 
 
 def get_historico_cianobacterias_por_punto(
@@ -1105,11 +1175,116 @@ def get_historico_cianobacterias_por_muestra(muestra_id: str) -> list[dict]:
     return get_historico_cianobacterias_por_punto(pid)
 
 
+def _empaquetar_nivel_oms(nivel: dict | None) -> dict:
+    """Helper compartido: serializa un nivel OMS a estructura uniforme."""
+    if nivel is None:
+        return {
+            "label":        "Sin alerta",
+            "codigo":       "sin_alerta",
+            "color_bg":     "#e2e3e5",
+            "color_borde":  "#6c757d",
+        }
+    return {
+        "label":        nivel["label"],
+        "codigo":       nivel["nivel"],
+        "color_bg":     nivel["color_bg"],
+        "color_borde":  nivel["color_borde"],
+    }
+
+
+def _alertas_oms_desde_resultados(
+    db,
+    puntos_ya_cubiertos: set[str],
+) -> dict[str, dict]:
+    """
+    Fallback: lee resultados_laboratorio para los parámetros agregados
+    FITO_CYANOBACTERIA_CEL (densidad celular cianobacterias) y
+    FITO_CYANOBACTERIA_BIOVOL (biovolumen). Usado cuando el JSONB
+    `datos_fitoplancton` está vacío para un punto pero sí hay resultados
+    cargados por la vía estándar de "Resultados".
+
+    `puntos_ya_cubiertos`: ids de puntos que ya tienen entrada vía JSONB
+    (no los re-procesamos).
+    """
+    salida: dict[str, dict] = {}
+
+    # 1. IDs de los parámetros agregados de cianobacterias
+    res_param = (
+        db.table("parametros")
+        .select("id, codigo")
+        .in_("codigo", ["FITO_CYANOBACTERIA_CEL", "FITO_CYANOBACTERIA_BIOVOL"])
+        .execute()
+    )
+    by_codigo = {p["codigo"]: p["id"] for p in (res_param.data or [])}
+    if not by_codigo:
+        return {}
+
+    # 2. Resultados de esos parámetros con datos de muestra/punto
+    param_ids = list(by_codigo.values())
+    res_r = (
+        db.table("resultados_laboratorio")
+        .select(
+            "valor_numerico, parametro_id, "
+            "muestras(punto_muestreo_id, fecha_muestreo)"
+        )
+        .in_("parametro_id", param_ids)
+        .not_.is_("valor_numerico", "null")
+        .execute()
+    )
+    filas = res_r.data or []
+
+    # 3. Agrupar por punto, quedándonos con la fecha más reciente
+    por_punto: dict[str, dict] = {}
+    for r in filas:
+        m = r.get("muestras") or {}
+        pid = m.get("punto_muestreo_id")
+        if not pid or pid in puntos_ya_cubiertos:
+            continue
+        fecha = (m.get("fecha_muestreo") or "")[:10]
+        slot = por_punto.setdefault(pid, {"fecha": "", "cel_ml": 0.0, "biovol": 0.0})
+        if fecha and fecha > slot["fecha"]:
+            slot["fecha"] = fecha
+        if r["parametro_id"] == by_codigo.get("FITO_CYANOBACTERIA_CEL"):
+            # Quedarnos con el valor de la fecha más reciente — actualizamos
+            # solo si la fecha del row es la más reciente del slot
+            if fecha == slot["fecha"]:
+                slot["cel_ml"] = float(r.get("valor_numerico") or 0.0)
+        elif r["parametro_id"] == by_codigo.get("FITO_CYANOBACTERIA_BIOVOL"):
+            if fecha == slot["fecha"]:
+                slot["biovol"] = float(r.get("valor_numerico") or 0.0)
+
+    # 4. Aplicar umbrales OMS
+    for pid, slot in por_punto.items():
+        n1999 = evaluar_alerta_oms_cianobacterias(slot["cel_ml"])
+        # OMS 2021 sin colonias/filamentos individuales → solo evaluamos por biovolumen
+        n2021 = evaluar_alerta_oms_2021(slot["biovol"], 0.0, 0.0)
+        salida[pid] = {
+            "ultima_fecha":       slot["fecha"],
+            "total_cyano_cel_ml": slot["cel_ml"],
+            "biovolumen_mm3_l":   slot["biovol"],
+            "colonias_ml":        0.0,
+            "filamentos_ml":      0.0,
+            "oms_1999":           _empaquetar_nivel_oms(n1999),
+            "oms_2021":           _empaquetar_nivel_oms(n2021),
+            "nivel_oms":          (n1999["label"] if n1999 else "Sin alerta"),
+            "nivel_codigo":       (n1999["nivel"] if n1999 else "sin_alerta"),
+            "color_bg":           (n1999["color_bg"] if n1999 else "#e2e3e5"),
+            "color_borde":        (n1999["color_borde"] if n1999 else "#6c757d"),
+            "_fuente":            "resultados_laboratorio",
+        }
+    return salida
+
+
 def get_alertas_oms_por_punto() -> dict[str, dict]:
     """
     Para uso del geoportal: devuelve {punto_muestreo_id: {ultima_fecha,
     total_cyano_cel_ml, nivel_oms, color_borde}} con el ÚLTIMO análisis
-    por punto. Solo incluye puntos con al menos un análisis fitoplancton.
+    por punto.
+
+    Lee de DOS fuentes en orden de preferencia:
+        1. muestras.datos_fitoplancton (JSONB del Sedgewick-Rafter detallado)
+        2. resultados_laboratorio para FITO_CYANOBACTERIA_CEL / BIOVOL
+           (cuando la entrada se hizo por la pestaña Resultados clásica)
     """
     db = get_admin_client()
     res = (
@@ -1133,33 +1308,22 @@ def get_alertas_oms_por_punto() -> dict[str, dict]:
         n1999 = evaluar_alerta_oms_cianobacterias(total_cel)
         n2021 = evaluar_alerta_oms_2021(biovol, col_ml, fil_ml)
 
-        def _empaquetar(nivel: dict | None) -> dict:
-            if nivel is None:
-                return {
-                    "label":        "Sin alerta",
-                    "codigo":       "sin_alerta",
-                    "color_bg":     "#e2e3e5",
-                    "color_borde":  "#6c757d",
-                }
-            return {
-                "label":        nivel["label"],
-                "codigo":       nivel["nivel"],
-                "color_bg":     nivel["color_bg"],
-                "color_borde":  nivel["color_borde"],
-            }
-
         salida[pid] = {
             "ultima_fecha":       fila.get("fecha_muestreo"),
             "total_cyano_cel_ml": total_cel,
             "biovolumen_mm3_l":   biovol,
             "colonias_ml":        col_ml,
             "filamentos_ml":      fil_ml,
-            "oms_1999":           _empaquetar(n1999),
-            "oms_2021":           _empaquetar(n2021),
+            "oms_1999":           _empaquetar_nivel_oms(n1999),
+            "oms_2021":           _empaquetar_nivel_oms(n2021),
             # Aliases retro-compat:
             "nivel_oms":          (n1999["label"] if n1999 else "Sin alerta"),
             "nivel_codigo":       (n1999["nivel"] if n1999 else "sin_alerta"),
             "color_bg":           (n1999["color_bg"] if n1999 else "#e2e3e5"),
             "color_borde":        (n1999["color_borde"] if n1999 else "#6c757d"),
+            "_fuente":            "datos_fitoplancton",
         }
+
+    # Fallback: completar puntos sin JSONB usando resultados_laboratorio
+    salida.update(_alertas_oms_desde_resultados(db, set(salida.keys())))
     return salida
