@@ -1727,6 +1727,30 @@ def _construir_mapa(puntos: list[dict], solo_excedencias: bool):
              padding-top:6px; margin-top:6px;">
           Radio = N° parámetros evaluados
         </div>
+        <div style="border-top:1px solid #f1f5f9; padding-top:8px; margin-top:8px;">
+          <div style="font-weight:700; color:#0F172A; font-size:12px;
+               letter-spacing:-0.01em; margin-bottom:4px;">Alerta OMS</div>
+          <div style="display:flex; align-items:center; gap:10px; padding:2px 0;">
+            <svg width="14" height="14" viewBox="0 0 24 24" style="flex-shrink:0;">
+              <circle cx="12" cy="12" r="9" fill="none" stroke="#475569" stroke-width="2.5"/>
+            </svg>
+            <span style="font-weight:500;">OMS 1999
+              <span style="color:#94a3b8; font-size:10.5px;">(cél/mL)</span>
+            </span>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px; padding:2px 0;">
+            <svg width="14" height="14" viewBox="0 0 24 24" style="flex-shrink:0;">
+              <circle cx="12" cy="12" r="9" fill="none" stroke="#475569"
+                   stroke-width="2.5" stroke-dasharray="3,2"/>
+            </svg>
+            <span style="font-weight:500;">OMS 2021
+              <span style="color:#94a3b8; font-size:10.5px;">(biovolumen)</span>
+            </span>
+          </div>
+          <div style="font-size:10px; color:#94a3b8; margin-top:4px;">
+            Color del anillo = nivel (verde/amarillo/rojo)
+          </div>
+        </div>
       </div>
     </div>
     """
