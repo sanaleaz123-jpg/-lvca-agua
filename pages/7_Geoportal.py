@@ -1597,41 +1597,42 @@ def _construir_mapa(puntos: list[dict], solo_excedencias: bool):
     n_puntos_cyano = sum(1 for p in pts_filtrados if alertas_cyano.get(p["id"]))
 
     def _construir_fg_oms(version: str, titulo: str) -> folium.FeatureGroup:
-        """version: '1999' o '2021'. Lee `oms_1999`/`oms_2021` del dict."""
+        """
+        version: '1999' (cél/mL, anillo sólido) o '2021' (biovolumen, anillo
+        punteado). Capa visible POR DEFECTO (`show=True`) — feedback usuario.
+        Popup conciso: solo nivel + valor relevante + fecha. La info detallada
+        se ve en la sidebar (Modo Punto).
+        """
         clave = f"oms_{version}"
         label = (
             f"{titulo} ({n_puntos_cyano})"
             if n_puntos_cyano else f"{titulo} (sin análisis)"
         )
-        fg = folium.FeatureGroup(name=label, show=False)
+        fg = folium.FeatureGroup(name=label, show=True)
         for p in pts_filtrados:
             alerta = alertas_cyano.get(p["id"])
             if not alerta:
                 continue
             nivel_info = alerta.get(clave) or {}
-            extra = (
-                f"{alerta.get('total_cyano_cel_ml', 0):,.0f} cél/mL"
-                if version == "1999"
-                else f"{alerta.get('biovolumen_mm3_l', 0):.4f} mm³/L"
-            )
+            if version == "1999":
+                valor_str = f"{alerta.get('total_cyano_cel_ml', 0):,.0f} cél/mL"
+            else:
+                valor_str = f"{alerta.get('biovolumen_mm3_l', 0):,.4f} mm³/L"
             tooltip = (
-                f"{p['codigo']} — {nivel_info.get('label','—')} "
-                f"(OMS {version}) · {extra}"
+                f"{p['codigo']} · OMS {version} · "
+                f"{nivel_info.get('label','—')} · {valor_str}"
             )
             popup_html = (
-                f'<div style="font-family:sans-serif;min-width:220px">'
-                f'<div style="font-weight:700;color:#1a1a1a">{p["codigo"]}</div>'
-                f'<div style="color:#475569;font-size:12px;margin-bottom:6px">'
-                f'{p["nombre"]}</div>'
-                f'<div style="background:{nivel_info.get("color_bg","#e2e3e5")};'
-                f'border-left:4px solid {nivel_info.get("color_borde","#6c757d")};'
-                f'padding:6px 10px;border-radius:4px;font-size:12px">'
-                f'<b>OMS {version} — {nivel_info.get("label","—")}</b><br>'
-                f'cél/mL equiv: {alerta.get("total_cyano_cel_ml",0):,.0f}<br>'
-                f'biovolumen: {alerta.get("biovolumen_mm3_l",0):.4f} mm³/L<br>'
-                f'colonias/mL: {alerta.get("colonias_ml",0):,.1f} · '
-                f'filamentos/mL: {alerta.get("filamentos_ml",0):,.1f}<br>'
-                f'<span style="opacity:0.7">Último análisis: '
+                f'<div style="font-family:sans-serif; min-width:170px;">'
+                f'<div style="font-weight:700; color:#0F172A; '
+                f'font-size:12px;">{p["codigo"]}</div>'
+                f'<div style="background:{nivel_info.get("color_bg","#e2e3e5")}; '
+                f'border-left:4px solid {nivel_info.get("color_borde","#6c757d")}; '
+                f'padding:5px 8px; border-radius:4px; font-size:11.5px; '
+                f'margin-top:4px;">'
+                f'<b>OMS {version}: {nivel_info.get("label","—")}</b><br>'
+                f'<span style="color:#475569;">{valor_str}</span><br>'
+                f'<span style="color:#94A3B8; font-size:10.5px;">'
                 f'{alerta.get("ultima_fecha","—")}</span>'
                 f'</div></div>'
             )
@@ -1643,7 +1644,7 @@ def _construir_mapa(puntos: list[dict], solo_excedencias: bool):
                 fill=False,
                 dash_array=None if version == "1999" else "5,5",
                 tooltip=tooltip,
-                popup=folium.Popup(popup_html, max_width=340),
+                popup=folium.Popup(popup_html, max_width=240),
             ).add_to(fg)
         return fg
 
