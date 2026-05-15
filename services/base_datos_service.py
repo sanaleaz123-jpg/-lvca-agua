@@ -35,24 +35,32 @@ def get_datos_consolidados(
     punto_id: Optional[str] = None,
     fecha_inicio: Optional[str] = None,
     fecha_fin: Optional[str] = None,
+    punto_ids: Optional[tuple[str, ...]] = None,
 ) -> list[dict]:
     """
     Retorna una lista de dicts donde cada fila es una muestra
     con columnas pivotadas por parámetro + info de la muestra.
 
     Columnas fijas: muestra_id, codigo_muestra, punto_codigo, punto_nombre,
-                    cuenca, tipo, eca_id, eca_codigo, fecha, hora
+                    cuenca, tipo, eca_id, eca_codigo, fecha, hora, profundidad,
+                    campana_id, campana_codigo, campana_nombre
     Columnas dinámicas: una por cada parámetro en COLUMNAS_PARAMETROS
                         con el valor numérico (o None)
     Columna extra: _resultado_ids → dict {param_codigo: resultado_id}
+
+    Parámetros:
+        punto_id:  filtra por un único punto_muestreo_id (legacy).
+        punto_ids: filtra por varios punto_muestreo_id (tuple, hashable para cache).
+                   Útil cuando un mismo "lugar de muestreo" agrupa varios puntos.
     """
     db = get_admin_client()
 
-    # 1. Muestras con punto y ECA
+    # 1. Muestras con punto, ECA y campaña
     # Intentar incluir codigo_laboratorio (requiere migración 004)
     select_campos = (
         "id, codigo, fecha_muestreo, hora_recoleccion, "
         "campana_id, punto_muestreo_id, clima, nivel_agua, temperatura_transporte, "
+        "campanas(id, codigo, nombre, fecha_inicio), "
         "puntos_muestreo(codigo, nombre, cuenca, tipo, eca_id, "
         "ecas(id, codigo, nombre))"
     )
@@ -69,6 +77,7 @@ def get_datos_consolidados(
             .select(
                 "id, codigo, codigo_laboratorio, fecha_muestreo, hora_recoleccion, "
                 "campana_id, punto_muestreo_id, clima, nivel_agua, temperatura_transporte, "
+                "campanas(id, codigo, nombre, fecha_inicio), "
                 "puntos_muestreo(codigo, nombre, cuenca, tipo, eca_id, "
                 "ecas(id, codigo, nombre))" + _depth_extra
             )
@@ -80,6 +89,8 @@ def get_datos_consolidados(
             q_muestras = q_muestras.eq("campana_id", campana_id)
         if punto_id:
             q_muestras = q_muestras.eq("punto_muestreo_id", punto_id)
+        if punto_ids:
+            q_muestras = q_muestras.in_("punto_muestreo_id", list(punto_ids))
         if fecha_inicio:
             q_muestras = q_muestras.gte("fecha_muestreo", fecha_inicio)
         if fecha_fin:
@@ -97,6 +108,8 @@ def get_datos_consolidados(
             q_muestras = q_muestras.eq("campana_id", campana_id)
         if punto_id:
             q_muestras = q_muestras.eq("punto_muestreo_id", punto_id)
+        if punto_ids:
+            q_muestras = q_muestras.in_("punto_muestreo_id", list(punto_ids))
         if fecha_inicio:
             q_muestras = q_muestras.gte("fecha_muestreo", fecha_inicio)
         if fecha_fin:
@@ -141,6 +154,7 @@ def get_datos_consolidados(
     for m in muestras:
         punto = m.get("puntos_muestreo") or {}
         eca = punto.get("ecas") or {}
+        camp = m.get("campanas") or {}
 
         # Sufijo de profundidad para muestras de columna
         prof_tipo = m.get("profundidad_tipo")
@@ -162,6 +176,11 @@ def get_datos_consolidados(
             "clima": m.get("clima", ""),
             "nivel_agua": m.get("nivel_agua", ""),
             "temperatura_transporte": m.get("temperatura_transporte"),
+            "profundidad": m.get("profundidad_valor"),
+            "campana_id": m.get("campana_id"),
+            "campana_codigo": camp.get("codigo", ""),
+            "campana_nombre": camp.get("nombre", ""),
+            "campana_fecha_inicio": (camp.get("fecha_inicio") or "")[:10],
             "_resultado_ids": {},
         }
 
