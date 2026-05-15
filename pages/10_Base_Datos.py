@@ -389,10 +389,14 @@ def main() -> None:
     # ── Construir DataFrame para mostrar ────────────────────────────────
     # Orden cronológico ascendente para que los separadores amarillos por
     # campaña sigan el mismo orden del Excel (FEBRERO → MARZO → ABRIL …).
+    # IMPORTANTE: agrupar primero por campaña (fecha_inicio + código), si no,
+    # campañas del mismo mes se intercalan y generan separadores repetidos.
     datos = sorted(
         datos,
         key=lambda d: (
             d.get("campana_fecha_inicio") or d.get("fecha") or "",
+            d.get("campana_codigo") or "",
+            d.get("campana_id") or "",
             d.get("fecha") or "",
             d.get("punto_codigo") or "",
             d.get("codigo_muestra") or "",
