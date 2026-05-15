@@ -89,6 +89,175 @@ def _colorear_celda(val, eca_id, param_codigo, limites):
     return ""
 
 
+# Estilos CSS para la tabla HTML con separadores amarillos por campaña.
+_BD_TABLE_CSS = """
+<style>
+  .bd-table-wrap {
+    overflow-x: auto;
+    max-height: 720px;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    margin-bottom: 0.75rem;
+  }
+  table.bd-table {
+    border-collapse: collapse;
+    font-size: 12px;
+    width: max-content;
+    min-width: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  table.bd-table thead th {
+    position: sticky;
+    top: 0;
+    background: #f1f3f5;
+    color: #212529;
+    font-weight: 600;
+    padding: 6px 10px;
+    border: 1px solid #dee2e6;
+    text-align: center;
+    white-space: nowrap;
+    z-index: 2;
+  }
+  table.bd-table tbody td {
+    padding: 4px 10px;
+    border: 1px solid #e9ecef;
+    background: #ffffff;
+    white-space: nowrap;
+    text-align: right;
+  }
+  table.bd-table tbody td.text { text-align: left; }
+  table.bd-table tbody tr:hover td { background: #f8f9fa; }
+  table.bd-table td.exceed {
+    background: #ffe0e0 !important;
+    color: #dc3545;
+    font-weight: 700;
+  }
+  table.bd-table tr.bd-sep td {
+    background: #FFEB3B !important;
+    color: #212529;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 6px 10px;
+    border-top: 2px solid #f1c40f;
+    border-bottom: 1px solid #e0c200;
+    text-align: left;
+  }
+</style>
+"""
+
+
+def _fmt_valor(val, fmt: str) -> str:
+    """Formatea un valor numérico usando un format string estilo %.2f."""
+    if val is None:
+        return ""
+    if isinstance(val, float) and pd.isna(val):
+        return ""
+    try:
+        return fmt % float(val)
+    except (TypeError, ValueError):
+        return str(val)
+
+
+_MES_ES = {
+    1: "ENERO", 2: "FEBRERO", 3: "MARZO", 4: "ABRIL", 5: "MAYO", 6: "JUNIO",
+    7: "JULIO", 8: "AGOSTO", 9: "SETIEMBRE", 10: "OCTUBRE", 11: "NOVIEMBRE", 12: "DICIEMBRE",
+}
+
+
+def _etiqueta_campana(d: dict) -> str:
+    """Etiqueta amarilla del separador: MES YYYY · CODIGO — nombre."""
+    fecha = d.get("campana_fecha_inicio") or d.get("fecha") or ""
+    mes_txt = ""
+    if fecha and len(fecha) >= 7:
+        try:
+            anio, mes = int(fecha[:4]), int(fecha[5:7])
+            mes_txt = f"{_MES_ES.get(mes, '')} {anio}"
+        except ValueError:
+            mes_txt = ""
+    cod = d.get("campana_codigo") or ""
+    nom = d.get("campana_nombre") or ""
+    partes = [p for p in (mes_txt, cod, nom) if p]
+    return "  ·  ".join(partes) if partes else "Sin campaña"
+
+
+def _render_tabla_por_campana(
+    df: pd.DataFrame,
+    datos: list[dict],
+    columnas_visibles: list[tuple[str, str]],
+    formato_codigo: dict,
+    limites: dict,
+) -> str:
+    """
+    Renderiza la base de datos como tabla HTML con separadores amarillos
+    por campaña (estilo Excel: una fila completa amarilla con MES + código).
+
+    El orden de las filas debe coincidir entre `df` y `datos`.
+    """
+    from html import escape
+
+    columnas = list(df.columns)
+    label_to_codigo = {label: cod for cod, label in columnas_visibles}
+    text_cols = {"Fecha", "Hora", "Código Punto", "Punto", "Código Muestra",
+                 "Código Lab.", "Cuenca", "Tipo", "ECA"}
+
+    # Cabecera
+    thead = "".join(f"<th>{escape(c)}</th>" for c in columnas)
+
+    # Cuerpo: agrupar filas consecutivas que comparten campana_id.
+    body_parts: list[str] = []
+    ultimo_campana_key = object()
+    n_cols = len(columnas)
+
+    for idx, d in enumerate(datos):
+        campana_key = d.get("campana_id") or d.get("campana_codigo") or "__sin__"
+        if campana_key != ultimo_campana_key:
+            label = escape(_etiqueta_campana(d))
+            body_parts.append(
+                f'<tr class="bd-sep"><td colspan="{n_cols}">{label}</td></tr>'
+            )
+            ultimo_campana_key = campana_key
+
+        eca_id = d.get("eca_id")
+        celdas: list[str] = []
+        fila = df.iloc[idx]
+        for col in columnas:
+            raw = fila[col]
+            cod = label_to_codigo.get(col)
+            if cod is not None:
+                fmt = formato_codigo.get(cod, _FORMATO_FALLBACK)
+                txt = _fmt_valor(raw, fmt)
+                exceed = (
+                    raw is not None
+                    and not (isinstance(raw, float) and pd.isna(raw))
+                    and _excede_eca(raw, eca_id, cod, limites)
+                )
+                cls = " class=\"exceed\"" if exceed else ""
+                celdas.append(f"<td{cls}>{escape(txt)}</td>")
+            else:
+                if raw is None or (isinstance(raw, float) and pd.isna(raw)):
+                    txt = ""
+                elif col == "Profundidad (m)":
+                    try:
+                        txt = f"{float(raw):.2f}"
+                    except (TypeError, ValueError):
+                        txt = str(raw)
+                else:
+                    txt = str(raw)
+                cls = " class=\"text\"" if col in text_cols else ""
+                celdas.append(f"<td{cls}>{escape(txt)}</td>")
+        body_parts.append("<tr>" + "".join(celdas) + "</tr>")
+
+    return (
+        _BD_TABLE_CSS
+        + '<div class="bd-table-wrap"><table class="bd-table">'
+        + f"<thead><tr>{thead}</tr></thead>"
+        + "<tbody>"
+        + "".join(body_parts)
+        + "</tbody></table></div>"
+    )
+
+
 @require_rol("visitante")
 def main() -> None:
     aplicar_estilos()
@@ -104,7 +273,7 @@ def main() -> None:
     from components.ui_styles import filter_bar_open, filter_bar_close
     filter_bar_open()
 
-    fc1, fc2, fc3, fc4 = st.columns([1.4, 1.4, 1, 1])
+    fc1, fc2, fc3, fc4 = st.columns([1.4, 1.6, 1, 1])
     with fc1:
         campanas = get_campanas()
         opciones_camp = {"Todas las campañas": None}
@@ -114,13 +283,39 @@ def main() -> None:
         sel_camp = st.selectbox("Campaña", list(opciones_camp.keys()), key="bd_camp")
         campana_id = opciones_camp[sel_camp]
     with fc2:
+        # Filtro por nombre del lugar (represa / río / bocatoma).
+        # Un mismo "lugar" puede tener varios puntos físicos: al seleccionarlo
+        # se filtra por TODOS los punto_ids que comparten ese nombre.
         puntos = get_puntos(solo_activos=True)
-        opciones_punto = {"Todos los puntos": None}
-        opciones_punto.update({
-            f"{p['codigo']} — {p['nombre']}": p["id"] for p in puntos
-        })
-        sel_punto = st.selectbox("Punto de muestreo", list(opciones_punto.keys()), key="bd_punto")
-        punto_id = opciones_punto[sel_punto]
+        lugares: dict[str, list[str]] = {}
+        for p in puntos:
+            nombre = (p.get("nombre") or p.get("codigo") or "").strip()
+            if not nombre:
+                continue
+            lugares.setdefault(nombre, []).append(p["id"])
+
+        # Etiqueta con el tipo entre paréntesis cuando es único, para distinguir
+        # "Río Sumbay" de "Represa Frayle" visualmente.
+        tipos_por_nombre: dict[str, set[str]] = {}
+        for p in puntos:
+            nombre = (p.get("nombre") or p.get("codigo") or "").strip()
+            if nombre:
+                tipos_por_nombre.setdefault(nombre, set()).add((p.get("tipo") or "").strip())
+
+        opciones_lugar: dict[str, tuple[str, ...] | None] = {"Todos los lugares": None}
+        for nombre in sorted(lugares.keys()):
+            tipos = {t for t in tipos_por_nombre.get(nombre, set()) if t}
+            sufijo = f"  ·  {next(iter(tipos)).capitalize()}" if len(tipos) == 1 else ""
+            opciones_lugar[f"{nombre}{sufijo}"] = tuple(lugares[nombre])
+
+        sel_lugar = st.selectbox(
+            "Lugar de muestreo",
+            list(opciones_lugar.keys()),
+            key="bd_lugar",
+            help="Filtra por nombre del lugar (represa, río, bocatoma…). "
+                 "Muestra todas las muestras de los puntos vinculados al lugar.",
+        )
+        punto_ids_filtro = opciones_lugar[sel_lugar]
     with fc3:
         _hoy = date.today()
         _default_desde = _hoy.replace(year=_hoy.year - 1)
@@ -147,7 +342,7 @@ def main() -> None:
     with st.spinner("Cargando base de datos..."):
         datos = get_datos_consolidados(
             campana_id=campana_id,
-            punto_id=punto_id,
+            punto_ids=punto_ids_filtro,
             fecha_inicio=str(fecha_inicio) if fecha_inicio else None,
             fecha_fin=str(fecha_fin) if fecha_fin else None,
         )
@@ -187,8 +382,17 @@ def main() -> None:
                delta_color="inverse")
 
     # ── Construir DataFrame para mostrar ────────────────────────────────
-    cols_fijas = ["fecha", "punto_codigo", "punto_nombre", "cuenca", "tipo", "eca_codigo"]
-    cols_param = [cod for cod, _ in columnas_visibles]
+    # Orden cronológico ascendente para que los separadores amarillos por
+    # campaña sigan el mismo orden del Excel (FEBRERO → MARZO → ABRIL …).
+    datos = sorted(
+        datos,
+        key=lambda d: (
+            d.get("campana_fecha_inicio") or d.get("fecha") or "",
+            d.get("fecha") or "",
+            d.get("punto_codigo") or "",
+            d.get("codigo_muestra") or "",
+        ),
+    )
 
     df_rows = []
     for d in datos:
@@ -199,6 +403,7 @@ def main() -> None:
             "Punto": d["punto_nombre"],
             "Código Muestra": d.get("codigo_muestra", ""),
             "Código Lab.": d.get("codigo_laboratorio") or "",
+            "Profundidad (m)": d.get("profundidad"),
             "Cuenca": d["cuenca"],
             "Tipo": (d["tipo"] or "").capitalize(),
             "ECA": d["eca_codigo"],
@@ -213,22 +418,13 @@ def main() -> None:
         for r in df_rows:
             r.pop("Código Lab.", None)
 
+    # Si ninguna muestra tiene profundidad registrada, también se oculta
+    # para mantener la vista limpia en los puntos superficiales.
+    if all(r.get("Profundidad (m)") in (None, "") for r in df_rows):
+        for r in df_rows:
+            r.pop("Profundidad (m)", None)
+
     df = pd.DataFrame(df_rows)
-
-    # ── Estilizar: rojo si excede ECA ───────────────────────────────────
-    def _aplicar_estilos(df_styler):
-        """Aplica coloreado rojo a celdas que exceden ECA."""
-        # Crear matriz de estilos
-        estilos = pd.DataFrame("", index=df.index, columns=df.columns)
-
-        for idx, d in enumerate(datos):
-            eca_id = d.get("eca_id")
-            for cod, label in columnas_visibles:
-                val = d.get(cod)
-                if val is not None and _excede_eca(val, eca_id, cod, limites):
-                    estilos.at[idx, label] = "background-color: #ffe0e0; color: #dc3545; font-weight: bold;"
-
-        return estilos
 
     # ── Tabs: Vista y Edición ───────────────────────────────────────────
     if es_admin:
@@ -242,24 +438,14 @@ def main() -> None:
         st.markdown(f"**{n_muestras} registros** · {n_puntos} puntos · "
                     f"Las celdas en **rojo** exceden su ECA respectivo")
 
-        # Configuración de columnas para st.dataframe
-        col_config = {}
-        for cod, label in columnas_visibles:
-            col_config[label] = st.column_config.NumberColumn(
-                label,
-                format=formato_codigo.get(cod, _FORMATO_FALLBACK),
-                help=f"Parámetro {cod}",
-            )
-
-        styled = df.style.apply(_aplicar_estilos, axis=None)
-
-        st.dataframe(
-            styled,
-            use_container_width=True,
-            hide_index=True,
-            height=min(700, 35 * len(df) + 38),
-            column_config=col_config,
+        html_table = _render_tabla_por_campana(
+            df=df,
+            datos=datos,
+            columnas_visibles=columnas_visibles,
+            formato_codigo=formato_codigo,
+            limites=limites,
         )
+        st.markdown(html_table, unsafe_allow_html=True)
 
         # Botón de descarga
         csv = df.to_csv(index=False).encode("utf-8")
