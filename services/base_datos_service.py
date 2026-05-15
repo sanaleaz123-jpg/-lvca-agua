@@ -29,13 +29,12 @@ COLUMNAS_PARAMETROS = get_columnas_parametros
 CODIGOS_PARAMETROS = get_codigos_parametros
 
 
-@cached(ttl=120)
 def get_datos_consolidados(
     campana_id: Optional[str] = None,
     punto_id: Optional[str] = None,
     fecha_inicio: Optional[str] = None,
     fecha_fin: Optional[str] = None,
-    punto_ids: Optional[tuple[str, ...]] = None,
+    punto_ids=None,
 ) -> list[dict]:
     """
     Retorna una lista de dicts donde cada fila es una muestra

@@ -340,12 +340,17 @@ def main() -> None:
 
     # ── Cargar datos ────────────────────────────────────────────────────
     with st.spinner("Cargando base de datos..."):
-        datos = get_datos_consolidados(
-            campana_id=campana_id,
-            punto_ids=punto_ids_filtro,
-            fecha_inicio=str(fecha_inicio) if fecha_inicio else None,
-            fecha_fin=str(fecha_fin) if fecha_fin else None,
-        )
+        try:
+            datos = get_datos_consolidados(
+                campana_id=campana_id,
+                punto_ids=punto_ids_filtro,
+                fecha_inicio=str(fecha_inicio) if fecha_inicio else None,
+                fecha_fin=str(fecha_fin) if fecha_fin else None,
+            )
+        except Exception as e:
+            st.error(f"Error cargando datos consolidados: {type(e).__name__}: {e}")
+            st.exception(e)
+            st.stop()
         limites = get_limites_eca_todos()
 
     if not datos:
