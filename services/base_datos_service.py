@@ -55,12 +55,11 @@ def get_datos_consolidados(
     """
     db = get_admin_client()
 
-    # 1. Muestras con punto, ECA y campaña
+    # 1. Muestras con punto y ECA (campañas se cargan aparte, ver paso 1b).
     # Intentar incluir codigo_laboratorio (requiere migración 004)
     select_campos = (
         "id, codigo, fecha_muestreo, hora_recoleccion, "
         "campana_id, punto_muestreo_id, clima, nivel_agua, temperatura_transporte, "
-        "campanas(id, codigo, nombre, fecha_inicio), "
         "puntos_muestreo(codigo, nombre, cuenca, tipo, eca_id, "
         "ecas(id, codigo, nombre))"
     )
@@ -77,7 +76,6 @@ def get_datos_consolidados(
             .select(
                 "id, codigo, codigo_laboratorio, fecha_muestreo, hora_recoleccion, "
                 "campana_id, punto_muestreo_id, clima, nivel_agua, temperatura_transporte, "
-                "campanas(id, codigo, nombre, fecha_inicio), "
                 "puntos_muestreo(codigo, nombre, cuenca, tipo, eca_id, "
                 "ecas(id, codigo, nombre))" + _depth_extra
             )
@@ -115,6 +113,22 @@ def get_datos_consolidados(
         if fecha_fin:
             q_muestras = q_muestras.lte("fecha_muestreo", fecha_fin)
         muestras = q_muestras.execute().data or []
+
+    # 1b. Cargar campañas referenciadas (query separado: evita problemas de
+    # auto-detección de FK con embeds anidados en Supabase).
+    camp_ids = list({m["campana_id"] for m in muestras if m.get("campana_id")})
+    camp_info: dict[str, dict] = {}
+    if camp_ids:
+        try:
+            r_camps = (
+                db.table("campanas")
+                .select("id, codigo, nombre, fecha_inicio")
+                .in_("id", camp_ids)
+                .execute()
+            )
+            camp_info = {c["id"]: c for c in (r_camps.data or [])}
+        except Exception:
+            camp_info = {}
 
     if not muestras:
         return []
@@ -154,7 +168,7 @@ def get_datos_consolidados(
     for m in muestras:
         punto = m.get("puntos_muestreo") or {}
         eca = punto.get("ecas") or {}
-        camp = m.get("campanas") or {}
+        camp = camp_info.get(m.get("campana_id") or "") or {}
 
         # Sufijo de profundidad para muestras de columna
         prof_tipo = m.get("profundidad_tipo")
@@ -171,7 +185,7 @@ def get_datos_consolidados(
             "tipo": punto.get("tipo", ""),
             "eca_id": punto.get("eca_id"),
             "eca_codigo": eca.get("codigo", ""),
-            "fecha": (m.get("fecha_muestreo") or "")[:10],
+            "fecha": str(m.get("fecha_muestreo") or "")[:10],
             "hora": m.get("hora_recoleccion", "") or "",
             "clima": m.get("clima", ""),
             "nivel_agua": m.get("nivel_agua", ""),
@@ -180,7 +194,7 @@ def get_datos_consolidados(
             "campana_id": m.get("campana_id"),
             "campana_codigo": camp.get("codigo", ""),
             "campana_nombre": camp.get("nombre", ""),
-            "campana_fecha_inicio": (camp.get("fecha_inicio") or "")[:10],
+            "campana_fecha_inicio": str(camp.get("fecha_inicio") or "")[:10],
             "_resultado_ids": {},
         }
 
