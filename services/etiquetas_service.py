@@ -135,7 +135,9 @@ def generar_etiquetas_campana(
     if not puntos:
         raise ValueError("La campaña no tiene puntos de muestreo vinculados.")
 
-    fecha_str = _formatear_fecha_mes_anio(campana.get("fecha_inicio"))
+    fecha_str = _formatear_fecha(
+        campana.get("fecha_inicio"), campana.get("fecha_fin")
+    )
     resp_str  = (
         ", ".join(r.strip() for r in responsables if r and r.strip())
         or _MUESTREADO_POR_DEFAULT
@@ -196,7 +198,7 @@ def _cargar_datos(campana_id: str) -> tuple[dict, list[dict]]:
 
     camp = (
         db.table("campanas")
-        .select("codigo, nombre, fecha_inicio, frecuencia")
+        .select("codigo, nombre, fecha_inicio, fecha_fin, frecuencia")
         .eq("id", campana_id)
         .single()
         .execute()
@@ -218,21 +220,39 @@ def _cargar_datos(campana_id: str) -> tuple[dict, list[dict]]:
     return camp, puntos
 
 
-def _formatear_fecha_mes_anio(fecha_iso) -> str:
+def _formatear_fecha(fecha_inicio, fecha_fin) -> str:
     """
-    Devuelve "___/MM/AAAA" para que el día se llene a mano en campo.
-    Si la fecha no es interpretable, retorna cadena vacía.
+    Devuelve la fecha a imprimir en la etiqueta según la duración:
+
+      • Si la campaña dura un solo día (fecha_inicio == fecha_fin) →
+        "DD/MM/AAAA" — la fecha está totalmente determinada.
+      • Si dura varios días (o fecha_fin desconocida) →
+        "___/MM/AAAA" — el día se llena a mano en campo.
+
+    Devuelve cadena vacía si fecha_inicio no es interpretable.
     """
-    if not fecha_iso:
+    f_ini = _to_date(fecha_inicio)
+    if f_ini is None:
         return ""
+
+    f_fin = _to_date(fecha_fin)
+    if f_fin is not None and f_fin == f_ini:
+        return f"{f_ini.day:02d}/{f_ini.month:02d}/{f_ini.year}"
+    return f"___/{f_ini.month:02d}/{f_ini.year}"
+
+
+def _to_date(valor):
+    """Convierte un str ISO / date / datetime a date. None si no se puede."""
+    if valor is None or valor == "":
+        return None
+    if isinstance(valor, datetime):
+        return valor.date()
+    if isinstance(valor, date):
+        return valor
     try:
-        if isinstance(fecha_iso, (datetime, date)):
-            f = fecha_iso
-        else:
-            f = datetime.fromisoformat(str(fecha_iso)[:10])
-        return f"___/{f.month:02d}/{f.year}"
+        return datetime.fromisoformat(str(valor)[:10]).date()
     except (ValueError, TypeError):
-        return ""
+        return None
 
 
 def _construir_slots(
