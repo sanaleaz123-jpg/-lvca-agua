@@ -44,6 +44,7 @@ from services.muestra_service import (
     TransicionMuestraError,
     actualizar_estado_muestra,
     actualizar_muestra,
+    agregar_nivel_a_grupo,
     crear_muestra,
     eliminar_muestra,
     get_campana_detalle,
@@ -539,6 +540,72 @@ def _render_registro(campana_id: str) -> None:
         key="reg_modo_muestreo",
     )
 
+    # ── Niveles a muestrear (FUERA del form para que sea dinámico) ──────
+    # Permite elegir cualquier subconjunto de S/M/F cuando el muestreo no
+    # cubrió las 3 profundidades clásicas.
+    niveles_seleccionados: list[str] = ["S", "M", "F"]
+    niveles_existentes: set[str] = set()
+    niveles_a_eliminar: list[str] = []
+    confirmacion_eliminar = False
+
+    if modo_muestreo == "columna":
+        if es_edicion and existente.get("_grupo_muestras"):
+            niveles_existentes = set(existente["_grupo_muestras"].keys())
+
+        section_header("Niveles muestreados", "checklist")
+        st.caption(
+            "Marca solo los niveles que realmente se muestrearon. La "
+            "plataforma registrará una muestra por cada nivel marcado."
+        )
+        cn1, cn2, cn3 = st.columns(3)
+        sel_niv: dict[str, bool] = {}
+        with cn1:
+            sel_niv["S"] = st.checkbox(
+                "Superficie",
+                value=("S" in niveles_existentes) if es_edicion else True,
+                key="reg_nivel_S",
+            )
+        with cn2:
+            sel_niv["M"] = st.checkbox(
+                "Medio",
+                value=("M" in niveles_existentes) if es_edicion else True,
+                key="reg_nivel_M",
+            )
+        with cn3:
+            sel_niv["F"] = st.checkbox(
+                "Fondo",
+                value=("F" in niveles_existentes) if es_edicion else True,
+                key="reg_nivel_F",
+            )
+        niveles_seleccionados = [t for t in ("S", "M", "F") if sel_niv[t]]
+
+        if not niveles_seleccionados:
+            inline_note(
+                "Selecciona al menos un nivel para continuar.",
+                tipo="warning",
+            )
+
+        if es_edicion and niveles_existentes:
+            niveles_a_eliminar = [
+                t for t in ("S", "M", "F")
+                if t in niveles_existentes and t not in niveles_seleccionados
+            ]
+            if niveles_a_eliminar:
+                etiquetas = ", ".join(
+                    PROFUNDIDAD_LABELS.get(t, t) for t in niveles_a_eliminar
+                )
+                inline_note(
+                    f"Se eliminarán las muestras de: <b>{etiquetas}</b>. "
+                    "Las mediciones in situ asociadas también se eliminarán. "
+                    "Si alguna muestra ya tiene resultados de laboratorio, la "
+                    "operación se cancelará y deberás volver a marcar el nivel.",
+                    tipo="warning",
+                )
+                confirmacion_eliminar = st.checkbox(
+                    "Confirmo la eliminación de los niveles desmarcados",
+                    key="reg_confirmar_eliminar_niveles",
+                )
+
     # ── Fotos ya guardadas del punto (FUERA del form para permitir eliminar) ─
     if es_edicion:
         muestra_id_existente = existente["id"]
@@ -598,20 +665,19 @@ def _render_registro(campana_id: str) -> None:
         # ── Campos de profundidad ───────────────────────────────────────
         prof_total_val = None
         prof_secchi_val = None
-        prof_s_val = None
-        prof_m_val = None
-        prof_f_val = None
+        prof_sup_val = None  # solo modo superficial
+        prof_vals: dict[str, float] = {}  # solo modo columna
 
         if modo_muestreo == "superficial":
             # Solo 1 campo de profundidad para superficial
-            prof_s_val = st.number_input(
+            prof_sup_val = st.number_input(
                 "Profundidad de muestreo (m)",
                 min_value=0.0, max_value=50.0, step=0.1,
                 value=float(def_profundidades.get("S", 0.3)),
                 key="reg_prof_sup",
             )
         else:
-            # Columna de agua: ecosonda, Secchi y 3 profundidades
+            # Columna de agua: ecosonda, Secchi y profundidad de cada nivel marcado
             section_header("Profundidades", "waves")
             st.caption("Ingrese las profundidades en metros para cada nivel de muestreo.")
             pt1, pt2 = st.columns(2)
@@ -629,27 +695,26 @@ def _render_registro(campana_id: str) -> None:
                     value=float(def_prof_secchi) if def_prof_secchi else 0.0,
                     key="reg_prof_secchi",
                 )
-            ps1, ps2, ps3 = st.columns(3)
-            with ps1:
-                prof_s_val = st.number_input(
-                    "Prof. Superficie (m)",
-                    min_value=0.0, max_value=500.0, step=0.1,
-                    value=float(def_profundidades.get("S", 0.3)),
-                    key="reg_prof_s",
-                )
-            with ps2:
-                prof_m_val = st.number_input(
-                    "Prof. Medio (m)",
-                    min_value=0.0, max_value=500.0, step=0.1,
-                    value=float(def_profundidades.get("M", 0.0)),
-                    key="reg_prof_m",
-                )
-            with ps3:
-                prof_f_val = st.number_input(
-                    "Prof. Fondo (m)",
-                    min_value=0.0, max_value=500.0, step=0.1,
-                    value=float(def_profundidades.get("F", 0.0)),
-                    key="reg_prof_f",
+
+            if niveles_seleccionados:
+                cols_prof = st.columns(len(niveles_seleccionados))
+                defaults_nivel = {"S": 0.3, "M": 0.0, "F": 0.0}
+                for i, tp in enumerate(niveles_seleccionados):
+                    with cols_prof[i]:
+                        label = PROFUNDIDAD_LABELS.get(tp, tp)
+                        default = def_profundidades.get(tp)
+                        if default is None:
+                            default = defaults_nivel.get(tp, 0.0)
+                        prof_vals[tp] = st.number_input(
+                            f"Prof. {label} (m)",
+                            min_value=0.0, max_value=500.0, step=0.1,
+                            value=float(default),
+                            key=f"reg_prof_{tp}",
+                        )
+            else:
+                st.info(
+                    "Marca al menos un nivel arriba (Superficie, Medio o Fondo) "
+                    "para ingresar sus profundidades."
                 )
 
         # ── Transporte ───────────────────────────────────────────────────
@@ -707,7 +772,15 @@ def _render_registro(campana_id: str) -> None:
 
         btn_label = "Actualizar muestra" if es_edicion else "Registrar muestra"
         if modo_muestreo == "columna" and not es_edicion:
-            btn_label = "Registrar 3 muestras (S/M/F)"
+            n_niv = len(niveles_seleccionados)
+            if n_niv == 0:
+                btn_label = "Selecciona al menos un nivel arriba"
+            elif n_niv == 1:
+                tp = niveles_seleccionados[0]
+                btn_label = f"Registrar 1 muestra ({PROFUNDIDAD_LABELS.get(tp, tp)})"
+            else:
+                sigla = "/".join(niveles_seleccionados)
+                btn_label = f"Registrar {n_niv} muestras ({sigla})"
         submitted = st.form_submit_button(
             btn_label,
             type="primary",
@@ -722,16 +795,34 @@ def _render_registro(campana_id: str) -> None:
 
         # Validar profundidades si columna — mensaje específico apuntando al campo
         if modo_muestreo == "columna":
+            if not niveles_seleccionados:
+                st.error(
+                    "Para muestreo de columna debes marcar al menos un nivel "
+                    "(Superficie, Medio o Fondo) arriba."
+                )
+                return
+
             faltantes = []
             if not prof_total_val or prof_total_val <= 0:
                 faltantes.append("**Profundidad total** (ecosonda)")
-            if not prof_f_val or prof_f_val <= 0:
-                faltantes.append("**Profundidad de fondo**")
+            # Exigir profundidad del nivel más profundo seleccionado
+            tp_mas_profundo = niveles_seleccionados[-1]
+            if not prof_vals.get(tp_mas_profundo) or prof_vals[tp_mas_profundo] <= 0:
+                faltantes.append(
+                    f"**Profundidad de {PROFUNDIDAD_LABELS.get(tp_mas_profundo, tp_mas_profundo)}**"
+                )
             if faltantes:
                 st.error(
                     "Para muestreo de columna debes ingresar: "
                     + " y ".join(faltantes)
                     + ". Tus otros datos NO se han perdido — corrige y vuelve a presionar."
+                )
+                return
+
+            if niveles_a_eliminar and not confirmacion_eliminar:
+                st.error(
+                    "Marca la casilla de confirmación antes de eliminar los "
+                    "niveles desmarcados."
                 )
                 return
 
@@ -756,27 +847,60 @@ def _render_registro(campana_id: str) -> None:
         if modo_muestreo == "columna":
             datos["profundidad_total"] = prof_total_val if prof_total_val else None
             datos["profundidad_secchi"] = prof_secchi_val if prof_secchi_val else None
-            datos["profundidades"] = {
-                "S": prof_s_val,
-                "M": prof_m_val,
-                "F": prof_f_val,
-            }
+            datos["profundidades"] = {tp: prof_vals.get(tp) for tp in niveles_seleccionados}
+            datos["niveles_columna"] = niveles_seleccionados
         else:
             # Superficial: guardar profundidad de muestreo
-            datos["profundidad_valor"] = prof_s_val if prof_s_val else 0.3
+            datos["profundidad_valor"] = prof_sup_val if prof_sup_val else 0.3
 
         if es_edicion:
             # ── Actualizar muestra existente ─────────────────────────────
             with st.spinner("Actualizando muestra..."):
                 try:
-                    actualizar_muestra(existente["id"], datos)
-                    # Si es columna, actualizar las 3 muestras del grupo
-                    if modo_muestreo == "columna" and existente.get("_grupo_muestras"):
-                        for tp, info in existente["_grupo_muestras"].items():
-                            actualizar_muestra(info["id"], {
+                    if (
+                        modo_muestreo == "columna"
+                        and existente.get("_grupo_muestras")
+                    ):
+                        grupo = existente["_grupo_muestras"]
+                        grupo_id_existente = existente.get("grupo_profundidad")
+
+                        # 1. Eliminar niveles desmarcados (bloquea si ya tienen
+                        #    resultados de laboratorio).
+                        for tp_del in niveles_a_eliminar:
+                            info = grupo.get(tp_del)
+                            if not info:
+                                continue
+                            try:
+                                eliminar_muestra(info["id"])
+                            except Exception as exc:
+                                st.error(
+                                    f"No se pudo eliminar la muestra "
+                                    f"**{info['codigo']}** "
+                                    f"({PROFUNDIDAD_LABELS.get(tp_del, tp_del)}): "
+                                    f"{exc}. Vuelve a marcar el nivel si "
+                                    "necesitas conservarlo."
+                                )
+                                return
+
+                        # 2. Actualizar o crear cada nivel seleccionado.
+                        for tp_sel in niveles_seleccionados:
+                            datos_nivel = {
                                 **datos,
-                                "profundidad_valor": datos.get("profundidades", {}).get(tp),
-                            })
+                                "profundidad_valor": datos["profundidades"].get(tp_sel),
+                            }
+                            if tp_sel in grupo:
+                                actualizar_muestra(grupo[tp_sel]["id"], datos_nivel)
+                            elif grupo_id_existente:
+                                agregar_nivel_a_grupo(
+                                    grupo_id_existente,
+                                    tp_sel,
+                                    datos["profundidades"].get(tp_sel),
+                                    datos,
+                                )
+                    else:
+                        # Superficial o columna sin grupo previo: comportamiento
+                        # original de actualizar solo la muestra principal.
+                        actualizar_muestra(existente["id"], datos)
                     _invalidar_muestras_cache(campana_id)
                 except Exception as exc:
                     st.error(f"Error al actualizar: {exc}")
@@ -784,6 +908,19 @@ def _render_registro(campana_id: str) -> None:
             success_check_overlay(f"Muestra {existente['codigo']} actualizada")
             st.success(f"Muestra **{existente['codigo']}** actualizada correctamente.")
             muestra_id_fotos = existente["id"]
+            # Si la muestra principal pertenece a un nivel que acabamos de
+            # eliminar, redirigir las fotos a una muestra sobreviviente del
+            # grupo para no apuntar a un ID huérfano.
+            if (
+                modo_muestreo == "columna"
+                and existente.get("_grupo_muestras")
+                and existente.get("profundidad_tipo") in niveles_a_eliminar
+            ):
+                grupo_post = existente["_grupo_muestras"]
+                for tp_alt in niveles_seleccionados:
+                    if tp_alt in grupo_post:
+                        muestra_id_fotos = grupo_post[tp_alt]["id"]
+                        break
         else:
             # ── Crear nueva muestra ──────────────────────────────────────
             with st.spinner("Registrando muestra..."):
@@ -794,8 +931,13 @@ def _render_registro(campana_id: str) -> None:
                     st.error(f"Error al crear la muestra: {exc}")
                     return
             if modo_muestreo == "columna":
-                success_check_overlay(f"3 muestras registradas — {creada['codigo']}")
-                st.success(f"3 muestras de columna registradas. Primera: **{creada['codigo']}**")
+                n_niv = len(niveles_seleccionados)
+                sigla = "/".join(niveles_seleccionados)
+                success_check_overlay(f"{n_niv} muestra(s) registrada(s) — {creada['codigo']}")
+                st.success(
+                    f"{n_niv} muestra(s) de columna registrada(s) ({sigla}). "
+                    f"Primera: **{creada['codigo']}**"
+                )
             else:
                 success_check_overlay(f"Muestra {creada['codigo']} registrada")
                 st.success(f"Muestra **{creada['codigo']}** registrada exitosamente.")

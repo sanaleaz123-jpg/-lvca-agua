@@ -231,13 +231,22 @@ def _crear_muestra_simple(datos: dict) -> dict:
 
 
 def _crear_muestras_columna(datos: dict) -> dict:
-    """Crea 3 muestras vinculadas (S, M, F) para muestreo en columna de agua."""
+    """Crea las muestras vinculadas (subset de S/M/F) para muestreo en columna.
+
+    El subset se controla con `datos["niveles_columna"]` (lista de 'S'/'M'/'F'
+    en orden) o, por compatibilidad, todas las claves presentes en
+    `datos["profundidades"]`. Si no se especifica, se asume el clásico S/M/F.
+    """
     db = get_admin_client()
     grupo_id = str(uuid.uuid4())
     profundidades = datos.get("profundidades", {})
+    niveles = datos.get("niveles_columna") or list(profundidades.keys()) or ["S", "M", "F"]
+    # Normalizar y mantener orden S → M → F
+    orden = {"S": 0, "M": 1, "F": 2}
+    niveles = sorted({n for n in niveles if n in orden}, key=orden.get)
 
     primera = None
-    for tipo_prof in ("S", "M", "F"):
+    for tipo_prof in niveles:
         codigo = _generar_codigo_muestra(db)
         fila = _build_fila(datos, codigo)
         fila["modo_muestreo"] = "columna"
@@ -253,6 +262,31 @@ def _crear_muestras_columna(datos: dict) -> dict:
 
     _invalidar_cache()
     return primera
+
+
+def agregar_nivel_a_grupo(
+    grupo_profundidad: str,
+    nivel: str,
+    valor: float | None,
+    datos_base: dict,
+) -> dict:
+    """Inserta una muestra individual para un nivel S/M/F que se suma a un
+    grupo de columna ya existente. Usado al marcar un nivel nuevo durante la
+    edición de una muestra de columna."""
+    if nivel not in ("S", "M", "F"):
+        raise ValueError(f"Nivel inválido: {nivel}")
+    db = get_admin_client()
+    codigo = _generar_codigo_muestra(db)
+    fila = _build_fila(datos_base, codigo)
+    fila["modo_muestreo"] = "columna"
+    fila["profundidad_tipo"] = nivel
+    fila["profundidad_valor"] = valor
+    fila["grupo_profundidad"] = grupo_profundidad
+    fila["profundidad_total"] = datos_base.get("profundidad_total")
+    fila["profundidad_secchi"] = datos_base.get("profundidad_secchi")
+    creada = _insert_muestra(db, fila)
+    _invalidar_cache()
+    return creada
 
 
 def _build_fila(datos: dict, codigo: str) -> dict:
