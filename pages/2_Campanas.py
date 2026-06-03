@@ -45,6 +45,10 @@ from services.campana_service import (
     restaurar_campana,
     set_parametros_lab_campana,
 )
+from services.etiquetas_service import (
+    generar_etiquetas_campana,
+    get_ensayos_disponibles,
+)
 from services.parametro_registry import get_parametros_lab_cadena
 
 
@@ -486,6 +490,14 @@ def _render_detalle(campana_id: str) -> None:
         # Editar puntos vinculados
         _render_editar_puntos(campana_id, puntos)
 
+    # ── Etiquetas de frascos ────────────────────────────────────────────────
+    with st.expander(
+        "Generar etiquetas de frascos",
+        expanded=False,
+        icon=":material/label:",
+    ):
+        _render_etiquetas_frascos(campana_id, puntos)
+
     # ── Avance de análisis ───────────────────────────────────────────────────
     with st.expander(
         f"Muestras y avance de análisis ({avance['porcentaje']:.1f}%)",
@@ -767,6 +779,76 @@ def _render_editar_puntos(campana_id: str, puntos_actuales: list[dict]) -> None:
             st.rerun()
         except Exception as exc:
             st.error(f"Error: {exc}")
+
+
+def _render_etiquetas_frascos(campana_id: str, puntos: list[dict]) -> None:
+    """
+    Generador del .docx con etiquetas pre-rellenas para los frascos de campo.
+    1 punto por hoja, hasta 5 etiquetas (una por ensayo seleccionado) en
+    la columna izquierda. Los campos HORA y el día de la fecha quedan en
+    blanco para llenarse a mano en campo.
+    """
+    if not puntos:
+        st.caption("Vincula al menos un punto de muestreo para generar etiquetas.")
+        return
+
+    st.caption(
+        f":material/info: Se generará un Word con **{len(puntos)} hoja(s)** "
+        "(una por punto). Cada hoja tendrá las etiquetas de los ensayos que marques."
+    )
+
+    ensayos_disp = get_ensayos_disponibles()
+    sel_ensayos = st.multiselect(
+        "Ensayos a incluir",
+        options=ensayos_disp,
+        default=ensayos_disp,
+        key=f"etiq_ensayos_{campana_id}",
+        help="Cada ensayo genera una etiqueta con su preservante correspondiente.",
+    )
+
+    sel_resp = st.multiselect(
+        "Muestreado por",
+        options=_RESPONSABLES_CAMPO,
+        default=_RESPONSABLES_CAMPO[:2],
+        key=f"etiq_resp_{campana_id}",
+        max_selections=_MAX_RESP_CAMPO,
+        help="Aparecerán en el campo «MUESTREADO POR» de cada etiqueta.",
+    )
+
+    col_a, col_b = st.columns([1, 2])
+    with col_a:
+        if not sel_ensayos:
+            st.button(
+                "Generar etiquetas",
+                key=f"btn_gen_etiq_{campana_id}",
+                disabled=True,
+                icon=":material/label:",
+            )
+            st.caption("Selecciona al menos un ensayo.")
+        else:
+            try:
+                with st.spinner("Generando documento..."):
+                    docx_bytes = generar_etiquetas_campana(
+                        campana_id=campana_id,
+                        ensayos_seleccionados=sel_ensayos,
+                        responsables=sel_resp,
+                    )
+                st.download_button(
+                    label="Descargar etiquetas (Word)",
+                    data=docx_bytes,
+                    file_name=f"etiquetas_{campana_id[:8]}.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    key=f"btn_dl_etiq_{campana_id}",
+                    icon=":material/label:",
+                )
+            except Exception as exc:
+                st.error(f"No se pudo generar el documento: {exc}")
+    with col_b:
+        n_hojas = len(puntos)
+        n_etiq  = n_hojas * max(len(sel_ensayos), 0)
+        st.caption(
+            f":material/description: **{n_hojas} hoja(s) · {n_etiq} etiqueta(s)** en total."
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
