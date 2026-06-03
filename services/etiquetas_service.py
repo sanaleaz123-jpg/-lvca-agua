@@ -4,8 +4,16 @@ Genera un archivo Word con etiquetas de frascos de muestreo para una campaña.
 
 Parte de la plantilla `ETIQUETAS_EnBlanco_10puntos.docx` (5 ensayos
 predefinidos con su preservante correspondiente) y produce un .docx con
-1 punto por hoja: hasta 5 etiquetas apiladas en la columna izquierda,
-una por cada ensayo seleccionado, con los datos del punto pre-rellenos.
+una hoja por cada combinación (punto, profundidad), distribuyendo las N
+etiquetas de ensayo en una grilla de 2 columnas (3 izquierda + 2 derecha
+para 5 ensayos) que reutiliza la outer table 3×3 de la plantilla.
+
+Modos de muestreo:
+    "superficial" → 1 hoja por punto, profundidad fija "0.3 m",
+                    código = código del punto.
+    "columna"     → 1 hoja por cada profundidad seleccionada (S/M/F)
+                    de cada punto. Profundidad en blanco; código del
+                    punto con sufijo "(S)", "(M)" o "(F)".
 
 Funciones públicas:
     get_ensayos_disponibles()      → lista de los 5 ensayos de la plantilla
@@ -20,6 +28,7 @@ from datetime import datetime, date
 from io import BytesIO
 
 from docx import Document
+from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
 from database.client import get_admin_client
@@ -39,6 +48,13 @@ ENSAYOS_PLANTILLA: list[dict] = [
     {"nombre": "Fisicoquímicos y nutrientes", "preservante": "S/P"},
 ]
 
+# Modos válidos de muestreo (parámetro `tipo_muestreo`).
+MODO_SUPERFICIAL = "superficial"
+MODO_COLUMNA     = "columna"
+
+# Orden canónico de profundidades para muestreo en columna.
+PROFUNDIDADES_COLUMNA = ["S", "M", "F"]
+
 # Mapeo tipo de punto → código de matriz (mismo criterio que
 # cadena_custodia_service.py para mantener consistencia con la cadena oficial).
 _TIPO_A_MATRIZ: dict[str, str] = {
@@ -52,6 +68,11 @@ _TIPO_A_MATRIZ: dict[str, str] = {
 
 # Texto pre-impreso de "MUESTREADO POR" en la plantilla — a reemplazar.
 _MUESTREADO_POR_DEFAULT = "A. Llacho, A. Vilcapaza"
+
+# Posiciones (fila, col) dentro de la outer table 3×3 donde se ubican las
+# etiquetas (col 1 es separadora). Orden de lectura: izquierda→derecha,
+# arriba→abajo. Hay 6 posiciones disponibles; usamos hasta 5.
+_POSICIONES_ETIQUETAS = [(0, 0), (0, 2), (1, 0), (1, 2), (2, 0), (2, 2)]
 
 # Ruta a la plantilla (raíz del proyecto LVCA).
 _TEMPLATE_PATH = os.path.join(
@@ -69,9 +90,11 @@ def get_ensayos_disponibles() -> list[str]:
 
 
 def generar_etiquetas_campana(
-    campana_id:           str,
+    campana_id:            str,
     ensayos_seleccionados: list[str],
-    responsables:         list[str],
+    responsables:          list[str],
+    tipo_muestreo:         str = MODO_SUPERFICIAL,
+    profundidades_por_punto: dict[str, list[str]] | None = None,
 ) -> bytes:
     """
     Genera el .docx con etiquetas para todos los puntos de la campaña.
@@ -82,16 +105,27 @@ def generar_etiquetas_campana(
             `ENSAYOS_PLANTILLA`).
         responsables: nombres de los responsables de campo. Se concatenan
             con coma para el campo "MUESTREADO POR".
+        tipo_muestreo: "superficial" (PROF=0.3 m, 1 hoja por punto)
+            o "columna" (PROF en blanco, 1 hoja por cada profundidad
+            seleccionada de cada punto, con sufijo (S)/(M)/(F) en CÓDIGO).
+        profundidades_por_punto: requerido si tipo_muestreo == "columna".
+            Diccionario {punto_id: ["S","M","F",...]} con las profundidades
+            a generar para cada punto. Puntos no incluidos o con lista vacía
+            son omitidos.
 
     Returns:
         Bytes del archivo .docx listo para descarga.
 
     Raises:
         FileNotFoundError: si la plantilla no existe.
-        ValueError: si la campaña no tiene puntos o no hay ensayos.
+        ValueError: si la campaña no tiene puntos, no hay ensayos, o el
+            modo "columna" no produce ningún slot (ninguna profundidad
+            seleccionada en ningún punto).
     """
     if not ensayos_seleccionados:
         raise ValueError("Debes seleccionar al menos un ensayo.")
+    if tipo_muestreo not in (MODO_SUPERFICIAL, MODO_COLUMNA):
+        raise ValueError(f"tipo_muestreo inválido: {tipo_muestreo!r}")
     if not os.path.exists(_TEMPLATE_PATH):
         raise FileNotFoundError(
             f"Plantilla de etiquetas no encontrada: {_TEMPLATE_PATH}"
@@ -101,62 +135,51 @@ def generar_etiquetas_campana(
     if not puntos:
         raise ValueError("La campaña no tiene puntos de muestreo vinculados.")
 
-    fecha_str   = _formatear_fecha_mes_anio(campana.get("fecha_inicio"))
-    prof_str    = "0.3 m" if (campana.get("frecuencia") or "").lower() == "mensual" else ""
-    resp_str    = ", ".join(r.strip() for r in responsables if r and r.strip()) or _MUESTREADO_POR_DEFAULT
+    fecha_str = _formatear_fecha_mes_anio(campana.get("fecha_inicio"))
+    resp_str  = (
+        ", ".join(r.strip() for r in responsables if r and r.strip())
+        or _MUESTREADO_POR_DEFAULT
+    )
 
     # Mantener orden de la plantilla (no el orden de selección del usuario).
-    ensayos_filtrados = [e for e in ENSAYOS_PLANTILLA if e["nombre"] in ensayos_seleccionados]
+    ensayos_filtrados = [
+        e for e in ENSAYOS_PLANTILLA if e["nombre"] in ensayos_seleccionados
+    ]
+
+    slots = _construir_slots(puntos, tipo_muestreo, profundidades_por_punto or {})
+    if not slots:
+        raise ValueError(
+            "No hay profundidades seleccionadas para ningún punto. "
+            "Marca al menos una profundidad (S, M o F) en algún punto."
+        )
 
     doc = Document(_TEMPLATE_PATH)
     etiqueta_templates = _extraer_etiqueta_templates(doc)
+    outer_template     = _extraer_outer_template(doc)
     _limpiar_body(doc)
 
-    body = doc.element.body
+    body   = doc.element.body
     sectPr = body.find(qn("w:sectPr"))
 
-    for i, pt in enumerate(puntos):
-        estacion = pt.get("nombre", "") or ""
-        codigo   = pt.get("codigo", "") or ""
-        matriz   = _TIPO_A_MATRIZ.get((pt.get("tipo") or "").lower(), "AN")
-
+    for i, slot in enumerate(slots):
         valores = {
-            "ESTACION":        estacion,
-            "CODIGO":          codigo,
-            "FECHA":           fecha_str,
-            "HORA":            "",
-            "MATRIZ":          matriz,
-            "PROF":            prof_str,
-            "MUESTREADO_POR":  resp_str,
+            "ESTACION":       slot["estacion"],
+            "CODIGO":         slot["codigo_etiqueta"],
+            "FECHA":          fecha_str,
+            "HORA":           "",
+            "MATRIZ":         slot["matriz"],
+            "PROF":           slot["prof_valor"],
+            "MUESTREADO_POR": resp_str,
         }
 
         if i > 0:
-            # Salto de página entre puntos.
             page_break = _crear_parrafo_salto_pagina()
-            if sectPr is not None:
-                sectPr.addprevious(page_break)
-            else:
-                body.append(page_break)
+            _anexar(body, sectPr, page_break)
 
-        for ensayo in ensayos_filtrados:
-            tbl_template = etiqueta_templates.get(ensayo["nombre"])
-            if tbl_template is None:
-                continue
-            etiqueta = deepcopy(tbl_template)
-            _rellenar_etiqueta(etiqueta, valores)
-
-            if sectPr is not None:
-                sectPr.addprevious(etiqueta)
-            else:
-                body.append(etiqueta)
-
-            # Pequeño párrafo separador para evitar tablas adyacentes
-            # (Word renderiza tablas pegadas si no hay <w:p> entre ellas).
-            sep = _crear_parrafo_separador()
-            if sectPr is not None:
-                sectPr.addprevious(sep)
-            else:
-                body.append(sep)
+        hoja = _construir_hoja(
+            outer_template, etiqueta_templates, ensayos_filtrados, valores
+        )
+        _anexar(body, sectPr, hoja)
 
     buf = BytesIO()
     doc.save(buf)
@@ -183,16 +206,19 @@ def _cargar_datos(campana_id: str) -> tuple[dict, list[dict]]:
 
     pts_res = (
         db.table("campana_puntos")
-        .select("puntos_muestreo(codigo, nombre, tipo)")
+        .select("puntos_muestreo(id, codigo, nombre, tipo)")
         .eq("campana_id", campana_id)
         .execute()
     )
-    puntos = [r["puntos_muestreo"] for r in (pts_res.data or []) if r.get("puntos_muestreo")]
+    puntos = [
+        r["puntos_muestreo"] for r in (pts_res.data or [])
+        if r.get("puntos_muestreo")
+    ]
     puntos = sorted(puntos, key=lambda p: p.get("codigo") or "")
     return camp, puntos
 
 
-def _formatear_fecha_mes_anio(fecha_iso: str | None) -> str:
+def _formatear_fecha_mes_anio(fecha_iso) -> str:
     """
     Devuelve "___/MM/AAAA" para que el día se llene a mano en campo.
     Si la fecha no es interpretable, retorna cadena vacía.
@@ -209,14 +235,52 @@ def _formatear_fecha_mes_anio(fecha_iso: str | None) -> str:
         return ""
 
 
+def _construir_slots(
+    puntos:                  list[dict],
+    tipo_muestreo:           str,
+    profundidades_por_punto: dict[str, list[str]],
+) -> list[dict]:
+    """
+    Expande los puntos en "slots" de generación. Cada slot = 1 hoja.
+
+    Superficial → un slot por punto, código sin sufijo, PROF=0.3 m.
+    Columna    → un slot por cada profundidad seleccionada de cada punto,
+                 código con sufijo "(S)|(M)|(F)", PROF en blanco.
+    """
+    slots: list[dict] = []
+    for pt in puntos:
+        estacion = pt.get("nombre", "") or ""
+        codigo   = pt.get("codigo", "") or ""
+        matriz   = _TIPO_A_MATRIZ.get((pt.get("tipo") or "").lower(), "AN")
+
+        if tipo_muestreo == MODO_SUPERFICIAL:
+            slots.append({
+                "estacion":         estacion,
+                "codigo_etiqueta":  codigo,
+                "matriz":           matriz,
+                "prof_valor":       "0.3 m",
+            })
+        else:  # columna
+            seleccionadas = profundidades_por_punto.get(pt.get("id"), [])
+            for prof in PROFUNDIDADES_COLUMNA:
+                if prof in seleccionadas:
+                    slots.append({
+                        "estacion":        estacion,
+                        "codigo_etiqueta": f"{codigo} ({prof})",
+                        "matriz":          matriz,
+                        "prof_valor":      "",
+                    })
+    return slots
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Manipulación de la plantilla
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _extraer_etiqueta_templates(doc) -> dict[str, object]:
     """
-    Recorre las tablas externas de la plantilla y captura UNA etiqueta
-    (elemento <w:tbl> outer del recuadro) por cada uno de los 5 ensayos.
+    Captura UNA etiqueta (elemento <w:tbl> outer del recuadro) por cada uno
+    de los 5 ensayos, recorriendo las tablas externas de la plantilla.
     Retorna {nombre_ensayo → elemento XML clonable}.
     """
     nombres_esperados = {e["nombre"] for e in ENSAYOS_PLANTILLA}
@@ -241,6 +305,14 @@ def _extraer_etiqueta_templates(doc) -> dict[str, object]:
     return capturados
 
 
+def _extraer_outer_template(doc):
+    """
+    Devuelve la primera outer table 3×3 de la plantilla (estructura de hoja
+    con 2 columnas de etiquetas + columna separadora central).
+    """
+    return doc.tables[0]._element
+
+
 def _limpiar_body(doc) -> None:
     """Quita todas las tablas y párrafos del body, preservando <w:sectPr>."""
     body = doc.element.body
@@ -251,9 +323,16 @@ def _limpiar_body(doc) -> None:
         body.remove(child)
 
 
+def _anexar(body, sectPr, elemento) -> None:
+    """Inserta `elemento` antes de <w:sectPr> o al final si no existe."""
+    if sectPr is not None:
+        sectPr.addprevious(elemento)
+    else:
+        body.append(elemento)
+
+
 def _crear_parrafo_salto_pagina():
-    """Párrafo con page break para separar puntos."""
-    from docx.oxml import OxmlElement
+    """Párrafo con page break para separar slots (hojas)."""
     p = OxmlElement("w:p")
     r = OxmlElement("w:r")
     br = OxmlElement("w:br")
@@ -263,35 +342,79 @@ def _crear_parrafo_salto_pagina():
     return p
 
 
-def _crear_parrafo_separador():
-    """Párrafo vacío con poca altura para separar dos etiquetas seguidas."""
-    from docx.oxml import OxmlElement
-    p = OxmlElement("w:p")
-    pPr = OxmlElement("w:pPr")
-    spacing = OxmlElement("w:spacing")
-    spacing.set(qn("w:before"), "0")
-    spacing.set(qn("w:after"), "0")
-    spacing.set(qn("w:line"), "60")
-    spacing.set(qn("w:lineRule"), "exact")
-    pPr.append(spacing)
-    p.append(pPr)
-    return p
+# ─────────────────────────────────────────────────────────────────────────────
+# Construcción de la hoja
+# ─────────────────────────────────────────────────────────────────────────────
 
+def _construir_hoja(outer_template, etiqueta_templates, ensayos_a_incluir, valores):
+    """
+    Crea una outer table 3×3 (copia del template) y coloca las N etiquetas
+    en las posiciones de lectura (izq→der, arriba→abajo). Las posiciones
+    sobrantes quedan vacías.
+    """
+    hoja = deepcopy(outer_template)
+    rows = hoja.findall(qn("w:tr"))
+
+    for i, (ri, ci) in enumerate(_POSICIONES_ETIQUETAS):
+        if ri >= len(rows):
+            continue
+        celdas_fila = rows[ri].findall(qn("w:tc"))
+        if ci >= len(celdas_fila):
+            continue
+        celda = celdas_fila[ci]
+
+        if i < len(ensayos_a_incluir):
+            ensayo = ensayos_a_incluir[i]
+            tbl_template = etiqueta_templates.get(ensayo["nombre"])
+            if tbl_template is None:
+                _vaciar_celda(celda)
+                continue
+            etiq = deepcopy(tbl_template)
+            _rellenar_etiqueta(etiq, valores)
+            _reemplazar_contenido_celda(celda, etiq)
+        else:
+            _vaciar_celda(celda)
+
+    return hoja
+
+
+def _reemplazar_contenido_celda(celda, etiqueta_tbl) -> None:
+    """Quita tablas/párrafos de la celda (conserva <w:tcPr>) y mete la etiqueta."""
+    tcPr = qn("w:tcPr")
+    for child in list(celda):
+        if child.tag != tcPr:
+            celda.remove(child)
+    celda.append(etiqueta_tbl)
+    # Word requiere un párrafo después de una tabla anidada en celda.
+    celda.append(OxmlElement("w:p"))
+
+
+def _vaciar_celda(celda) -> None:
+    """Deja la celda con solo <w:tcPr> + un párrafo vacío."""
+    tcPr = qn("w:tcPr")
+    for child in list(celda):
+        if child.tag != tcPr:
+            celda.remove(child)
+    celda.append(OxmlElement("w:p"))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Llenado de campos dentro de una etiqueta
+# ─────────────────────────────────────────────────────────────────────────────
 
 def _rellenar_etiqueta(etiqueta_outer, valores: dict[str, str]) -> None:
     """
     Rellena los campos de una etiqueta clonada.
 
-    La estructura real de la plantilla es:
-        Tabla de campos (8 filas × 4 columnas, anidada dentro de la etiqueta):
-          Fila 0 → logo (gridSpan=4)
-          Fila 1 → ESTACIÓN | : | (valor) | PRESERVANTE+opciones (vMerge)
-          Fila 2 → CÓDIGO   | : | (valor) | (vMerge continúa)
-          Fila 3 → FECHA    | : | (tabla anidada 1×4: FECHA-val | HORA | : | HORA-val) | (vMerge)
-          Fila 4 → MATRIZ   | : | (tabla anidada 1×4: MATRIZ-val | PROF. | : | PROF-val) | (vMerge)
-          Fila 5 → ENSAYO   | : | (valor pre-impreso, NO tocar) | (vMerge)
-          Fila 6 → MUESTREADO POR: (gridSpan=4, solo etiqueta)
-          Fila 7 → valor pre-impreso de muestreado por (gridSpan=4)
+    Estructura real de la tabla de campos (8 filas × 4 columnas, anidada):
+      Fila 0 → logo (gridSpan=4)
+      Fila 1 → ESTACIÓN | : | (valor) | PRESERVANTE+opciones (vMerge)
+      Fila 2 → CÓDIGO   | : | (valor) | (vMerge)
+      Fila 3 → FECHA    | : | (tabla 1×4: FECHA-val | HORA | : | HORA-val)
+      Fila 4 → MATRIZ   | : | (tabla 1×4: MATRIZ-val | PROF. | : | PROF-val)
+      Fila 5 → ENSAYO   | : | (valor pre-impreso, NO tocar)
+      Fila 6 → MUESTREADO POR: (gridSpan=4, solo etiqueta)
+      Fila 7 → valor MUESTREADO POR (gridSpan=4)
 
     Campos esperados en `valores`:
         ESTACION, CODIGO, FECHA, HORA, MATRIZ, PROF, MUESTREADO_POR
@@ -304,25 +427,20 @@ def _rellenar_etiqueta(etiqueta_outer, valores: dict[str, str]) -> None:
     if len(rows) < 8:
         return
 
-    # Fila 1: ESTACIÓN
     _setear_paragrafo_de_celda(rows[1], col_idx=2, texto=valores.get("ESTACION", ""))
-    # Fila 2: CÓDIGO
     _setear_paragrafo_de_celda(rows[2], col_idx=2, texto=valores.get("CODIGO", ""))
-    # Fila 3: FECHA + HORA (tabla anidada en celda 2, cells [0] y [3])
     _setear_par_anidado(
         rows[3], col_idx=2,
         izq=valores.get("FECHA", ""),
         der=valores.get("HORA", ""),
     )
-    # Fila 4: MATRIZ + PROF.
     _setear_par_anidado(
         rows[4], col_idx=2,
         izq=valores.get("MATRIZ", ""),
         der=valores.get("PROF", ""),
     )
-    # Fila 5 (ENSAYO): no tocar — viene pre-impreso por etiqueta.
+    # Fila 5 (ENSAYO): pre-impreso por etiqueta — no tocar.
     # Fila 6 (label MUESTREADO POR): no tocar.
-    # Fila 7: valor MUESTREADO POR (gridSpan=4, single cell).
     _setear_paragrafo_de_celda(rows[7], col_idx=0, texto=valores.get("MUESTREADO_POR", ""))
 
 
@@ -374,12 +492,10 @@ def _set_paragrafo_directo(tc, texto: str) -> None:
     Modifica el primer <w:p> directo del <w:tc> (ignora tablas anidadas).
     Pone `texto` en el primer <w:r>/<w:t>. Si no hay <w:t>, crea uno.
     """
-    # findall solo en hijos directos
     parrafos = [child for child in tc if child.tag == qn("w:p")]
     if not parrafos:
         return
     p = parrafos[0]
-    # Encontrar primer <w:r>/<w:t>
     ts = list(p.iter(qn("w:t")))
     if ts:
         ts[0].text = texto
@@ -387,8 +503,7 @@ def _set_paragrafo_directo(tc, texto: str) -> None:
         for t in ts[1:]:
             t.text = ""
         return
-    # Si no hay <w:t>, agregar un run con formato por defecto.
-    from docx.oxml import OxmlElement
+    # Sin <w:t>: crear un run con texto.
     r = OxmlElement("w:r")
     t = OxmlElement("w:t")
     t.text = texto

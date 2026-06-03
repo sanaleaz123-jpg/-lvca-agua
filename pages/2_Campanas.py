@@ -46,6 +46,9 @@ from services.campana_service import (
     set_parametros_lab_campana,
 )
 from services.etiquetas_service import (
+    MODO_COLUMNA,
+    MODO_SUPERFICIAL,
+    PROFUNDIDADES_COLUMNA,
     generar_etiquetas_campana,
     get_ensayos_disponibles,
 )
@@ -781,21 +784,55 @@ def _render_editar_puntos(campana_id: str, puntos_actuales: list[dict]) -> None:
             st.error(f"Error: {exc}")
 
 
+_PROF_LABELS = {"S": "Superficie", "M": "Medio", "F": "Fondo"}
+
+
 def _render_etiquetas_frascos(campana_id: str, puntos: list[dict]) -> None:
     """
     Generador del .docx con etiquetas pre-rellenas para los frascos de campo.
-    1 punto por hoja, hasta 5 etiquetas (una por ensayo seleccionado) en
-    la columna izquierda. Los campos HORA y el día de la fecha quedan en
-    blanco para llenarse a mano en campo.
+    Cada hoja contiene las etiquetas en una grilla 2×3 (izquierda/derecha).
+
+    Modos:
+      • Superficial → 1 hoja por punto, PROF=0.3 m, código sin sufijo.
+      • Columna     → 1 hoja por cada profundidad (S/M/F) marcada en cada
+                      punto. PROF en blanco. CÓDIGO con sufijo (S/M/F).
     """
     if not puntos:
         st.caption("Vincula al menos un punto de muestreo para generar etiquetas.")
         return
 
-    st.caption(
-        f":material/info: Se generará un Word con **{len(puntos)} hoja(s)** "
-        "(una por punto). Cada hoja tendrá las etiquetas de los ensayos que marques."
+    tipo_label = st.radio(
+        "Tipo de muestreo en esta campaña",
+        options=["Superficial", "Columna de agua"],
+        horizontal=True,
+        key=f"etiq_tipo_{campana_id}",
+        help="Superficial → PROF=0.3 m. Columna → eliges qué profundidades (S/M/F) en cada punto.",
     )
+    tipo_muestreo = MODO_SUPERFICIAL if tipo_label == "Superficial" else MODO_COLUMNA
+
+    profundidades_por_punto: dict[str, list[str]] = {}
+    if tipo_muestreo == MODO_COLUMNA:
+        st.caption(
+            ":material/info: Marca por punto cuáles profundidades vas a muestrear. "
+            "Cada profundidad marcada genera una hoja independiente."
+        )
+        for pt in puntos:
+            cols = st.columns([3, 1, 1, 1])
+            with cols[0]:
+                st.markdown(
+                    f"**{pt.get('codigo','')}** — {pt.get('nombre','')}",
+                )
+            seleccionadas: list[str] = []
+            for idx, prof in enumerate(PROFUNDIDADES_COLUMNA, start=1):
+                with cols[idx]:
+                    marcado = st.checkbox(
+                        _PROF_LABELS[prof],
+                        key=f"etiq_prof_{campana_id}_{pt['id']}_{prof}",
+                        value=False,
+                    )
+                if marcado:
+                    seleccionadas.append(prof)
+            profundidades_por_punto[pt["id"]] = seleccionadas
 
     ensayos_disp = get_ensayos_disponibles()
     sel_ensayos = st.multiselect(
@@ -815,6 +852,12 @@ def _render_etiquetas_frascos(campana_id: str, puntos: list[dict]) -> None:
         help="Aparecerán en el campo «MUESTREADO POR» de cada etiqueta.",
     )
 
+    if tipo_muestreo == MODO_SUPERFICIAL:
+        n_hojas = len(puntos)
+    else:
+        n_hojas = sum(len(v) for v in profundidades_por_punto.values())
+    n_etiq = n_hojas * len(sel_ensayos)
+
     col_a, col_b = st.columns([1, 2])
     with col_a:
         if not sel_ensayos:
@@ -825,6 +868,14 @@ def _render_etiquetas_frascos(campana_id: str, puntos: list[dict]) -> None:
                 icon=":material/label:",
             )
             st.caption("Selecciona al menos un ensayo.")
+        elif tipo_muestreo == MODO_COLUMNA and n_hojas == 0:
+            st.button(
+                "Generar etiquetas",
+                key=f"btn_gen_etiq_{campana_id}",
+                disabled=True,
+                icon=":material/label:",
+            )
+            st.caption("Marca al menos una profundidad (S, M o F) en algún punto.")
         else:
             try:
                 with st.spinner("Generando documento..."):
@@ -832,6 +883,8 @@ def _render_etiquetas_frascos(campana_id: str, puntos: list[dict]) -> None:
                         campana_id=campana_id,
                         ensayos_seleccionados=sel_ensayos,
                         responsables=sel_resp,
+                        tipo_muestreo=tipo_muestreo,
+                        profundidades_por_punto=profundidades_por_punto,
                     )
                 st.download_button(
                     label="Descargar etiquetas (Word)",
@@ -844,8 +897,6 @@ def _render_etiquetas_frascos(campana_id: str, puntos: list[dict]) -> None:
             except Exception as exc:
                 st.error(f"No se pudo generar el documento: {exc}")
     with col_b:
-        n_hojas = len(puntos)
-        n_etiq  = n_hojas * max(len(sel_ensayos), 0)
         st.caption(
             f":material/description: **{n_hojas} hoja(s) · {n_etiq} etiqueta(s)** en total."
         )
