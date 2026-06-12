@@ -314,6 +314,45 @@ def get_limite_eca_parametro(
     }
 
 
+@cached(ttl=600)
+def get_limites_eca_parametro_todos(parametro_id: str) -> dict[str, dict]:
+    """
+    Versión batched de get_limite_eca_parametro: límites de UN parámetro
+    para TODOS los puntos en 2 queries (en vez de 2 por punto dentro de
+    un loop). Retorna {punto_id: {valor_minimo, valor_maximo, eca_codigo}}.
+    """
+    db = get_admin_client()
+
+    pts = (
+        db.table("puntos_muestreo")
+        .select("id, eca_id, ecas(codigo)")
+        .execute()
+    ).data or []
+
+    eca_ids = sorted({p["eca_id"] for p in pts if p.get("eca_id")})
+    limites_por_eca: dict[str, dict] = {}
+    if eca_ids:
+        rows = (
+            db.table("eca_valores")
+            .select("eca_id, valor_minimo, valor_maximo")
+            .eq("parametro_id", parametro_id)
+            .in_("eca_id", eca_ids)
+            .execute()
+        ).data or []
+        limites_por_eca = {r["eca_id"]: r for r in rows}
+
+    out: dict[str, dict] = {}
+    for p in pts:
+        eca_id = p.get("eca_id")
+        lim = limites_por_eca.get(eca_id, {}) if eca_id else {}
+        out[p["id"]] = {
+            "valor_minimo": lim.get("valor_minimo"),
+            "valor_maximo": lim.get("valor_maximo"),
+            "eca_codigo":   ((p.get("ecas") or {}).get("codigo", "") if eca_id else ""),
+        }
+    return out
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Últimos resultados de un punto (tabla de detalle)
 # ─────────────────────────────────────────────────────────────────────────────

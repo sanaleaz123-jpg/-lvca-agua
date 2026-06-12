@@ -23,6 +23,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from components.auth_guard import require_rol
+from components.nav_context import consumir_contexto, ir_a
 from components.ui_styles import (
     aplicar_estilos,
     kpi_bold_card,
@@ -36,6 +37,7 @@ from services.mapa_service import (
     get_datos_mensuales_parametro,
     get_historial_punto,
     get_limite_eca_parametro,
+    get_limites_eca_parametro_todos,
     get_parametros_selector,
     get_puntos_geoportal,
     get_ultimo_valor_parametro_por_punto,
@@ -465,10 +467,14 @@ def _render_grafico_campana_comparativo(
     # tampoco hay ECA por punto — usamos OMS global. En Temperatura tampoco.
     aplicar_eca_por_punto = not (es_hb or es_temp)
 
+    # Límites del parámetro para todos los puntos en una sola pasada
+    # (antes: 2 queries por punto dentro del loop).
+    limites_todos = get_limites_eca_parametro_todos(parametro["id"]) if aplicar_eca_por_punto else {}
+
     items: list[dict] = []
     for p in puntos:
         info = ultimos.get(p["id"]) or {}
-        lim = get_limite_eca_parametro(p["id"], parametro["id"]) if aplicar_eca_por_punto else {}
+        lim = limites_todos.get(p["id"], {}) if aplicar_eca_por_punto else {}
         eca_cod = (
             ((p.get("ecas") or {}).get("codigo") or lim.get("eca_codigo", ""))
             if aplicar_eca_por_punto else ""
@@ -566,23 +572,29 @@ def _render_grafico_campana_comparativo(
                     line=dict(color=col["stroke"], width=1),
                     layer="below",
                 ))
+                # Anotaciones ancladas al borde IZQUIERDO del rectángulo y
+                # DENTRO de él — antes iban centradas encima/debajo del
+                # límite y se solapaban con el valor del punto (que va
+                # centrado sobre el dot).
                 if it["lim_max"] is not None:
                     annotations.append(dict(
-                        x=idx, y=it["lim_max"],
+                        x=idx - 0.38, y=it["lim_max"],
                         xref="x", yref="y",
                         text=f"{it['eca_cod'] or '—'} = {_format_valor(it['lim_max'])}",
                         showarrow=False,
+                        xanchor="left", yanchor="top",
+                        yshift=-2,
                         font=dict(size=8.5, color=col["stroke"]),
-                        yshift=10,
                     ))
                 if it["lim_min"] is not None:
                     annotations.append(dict(
-                        x=idx, y=it["lim_min"],
+                        x=idx - 0.38, y=it["lim_min"],
                         xref="x", yref="y",
                         text=f"{it['eca_cod'] or '—'} = {_format_valor(it['lim_min'])}",
                         showarrow=False,
+                        xanchor="left", yanchor="bottom",
+                        yshift=2,
                         font=dict(size=8.5, color=col["stroke"]),
-                        yshift=-10,
                     ))
 
     # ── Color del dot
@@ -1378,18 +1390,27 @@ def _popup_html(p: dict) -> str:
     )
 
 
-def _construir_mapa(puntos: list[dict], solo_excedencias: bool):
+def _construir_mapa(
+    puntos: list[dict],
+    solo_excedencias: bool,
+    centro: list[float] | None = None,
+    zoom: int | None = None,
+    punto_sel_id: str | None = None,
+):
     """
     Mapa Folium con cuencas, red hídrica, puntos y alertas OMS de
     cianobacterias. El HeatMap se eliminó porque duplicaba la información
     cromática de los marcadores (mismo IC, dos canales visuales).
+
+    centro/zoom permiten enfocar el mapa (ej. al punto seleccionado en
+    Modo Punto). punto_sel_id dibuja un anillo de selección sobre ese punto.
     """
     import folium
-    from folium.plugins import MiniMap
+    from folium.plugins import MiniMap, Fullscreen, MeasureControl
 
     m = folium.Map(
-        location=MAPA_CENTRO,
-        zoom_start=MAPA_ZOOM,
+        location=centro or MAPA_CENTRO,
+        zoom_start=zoom or MAPA_ZOOM,
         tiles=None,
         prefer_canvas=True,
         max_zoom=22,         # permite hacer zoom muy cerca
@@ -1420,6 +1441,21 @@ def _construir_mapa(puntos: list[dict], solo_excedencias: bool):
     # y reduce la carga visual del control de capas.
 
     MiniMap(toggle_display=True, position="bottomright", zoom_level_offset=-5).add_to(m)
+
+    # Plugins de navegación/medición — útiles para técnicos de campo.
+    Fullscreen(
+        position="topleft",
+        title="Pantalla completa",
+        title_cancel="Salir de pantalla completa",
+    ).add_to(m)
+    MeasureControl(
+        position="topleft",
+        primary_length_unit="kilometers",
+        secondary_length_unit="meters",
+        primary_area_unit="hectares",
+        active_color="#1565C0",
+        completed_color="#0D47A1",
+    ).add_to(m)
 
     # ── Polígonos de cuencas hidrográficas (estilo SSDH/ANA) ─────────────
     # Outline de color por cuenca para distinguirlas a simple vista:
@@ -1659,6 +1695,70 @@ def _construir_mapa(puntos: list[dict], solo_excedencias: bool):
         "error": cyano_error,
     }
 
+    # Anillo de selección sobre el punto activo en Modo Punto — referencia
+    # visual de cuál punto está cargado en el panel lateral.
+    if punto_sel_id:
+        for p in pts_filtrados:
+            if p.get("id") == punto_sel_id:
+                folium.CircleMarker(
+                    location=[p["latitud"], p["longitud"]],
+                    radius=26,
+                    color="#0D47A1",
+                    weight=3,
+                    fill=False,
+                    dash_array="6,4",
+                    tooltip=f"Punto seleccionado: {p['codigo']}",
+                ).add_to(m)
+                break
+
+    # Lector de coordenadas UTM WGS84 zona 19S bajo el cursor — los técnicos
+    # de campo trabajan con UTM, no con lat/lon. Conversión Transverse
+    # Mercator estándar en JS (meridiano central zona 19 = -69°).
+    utm_js = f"""
+    (function() {{
+        var map = {m.get_name()};
+        var ctl = L.control({{position: 'bottomright'}});
+        ctl.onAdd = function() {{
+            var div = L.DomUtil.create('div');
+            div.id = 'lvca-utm';
+            div.style.cssText = 'background:rgba(255,255,255,0.92);' +
+                'padding:3px 10px;border-radius:6px;' +
+                'font:11px/1.5 monospace;color:#334155;' +
+                'box-shadow:0 1px 4px rgba(0,0,0,0.18);';
+            div.innerHTML = 'UTM 19S &nbsp;—&nbsp; mueve el cursor';
+            return div;
+        }};
+        ctl.addTo(map);
+        function deg2utm19s(lat, lon) {{
+            var a = 6378137.0, f = 1/298.257223563, k0 = 0.9996;
+            var e2 = f*(2-f), ep2 = e2/(1-e2);
+            var latr = lat*Math.PI/180;
+            var A = Math.cos(latr)*((lon+69)*Math.PI/180);
+            var sl = Math.sin(latr), cl = Math.cos(latr), tl = Math.tan(latr);
+            var N = a/Math.sqrt(1-e2*sl*sl), T = tl*tl, C = ep2*cl*cl;
+            var e4 = e2*e2, e6 = e4*e2;
+            var M = a*((1-e2/4-3*e4/64-5*e6/256)*latr
+                  -(3*e2/8+3*e4/32+45*e6/1024)*Math.sin(2*latr)
+                  +(15*e4/256+45*e6/1024)*Math.sin(4*latr)
+                  -(35*e6/3072)*Math.sin(6*latr));
+            var E = k0*N*(A+(1-T+C)*Math.pow(A,3)/6
+                  +(5-18*T+T*T+72*C-58*ep2)*Math.pow(A,5)/120)+500000;
+            var Nn = k0*(M+N*tl*(A*A/2+(5-T+9*C+4*C*C)*Math.pow(A,4)/24
+                   +(61-58*T+T*T+600*C-330*ep2)*Math.pow(A,6)/720))+10000000;
+            return [E, Nn];
+        }}
+        map.on('mousemove', function(e) {{
+            var u = deg2utm19s(e.latlng.lat, e.latlng.lng);
+            var el = document.getElementById('lvca-utm');
+            if (el) {{
+                el.innerHTML = 'UTM 19S &nbsp; E ' + u[0].toFixed(0) +
+                               ' &nbsp; N ' + u[1].toFixed(0);
+            }}
+        }});
+    }})();
+    """
+    m.get_root().script.add_child(folium.Element(utm_js))
+
     # Colapsado por defecto: el panel expandido tapaba una porción grande
     # del mapa. El usuario lo abre solo cuando necesita togglear capas.
     folium.LayerControl(collapsed=True).add_to(m)
@@ -1694,9 +1794,10 @@ def _construir_mapa(puntos: list[dict], solo_excedencias: bool):
           </div>
         </div>
         <span id="lvca-legend-caret" style="color:#94a3b8;
-             font-size:10px; margin-left:12px;">&#9662;</span>
+             font-size:10px; margin-left:12px;">&#9656;</span>
       </div>
-      <div id="lvca-legend-body" style="margin-top:8px; color:#334155;">
+      <div id="lvca-legend-body" style="margin-top:8px; color:#334155;
+           display:none;">
         <div style="display:flex; align-items:center; gap:10px; padding:3px 0;">
           <svg width="14" height="14" viewBox="0 0 24 24" style="flex-shrink:0;">
             <circle cx="12" cy="12" r="9" fill="#10B981" stroke="#047857" stroke-width="1"/>
@@ -1757,6 +1858,82 @@ def _construir_mapa(puntos: list[dict], solo_excedencias: bool):
     m.get_root().html.add_child(folium.Element(leyenda_html))
 
     return m
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Exportación de puntos (GeoJSON / KML) — para QGIS, ArcGIS y Google Earth
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _export_geojson_puntos(puntos: list[dict]) -> str:
+    """FeatureCollection con los puntos visibles y su estado ECA."""
+    import json
+    feats = []
+    for p in puntos:
+        if p.get("latitud") is None or p.get("longitud") is None:
+            continue
+        feats.append({
+            "type": "Feature",
+            "geometry": {
+                "type": "Point",
+                "coordinates": [p["longitud"], p["latitud"]],
+            },
+            "properties": {
+                "codigo":               p.get("codigo"),
+                "nombre":               p.get("nombre"),
+                "estado":               p.get("estado"),
+                "cuenca":               p.get("cuenca"),
+                "eca":                  (p.get("ecas") or {}).get("codigo"),
+                "indice_cumplimiento":  p.get("indice_cumplimiento"),
+                "parametros_evaluados": p.get("n_parametros_evaluados"),
+                "excedencias":          p.get("n_excedencias"),
+            },
+        })
+    return json.dumps(
+        {"type": "FeatureCollection", "features": feats},
+        ensure_ascii=False, indent=2,
+    )
+
+
+def _export_kml_puntos(puntos: list[dict]) -> str:
+    """KML con placemarks coloreados por estado (Google Earth)."""
+    from xml.sax.saxutils import escape
+
+    # KML usa color aabbggrr (alpha, blue, green, red)
+    def _kml_color(hex_rgb: str) -> str:
+        h = hex_rgb.lstrip("#")
+        return f"ff{h[4:6]}{h[2:4]}{h[0:2]}".lower()
+
+    placemarks = []
+    for p in puntos:
+        if p.get("latitud") is None or p.get("longitud") is None:
+            continue
+        color = _kml_color(_color_termico(p))
+        ic = p.get("indice_cumplimiento")
+        ic_str = f"{ic*100:.1f}%" if ic is not None else "sin datos"
+        desc = (
+            f"Estado: {p.get('estado', '—')}\n"
+            f"Cumplimiento ECA: {ic_str}\n"
+            f"Parámetros evaluados: {p.get('n_parametros_evaluados', 0)}\n"
+            f"Excedencias: {p.get('n_excedencias', 0)}\n"
+            f"Cuenca: {p.get('cuenca', '—')}"
+        )
+        placemarks.append(
+            f"<Placemark>"
+            f"<name>{escape(str(p.get('codigo', '')))}</name>"
+            f"<description>{escape(desc)}</description>"
+            f"<Style><IconStyle><color>{color}</color>"
+            f"<Icon><href>http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon>"
+            f"</IconStyle></Style>"
+            f"<Point><coordinates>{p['longitud']},{p['latitud']},0</coordinates></Point>"
+            f"</Placemark>"
+        )
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<kml xmlns="http://www.opengis.net/kml/2.2"><Document>'
+        "<name>Puntos de monitoreo LVCA</name>"
+        + "".join(placemarks) +
+        "</Document></kml>"
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2103,6 +2280,13 @@ def _render_ultimos_resultados(punto: dict, cat: str = "") -> None:
     st.dataframe(df, use_container_width=True, hide_index=True,
                  column_config={"Valor": st.column_config.NumberColumn(format="%.4g")},
                  key=f"ultimos_res_{cat}")
+    st.download_button(
+        ":material/download: CSV",
+        data=df.to_csv(index=False).encode("utf-8-sig"),
+        file_name=f"ultimos_resultados_{punto.get('codigo', 'punto')}.csv",
+        mime="text/csv",
+        key=f"dl_ultimos_res_{cat}",
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2215,6 +2399,16 @@ def main() -> None:
     parametros = get_parametros_selector()
     campanas = get_campanas()
 
+    # Contexto de navegación: otra página pidió enfocar un punto concreto.
+    # Se aplica antes de crear el radio "geo_modo" y el selectbox "geo_punto".
+    ctx_punto_id = consumir_contexto("geoportal").get("punto_id")
+    if ctx_punto_id:
+        for _lbl, _p in opciones_punto.items():
+            if _p.get("id") == ctx_punto_id:
+                st.session_state["geo_punto"] = _lbl
+                st.session_state["geo_modo"] = "punto"
+                break
+
     # ── 1. Dashboard global (4 KPIs full width — compactas) ─────────────
     st.markdown('<div class="lvca-geo-kpis">', unsafe_allow_html=True)
     _render_dashboard(puntos_con_coords)
@@ -2225,13 +2419,112 @@ def main() -> None:
     )
 
     # ── 2. Mapa (7/12) + Sidebar derecha (5/12) ─────────────────────────
+    # Ambas columnas corren como fragments: tocar los filtros del mapa NO
+    # re-renderiza la sidebar (gráficos Plotly), y tocar parámetro/año/tabs
+    # de la sidebar NO reconstruye el mapa Folium. Solo cambiar de punto o
+    # de modo escala a rerun completo (el mapa debe recentrarse).
     col_mapa, col_side = st.columns([7, 5], gap="medium")
 
     with col_mapa:
-        mapa = _construir_mapa(puntos_con_coords, solo_excedencias=False)
-        map_data = st_folium(
-            mapa, use_container_width=True, height=540,
-            returned_objects=["last_object_clicked"],
+        _fragmento_mapa(puntos_con_coords, opciones_punto)
+
+    with col_side:
+        _fragmento_sidebar(
+            opciones_punto, parametros, campanas,
+            str(fecha_inicio), str(fecha_fin),
+        )
+
+
+def _firma_sync_mapa() -> tuple:
+    """Estado de la sidebar del que depende el centrado del mapa."""
+    return (
+        st.session_state.get("geo_modo"),
+        st.session_state.get("geo_punto"),
+    )
+
+
+@st.fragment
+def _fragmento_mapa(puntos_con_coords: list[dict], opciones_punto: dict) -> None:
+    """Columna izquierda: filtros del mapa + Folium + handler de clicks."""
+    from streamlit_folium import st_folium
+
+    # ── Filtros del mapa + exportación ───────────────────────────────
+    fc1, fc2, fc3 = st.columns([2.4, 2.4, 1.4])
+    with fc1:
+        solo_exc = st.toggle(
+            "Solo excedencias",
+            key="geo_solo_exc",
+            help="Muestra únicamente los puntos con excedencias ECA activas.",
+        )
+    with fc2:
+        cuencas_disp = sorted({
+            (p.get("cuenca") or "").strip()
+            for p in puntos_con_coords
+            if (p.get("cuenca") or "").strip()
+        })
+        cuenca_sel = st.selectbox(
+            "Cuenca",
+            ["Todas las cuencas"] + cuencas_disp,
+            key="geo_filtro_cuenca",
+            label_visibility="collapsed",
+        )
+
+    pts_mapa = puntos_con_coords
+    if cuenca_sel and cuenca_sel != "Todas las cuencas":
+        pts_mapa = [
+            p for p in pts_mapa
+            if (p.get("cuenca") or "").strip() == cuenca_sel
+        ]
+
+    with fc3:
+        with st.popover(":material/download: Exportar", use_container_width=True):
+            st.caption("Puntos visibles con su estado ECA")
+            st.download_button(
+                "GeoJSON (QGIS / ArcGIS)",
+                data=_export_geojson_puntos(pts_mapa),
+                file_name="puntos_lvca.geojson",
+                mime="application/geo+json",
+                key="dl_geojson_puntos",
+                use_container_width=True,
+            )
+            st.download_button(
+                "KML (Google Earth)",
+                data=_export_kml_puntos(pts_mapa),
+                file_name="puntos_lvca.kml",
+                mime="application/vnd.google-earth.kml+xml",
+                key="dl_kml_puntos",
+                use_container_width=True,
+            )
+
+    # ── Enfoque del mapa: en Modo Punto, centrar en el punto activo ──
+    centro = zoom_sel = punto_sel_id = None
+    if st.session_state.get("geo_modo") == "punto":
+        _lbl_sel = st.session_state.get("geo_punto")
+        _p_sel = opciones_punto.get(_lbl_sel) if _lbl_sel else None
+        if _p_sel:
+            centro = [_p_sel["latitud"], _p_sel["longitud"]]
+            zoom_sel = 13
+            punto_sel_id = _p_sel.get("id")
+
+    mapa = _construir_mapa(
+        pts_mapa,
+        solo_excedencias=solo_exc,
+        centro=centro,
+        zoom=zoom_sel,
+        punto_sel_id=punto_sel_id,
+    )
+    map_data = st_folium(
+        mapa, use_container_width=True, height=540,
+        returned_objects=["last_object_clicked"],
+    )
+    n_visibles = sum(
+        1 for p in pts_mapa
+        if not solo_exc or p.get("estado") == "excedencia"
+    )
+    if n_visibles < len(puntos_con_coords):
+        st.caption(
+            f"Mostrando {n_visibles} de {len(puntos_con_coords)} puntos "
+            f"(filtros activos)."
         )
 
     # Click en marcador → cambia automáticamente a Modo Punto + selecciona el punto.
@@ -2258,31 +2551,54 @@ def main() -> None:
                 st.session_state["geo_ultimo_click"] = firma
                 st.session_state["geo_punto"] = closest_label
                 st.session_state["geo_modo"] = "punto"
-                st.rerun()
+                # Registrar la firma para que la sidebar no re-escale el rerun
+                st.session_state["_geo_sync_mapa"] = _firma_sync_mapa()
+                st.rerun()  # scope app: sidebar y mapa se sincronizan
 
-    # ── Sidebar derecha — modo Campaña/Punto + chart
-    with col_side:
-        st.markdown('<div class="lvca-geo-sidebar">', unsafe_allow_html=True)
 
-        # Toggle de modo (Campaña vs Punto)
-        modo = st.radio(
-            "Modo",
-            options=["campana", "punto"],
-            format_func=lambda v: ("Por campaña" if v == "campana" else "Por punto"),
-            key="geo_modo",
-            horizontal=True,
-            label_visibility="collapsed",
+@st.fragment
+def _fragmento_sidebar(
+    opciones_punto: dict,
+    parametros: list[dict],
+    campanas: list[dict],
+    fecha_inicio: str,
+    fecha_fin: str,
+) -> None:
+    """
+    Columna derecha: modo Campaña/Punto + gráficos. Cambiar parámetro, año
+    o tab re-renderiza solo esta columna. Cambiar de modo o de punto escala
+    a rerun completo porque el mapa (fuera del fragment) debe recentrarse.
+    """
+    st.markdown('<div class="lvca-geo-sidebar">', unsafe_allow_html=True)
+
+    # Toggle de modo (Campaña vs Punto)
+    modo = st.radio(
+        "Modo",
+        options=["campana", "punto"],
+        format_func=lambda v: ("Por campaña" if v == "campana" else "Por punto"),
+        key="geo_modo",
+        horizontal=True,
+        label_visibility="collapsed",
+    )
+
+    if modo == "campana":
+        _render_modo_campana(parametros, campanas)
+    else:
+        _render_modo_punto(
+            opciones_punto, parametros,
+            fecha_inicio, fecha_fin,
         )
 
-        if modo == "campana":
-            _render_modo_campana(parametros, campanas)
-        else:
-            _render_modo_punto(
-                opciones_punto, parametros,
-                str(fecha_inicio), str(fecha_fin),
-            )
+    st.markdown('</div>', unsafe_allow_html=True)
 
-        st.markdown('</div>', unsafe_allow_html=True)
+    # Sincronización con el mapa: si el modo o el punto cambiaron en este
+    # rerun parcial, escalar a rerun completo para que el mapa se recentre.
+    firma = _firma_sync_mapa()
+    if st.session_state.get("_geo_sync_mapa") != firma:
+        primera_vez = "_geo_sync_mapa" not in st.session_state
+        st.session_state["_geo_sync_mapa"] = firma
+        if not primera_vez:
+            st.rerun()  # scope app
 
 
 _TRES_CATS = ("campo", "fisicoquimico", "hidrobiologico")
@@ -2498,6 +2814,23 @@ def _render_modo_punto(
     with tab_ficha:
         _render_panel_punto(punto)
 
+    # Atajos del flujo: el mismo punto en las demás secciones.
+    # "Editar punto" solo se ofrece a quien puede entrar a esa página (admin).
+    _sesion = st.session_state.get("sesion")
+    _es_admin = bool(_sesion and _sesion.tiene_rol("administrador"))
+    gnav1, gnav2 = st.columns(2)
+    with gnav1:
+        if st.button("Datos del punto", key="geo_nav_bd",
+                     icon=":material/database:", use_container_width=True,
+                     help="Abrir la Base de Datos filtrada por este lugar."):
+            ir_a("base_datos", punto_id=punto.get("id"))
+    with gnav2:
+        if _es_admin and st.button(
+                "Editar punto", key="geo_nav_punto",
+                icon=":material/edit_location:", use_container_width=True,
+                help="Abrir la ficha de gestión del punto."):
+            ir_a("puntos", punto_id=punto.get("id"))
+
 
 def _render_panel_punto(punto_sel: dict) -> None:
     """
@@ -2636,6 +2969,13 @@ def _render_panel_punto(punto_sel: dict) -> None:
                     "Límite":   st.column_config.NumberColumn(format="%.4g"),
                 },
             )
+            st.download_button(
+                ":material/download: CSV",
+                data=df_show.to_csv(index=False).encode("utf-8-sig"),
+                file_name=f"excedencias_{punto_sel.get('codigo', 'punto')}.csv",
+                mime="text/csv",
+                key="dl_excedencias_punto",
+            )
 
 
 def _render_analisis_punto(
@@ -2745,6 +3085,14 @@ def _render_comparativa_eca_filtered(datos_f: list[dict], cat: str = "") -> None
         use_container_width=True, hide_index=True,
         height=min(400, 35 * len(df_show) + 38),
         key=f"comp_eca_filtered_{cat}",
+    )
+    # utf-8-sig para que Excel abra tildes/ñ correctamente
+    st.download_button(
+        ":material/download: CSV",
+        data=df_show.to_csv(index=False).encode("utf-8-sig"),
+        file_name="comparativa_eca.csv",
+        mime="text/csv",
+        key=f"dl_comp_eca_{cat}",
     )
 
 

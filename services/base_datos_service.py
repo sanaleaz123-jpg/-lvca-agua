@@ -29,6 +29,7 @@ COLUMNAS_PARAMETROS = get_columnas_parametros
 CODIGOS_PARAMETROS = get_codigos_parametros
 
 
+@cached(ttl=120)
 def get_datos_consolidados(
     campana_id: Optional[str] = None,
     punto_id: Optional[str] = None,
@@ -295,6 +296,7 @@ def crear_resultado(muestra_id: str, parametro_id: str, valor: float) -> dict:
     return res.data[0]
 
 
+@cached(ttl=300)
 def get_parametros_map() -> dict[str, str]:
     """Retorna {codigo: parametro_id} para crear nuevos resultados."""
     db = get_admin_client()

@@ -16,6 +16,7 @@ import pandas as pd
 import streamlit as st
 
 from components.auth_guard import require_rol
+from components.nav_context import consumir_contexto, ir_a, preseleccionar, rol_alcanza
 from services.base_datos_service import (
     actualizar_resultado,
     crear_resultado,
@@ -269,6 +270,9 @@ def main() -> None:
 
     es_admin = _es_admin()
 
+    # Contexto de navegación: otra página pidió filtrar por campaña/punto
+    ctx = consumir_contexto("base_datos")
+
     # ── Filtros (en main area, no sidebar) ──────────────────────────────
     from components.ui_styles import filter_bar_open, filter_bar_close
     filter_bar_open()
@@ -280,6 +284,7 @@ def main() -> None:
         opciones_camp.update({
             f"{c['codigo']} — {c['nombre']}": c["id"] for c in campanas
         })
+        preseleccionar("bd_camp", opciones_camp, ctx.get("campana_id"))
         sel_camp = st.selectbox("Campaña", list(opciones_camp.keys()), key="bd_camp")
         campana_id = opciones_camp[sel_camp]
     with fc2:
@@ -307,6 +312,13 @@ def main() -> None:
             tipos = {t for t in tipos_por_nombre.get(nombre, set()) if t}
             sufijo = f"  ·  {next(iter(tipos)).capitalize()}" if len(tipos) == 1 else ""
             opciones_lugar[f"{nombre}{sufijo}"] = tuple(lugares[nombre])
+
+        # Pre-selección por punto_id del contexto: el "lugar" que lo contiene
+        if ctx.get("punto_id"):
+            for _lbl, _ids in opciones_lugar.items():
+                if _ids and ctx["punto_id"] in _ids:
+                    st.session_state["bd_lugar"] = _lbl
+                    break
 
         sel_lugar = st.selectbox(
             "Lugar de muestreo",
@@ -385,6 +397,24 @@ def main() -> None:
     mc4.metric("Excedencias ECA", n_excedencias,
                delta=f"-{round(n_excedencias/n_valores*100, 1)}%" if n_valores else "0%",
                delta_color="inverse")
+
+    # ── Atajos del flujo con los filtros actuales ───────────────────────
+    nav1, nav2, nav3, _sp = st.columns([1.2, 1.2, 1.2, 2.4])
+    with nav1:
+        _punto_geo = punto_ids_filtro[0] if punto_ids_filtro else None
+        if st.button("Ver en Geoportal", key="bd_nav_geo",
+                     icon=":material/map:", use_container_width=True):
+            ir_a("geoportal", punto_id=_punto_geo)
+    with nav2:
+        if campana_id and rol_alcanza("administrador") and st.button(
+                "Ver campaña", key="bd_nav_campana",
+                icon=":material/event:", use_container_width=True):
+            ir_a("campanas", campana_id=campana_id)
+    with nav3:
+        if campana_id and rol_alcanza("visualizador") and st.button(
+                "Informe de campaña", key="bd_nav_informe",
+                icon=":material/description:", use_container_width=True):
+            ir_a("informes", campana_id=campana_id)
 
     # ── Construir DataFrame para mostrar ────────────────────────────────
     # Orden cronológico ascendente para que los separadores amarillos por

@@ -199,6 +199,7 @@ def get_puntos(
 # Detalle
 # ─────────────────────────────────────────────────────────────────────────────
 
+@cached(ttl=120)
 def get_punto(punto_id: str) -> dict | None:
     """Detalle de un punto con ECA."""
     db = get_admin_client()
@@ -354,12 +355,14 @@ def eliminar_punto(punto_id: str) -> None:
         accion="eliminar",
         valor_anterior=punto_desc,
     )
+    _invalidar_cache()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers para selectores
 # ─────────────────────────────────────────────────────────────────────────────
 
+@cached(ttl=300)
 def get_cuencas() -> list[str]:
     """
     Cuencas únicas para selectores. Combina las canónicas con las existentes
@@ -382,6 +385,7 @@ def get_cuencas() -> list[str]:
     return list(CUENCAS_CANONICAS) + extras
 
 
+@cached(ttl=300)
 def get_tipos() -> list[str]:
     """Valores únicos de tipo existentes en la tabla."""
     db = get_admin_client()
@@ -405,7 +409,6 @@ def _build_fila(datos: dict) -> dict:
         "utm_zona", "entidad_responsable",
         "departamento", "provincia", "distrito",
         "accesibilidad", "representatividad", "finalidad",
-        "sistema_hidrico", "lugar_muestreo",
     )
     for c in campos_texto:
         if c in datos:

@@ -20,6 +20,7 @@ import pandas as pd
 import streamlit as st
 
 from components.auth_guard import require_rol
+from components.nav_context import consumir_contexto, ir_a, preseleccionar
 from components.ui_styles import (
     aplicar_estilos,
     inline_note,
@@ -166,6 +167,15 @@ def _global_campaign_selector() -> str | None:
         )
         return None
 
+    # Contexto de navegación: otra página (Campañas, Inicio…) pidió abrir
+    # una campaña concreta. Se aplica ANTES de crear el toggle y el selectbox.
+    ctx_campana_id = consumir_contexto("muestras").get("campana_id")
+    if ctx_campana_id:
+        ctx_camp = next((c for c in todas if c["id"] == ctx_campana_id), None)
+        if ctx_camp and ctx_camp.get("estado") not in _ESTADOS_ACTIVOS:
+            # La campaña pedida está cerrada — activar el toggle para verla
+            st.session_state["muestras_incluir_cerradas"] = True
+
     incluir_cerradas = st.toggle(
         "Incluir campañas completadas / archivadas / anuladas",
         value=False,
@@ -195,6 +205,7 @@ def _global_campaign_selector() -> str | None:
         f"{c['codigo']} — {c['nombre']} ({c.get('estado', '')})": c["id"]
         for c in candidatas
     }
+    preseleccionar("muestras_global_camp", opciones, ctx_campana_id)
     label_sel = st.selectbox(
         "Campaña activa",
         list(opciones.keys()),
@@ -382,6 +393,7 @@ def _abreviar_nombre(nombre_completo: str) -> str:
     return f"{inicial} {apellidos}"
 
 
+@st.fragment
 def _render_registro(campana_id: str) -> None:
     section_header("Registro de muestra de campo", "edit")
     st.caption("Si el punto ya tiene una muestra en la campaña, se cargan los datos para editar.")
@@ -991,6 +1003,7 @@ def _render_registro(campana_id: str) -> None:
 # Tab 2 — Mediciones in situ
 # ─────────────────────────────────────────────────────────────────────────────
 
+@st.fragment
 def _render_insitu(campana_id: str) -> None:
     section_header("Parámetros medidos en campo", "thermometer")
 
@@ -1357,6 +1370,7 @@ def _render_insitu_columna(
 # Tab 3 — Cadena de custodia
 # ─────────────────────────────────────────────────────────────────────────────
 
+@st.fragment
 def _render_custodia(campana_id: str) -> None:
     section_header("Recepción en laboratorio", "archive")
     st.caption(
@@ -1580,6 +1594,7 @@ def _render_custodia(campana_id: str) -> None:
 # Tab 4 — Listado general
 # ─────────────────────────────────────────────────────────────────────────────
 
+@st.fragment
 def _render_listado(campana_id: str) -> None:
     section_header("Listado de muestras", "list")
 
@@ -1664,6 +1679,7 @@ _RECEPTORES_CADENA = ["Alfonso Torres", "Jean Pierre Llerena"]
 _SUPERVISOR_CADENA = "Ing. Ana Lucía Paz Alcázar"
 
 
+@st.fragment
 def _render_cadena_custodia(campana_id: str) -> None:
     section_header("Documento de Cadena de Custodia — Formato AUTODEMA", "clipboard")
     st.caption(
@@ -1924,6 +1940,7 @@ def _render_cadena_custodia(campana_id: str) -> None:
 # Tab — Ficha de campo (generación DOCX/PDF)
 # ─────────────────────────────────────────────────────────────────────────────
 
+@st.fragment
 def _render_ficha_campo(campana_id: str) -> None:
     section_header("Fichas de Identificación del Punto de Monitoreo", "file")
     st.caption("Genera todas las fichas de una campaña en un solo documento Word")
@@ -2004,9 +2021,10 @@ def _render_ficha_campo(campana_id: str) -> None:
 def main() -> None:
     aplicar_estilos()
     top_nav()
-    # El cache de muestras vive solo dentro de un mismo render — al inicio
-    # se limpia para que cualquier rerun (después de crear/editar/eliminar)
-    # vea datos frescos. Dentro del render los 5 tabs comparten la query.
+    # El cache de muestras vive entre fragment-reruns: los tabs son fragments,
+    # así que interactuar dentro de un tab NO re-ejecuta main ni esta limpieza.
+    # Tras crear/editar/eliminar, los tabs llaman st.rerun() (scope app), main
+    # vuelve a correr y esta línea garantiza datos frescos para todos los tabs.
     st.session_state.pop("_muestras_cache", None)
     page_header("Muestras de Campo", "Registro, mediciones in situ y cadena de custodia")
 
@@ -2016,6 +2034,21 @@ def main() -> None:
     campana_id = _global_campaign_selector()
     if not campana_id:
         return
+
+    # Atajos del flujo: la misma campaña en las etapas vecinas
+    nav1, nav2, nav3, _sp = st.columns([1.4, 1.4, 1.4, 3])
+    with nav1:
+        if st.button("Ver campaña", key="muestras_nav_campana",
+                     icon=":material/event:", use_container_width=True):
+            ir_a("campanas", campana_id=campana_id)
+    with nav2:
+        if st.button("Resultados de lab", key="muestras_nav_resultados",
+                     icon=":material/biotech:", use_container_width=True):
+            ir_a("resultados", campana_id=campana_id)
+    with nav3:
+        if st.button("Base de Datos", key="muestras_nav_bd",
+                     icon=":material/database:", use_container_width=True):
+            ir_a("base_datos", campana_id=campana_id)
 
     # Orden lógico del flujo operativo:
     #   campo (Registro → In situ)

@@ -17,6 +17,7 @@ import pandas as pd
 import streamlit as st
 
 from components.auth_guard import require_rol
+from components.nav_context import consumir_contexto, ir_a
 from components.ui_styles import (
     aplicar_estilos,
     page_header,
@@ -213,8 +214,6 @@ def _render_atajo_flujo(camp: dict) -> None:
     Pre-selecciona la campaña en la página destino vía session_state.
     """
     estado = camp.get("estado")
-    codigo = camp["codigo"]
-    nombre = camp.get("nombre") or ""
 
     if estado == "en_campo":
         if st.button(
@@ -224,9 +223,7 @@ def _render_atajo_flujo(camp: dict) -> None:
             type="secondary",
             use_container_width=True,
         ):
-            # Pre-selección en pages/3_Muestras_Campo.py (key="reg_camp")
-            st.session_state["reg_camp"] = f"{codigo} — {nombre}"
-            st.switch_page("pages/3_Muestras_Campo.py")
+            ir_a("muestras", campana_id=camp["id"])
 
     elif estado == "en_laboratorio":
         if st.button(
@@ -236,9 +233,7 @@ def _render_atajo_flujo(camp: dict) -> None:
             type="secondary",
             use_container_width=True,
         ):
-            # Pre-selección en pages/4_Resultados_Lab.py (key="sel_campana")
-            st.session_state["sel_campana"] = f"{nombre} ({estado})"
-            st.switch_page("pages/4_Resultados_Lab.py")
+            ir_a("resultados", campana_id=camp["id"])
 
     elif estado == "completada":
         if st.button(
@@ -248,9 +243,7 @@ def _render_atajo_flujo(camp: dict) -> None:
             type="secondary",
             use_container_width=True,
         ):
-            # Pre-selección en pages/8_Informes.py (key="inf_campana")
-            st.session_state["inf_campana"] = f"{codigo} — {nombre} ({estado})"
-            st.switch_page("pages/8_Informes.py")
+            ir_a("informes", campana_id=camp["id"])
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -340,11 +333,17 @@ def _render_listado() -> None:
 
     # ── Detalle de la campaña seleccionada ───────────────────────────────────
     sel_rows = getattr(event, "selection", {}).get("rows") if hasattr(event, "selection") else event.get("selection", {}).get("rows", [])
-    if not sel_rows:
-        st.info("Selecciona una campaña en la tabla para ver su detalle.")
-        return
+    if sel_rows:
+        campana_id = campanas[sel_rows[0]]["id"]
+        # La selección manual reemplaza cualquier detalle abierto por contexto
+        st.session_state.pop("campanas_ctx_detalle", None)
+    else:
+        # Si otra página navegó aquí con campana_id, abrir su detalle directo
+        campana_id = st.session_state.get("campanas_ctx_detalle")
+        if not campana_id:
+            st.info("Selecciona una campaña en la tabla para ver su detalle.")
+            return
 
-    campana_id = campanas[sel_rows[0]]["id"]
     st.divider()
     _render_detalle(campana_id)
 
@@ -518,28 +517,44 @@ def _render_detalle(campana_id: str) -> None:
         # Barra de progreso
         st.progress(min(avance["porcentaje"] / 100.0, 1.0))
 
-        # Atajos a las páginas de detalle
-        ax1, ax2 = st.columns(2)
+        # Atajos a las páginas de detalle (todas las etapas del flujo)
+        ax1, ax2, ax3, ax4 = st.columns(4)
         with ax1:
             if avance["total_muestras"] > 0:
                 if st.button(
-                    "Ver muestras de esta campaña",
+                    "Muestras de campo",
                     key="atajo_avance_muestras",
                     icon=":material/edit_note:",
                     use_container_width=True,
                 ):
-                    st.session_state["reg_camp"] = f"{camp['codigo']} — {camp['nombre']}"
-                    st.switch_page("pages/3_Muestras_Campo.py")
+                    ir_a("muestras", campana_id=campana_id)
         with ax2:
             if avance["total_resultados_registrados"] > 0:
                 if st.button(
-                    "Ver / capturar resultados",
+                    "Resultados de lab",
                     key="atajo_avance_resultados",
                     icon=":material/biotech:",
                     use_container_width=True,
                 ):
-                    st.session_state["sel_campana"] = f"{camp['nombre']} ({camp['estado']})"
-                    st.switch_page("pages/4_Resultados_Lab.py")
+                    ir_a("resultados", campana_id=campana_id)
+        with ax3:
+            if avance["total_resultados_registrados"] > 0:
+                if st.button(
+                    "Base de Datos",
+                    key="atajo_avance_bd",
+                    icon=":material/database:",
+                    use_container_width=True,
+                ):
+                    ir_a("base_datos", campana_id=campana_id)
+        with ax4:
+            if avance["total_resultados_registrados"] > 0:
+                if st.button(
+                    "Informe",
+                    key="atajo_avance_informe",
+                    icon=":material/description:",
+                    use_container_width=True,
+                ):
+                    ir_a("informes", campana_id=campana_id)
 
         # Tabla de muestras individuales
         if muestras:
@@ -1162,6 +1177,11 @@ def main() -> None:
         "Gestión del ciclo de vida de campañas · AUTODEMA",
         ambito="Cuenca Chili-Quilca",
     )
+
+    # Contexto de navegación: otra página pidió abrir una campaña concreta
+    ctx = consumir_contexto("campanas")
+    if ctx.get("campana_id"):
+        st.session_state["campanas_ctx_detalle"] = ctx["campana_id"]
 
     tab_lista, tab_nueva = st.tabs([
         ":material/list: Listado de campañas",

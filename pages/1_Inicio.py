@@ -292,6 +292,16 @@ def _render_tabla_excedencias(excedencias: list[dict]) -> None:
             "Ver todas en **Base de Datos**."
         )
 
+    enav1, enav2, _sp = st.columns([1.3, 1.3, 3.4])
+    with enav1:
+        st.page_link("pages/10_Base_Datos.py",
+                     label="Ver en Base de Datos",
+                     icon=":material/database:")
+    with enav2:
+        st.page_link("pages/7_Geoportal.py",
+                     label="Ver en Geoportal",
+                     icon=":material/map:")
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Sección 3 — Gráficos de excedencias
@@ -580,23 +590,20 @@ def main() -> None:
     _render_tareas_pendientes()
 
 
-def _render_tareas_pendientes() -> None:
+@st.cache_data(ttl=120, show_spinner=False)
+def _datos_tareas_pendientes() -> dict:
     """
-    Lista de tareas operacionales que el usuario debería atender ahora,
-    en lugar de los genéricos botones de 'Acceso rápido'. Cada item lleva
-    a la página exacta donde se resuelve.
+    Consultas del bloque 'Tareas pendientes' agrupadas y cacheadas (TTL 2 min)
+    para no golpear Supabase en cada rerun del dashboard. Cualquier mutación
+    en services/ limpia st.cache_data, así que el bloque se refresca al instante
+    tras registrar datos.
     """
     from database.client import get_admin_client
-    from components.ui_styles import section_header, icon, COLORS
     db = get_admin_client()
+    datos: dict = {"camp_curso": [], "muestras_lab": [], "n_sin_validar": 0}
 
-    section_header("Tareas pendientes", "list")
-
-    items: list[dict] = []
-
-    # 1. Campañas en curso (en_campo o en_laboratorio)
     try:
-        camp_curso = (
+        datos["camp_curso"] = (
             db.table("campanas")
             .select("codigo, nombre, estado")
             .in_("estado", ["en_campo", "en_laboratorio"])
@@ -605,22 +612,11 @@ def _render_tareas_pendientes() -> None:
             .execute()
             .data or []
         )
-        if camp_curso:
-            items.append({
-                "icon": "play",
-                "color": COLORS["primary"],
-                "title": f"{len(camp_curso)} campaña(s) activa(s)",
-                "detail": ", ".join(c["codigo"] for c in camp_curso[:3])
-                          + (f" y {len(camp_curso)-3} más" if len(camp_curso) > 3 else ""),
-                "page": "pages/2_Campanas.py",
-                "cta": "Ver campañas",
-            })
     except Exception:
         pass
 
-    # 2. Muestras analizadas/recibidas sin resultados completos
     try:
-        muestras_lab = (
+        datos["muestras_lab"] = (
             db.table("muestras")
             .select("id, codigo, estado")
             .in_("estado", ["en_laboratorio", "analizada"])
@@ -628,19 +624,9 @@ def _render_tareas_pendientes() -> None:
             .execute()
             .data or []
         )
-        if muestras_lab:
-            items.append({
-                "icon": "beaker",
-                "color": COLORS["secondary"],
-                "title": f"{len(muestras_lab)} muestra(s) en laboratorio",
-                "detail": "Muestras recibidas o en análisis pendientes de cierre.",
-                "page": "pages/4_Resultados_Lab.py",
-                "cta": "Cargar resultados",
-            })
     except Exception:
         pass
 
-    # 3. Resultados sin validar (si la migración 006 está aplicada)
     try:
         sin_validar = (
             db.table("resultados_laboratorio")
@@ -650,18 +636,62 @@ def _render_tareas_pendientes() -> None:
             .limit(1)
             .execute()
         )
-        n_sin_val = sin_validar.count or 0
-        if n_sin_val > 0:
-            items.append({
-                "icon": "shield",
-                "color": COLORS["warning"],
-                "title": f"{n_sin_val} resultado(s) sin validar",
-                "detail": "Resultados ingresados pero no firmados por supervisor.",
-                "page": "pages/4_Resultados_Lab.py",
-                "cta": "Validar resultados",
-            })
+        datos["n_sin_validar"] = sin_validar.count or 0
     except Exception:
         pass
+
+    return datos
+
+
+def _render_tareas_pendientes() -> None:
+    """
+    Lista de tareas operacionales que el usuario debería atender ahora,
+    en lugar de los genéricos botones de 'Acceso rápido'. Cada item lleva
+    a la página exacta donde se resuelve.
+    """
+    from components.ui_styles import section_header, icon, COLORS
+
+    section_header("Tareas pendientes", "list")
+
+    datos = _datos_tareas_pendientes()
+    items: list[dict] = []
+
+    # 1. Campañas en curso (en_campo o en_laboratorio)
+    camp_curso = datos["camp_curso"]
+    if camp_curso:
+        items.append({
+            "icon": "play",
+            "color": COLORS["primary"],
+            "title": f"{len(camp_curso)} campaña(s) activa(s)",
+            "detail": ", ".join(c["codigo"] for c in camp_curso[:3])
+                      + (f" y {len(camp_curso)-3} más" if len(camp_curso) > 3 else ""),
+            "page": "pages/2_Campanas.py",
+            "cta": "Ver campañas",
+        })
+
+    # 2. Muestras analizadas/recibidas sin resultados completos
+    muestras_lab = datos["muestras_lab"]
+    if muestras_lab:
+        items.append({
+            "icon": "beaker",
+            "color": COLORS["secondary"],
+            "title": f"{len(muestras_lab)} muestra(s) en laboratorio",
+            "detail": "Muestras recibidas o en análisis pendientes de cierre.",
+            "page": "pages/4_Resultados_Lab.py",
+            "cta": "Cargar resultados",
+        })
+
+    # 3. Resultados sin validar (si la migración 006 está aplicada)
+    n_sin_val = datos["n_sin_validar"]
+    if n_sin_val > 0:
+        items.append({
+            "icon": "shield",
+            "color": COLORS["warning"],
+            "title": f"{n_sin_val} resultado(s) sin validar",
+            "detail": "Resultados ingresados pero no firmados por supervisor.",
+            "page": "pages/4_Resultados_Lab.py",
+            "cta": "Validar resultados",
+        })
 
     if not items:
         st.info("No hay tareas pendientes — la operación está al día.")

@@ -18,12 +18,14 @@ from typing import Optional
 import pandas as pd
 
 from database.client import get_admin_client
+from services.cache import cached
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Resumen de campaña (para informe)
 # ─────────────────────────────────────────────────────────────────────────────
 
+@cached(ttl=120)
 def get_resumen_campana(campana_id: str) -> dict:
     """
     Datos consolidados de una campaña para el informe. Evalúa cada resultado
@@ -574,11 +576,12 @@ def generar_pdf_campana(campana_id: str) -> bytes:
     elementos.append(Spacer(1, 0.5*cm))
 
     # Tabla de excedencias (incluye Excede y Art. 6)
+    _MAX_EXCEDENCIAS_PDF = 80
     if resumen["excedencias"]:
         elementos.append(Paragraph("Excedencias ECA Detectadas", subtitulo_style))
         header = ["Punto", "Parámetro", "Valor", "Unidad", "ECA máx.", "Estado", "Fecha"]
         rows = [header]
-        for e in resumen["excedencias"][:80]:
+        for e in resumen["excedencias"][:_MAX_EXCEDENCIAS_PDF]:
             estado_key = e.get("estado_eca", "")
             estado_label = estado_labels.get(estado_key, (estado_key, colors.white))[0]
             valor_view = e.get("valor_comparado")
@@ -607,6 +610,16 @@ def generar_pdf_campana(campana_id: str) -> bytes:
             ("TOPPADDING", (0, 0), (-1, -1), 4),
         ]))
         elementos.append(t3)
+        omitidas = len(resumen["excedencias"]) - _MAX_EXCEDENCIAS_PDF
+        if omitidas > 0:
+            elementos.append(Spacer(1, 0.2*cm))
+            elementos.append(Paragraph(
+                f"<b>Nota:</b> la tabla muestra las primeras {_MAX_EXCEDENCIAS_PDF} "
+                f"excedencias de un total de {len(resumen['excedencias'])}. "
+                f"Se omitieron {omitidas} registro(s); consulte el detalle completo "
+                f"en la plataforma.",
+                styles["Normal"],
+            ))
     else:
         elementos.append(Paragraph(
             "No se detectaron excedencias ECA en esta campaña.",

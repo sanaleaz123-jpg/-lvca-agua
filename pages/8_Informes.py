@@ -17,6 +17,7 @@ import pandas as pd
 import streamlit as st
 
 from components.auth_guard import require_rol
+from components.nav_context import consumir_contexto, ir_a, preseleccionar, rol_alcanza
 from components.ui_styles import aplicar_estilos, page_header, section_header, top_nav
 from services.informe_service import (
     get_resumen_campana,
@@ -72,6 +73,8 @@ def _render_informe_campana() -> None:
         f"{c['codigo']} — {c['nombre']} ({c['estado']})": c["id"]
         for c in campanas
     }
+    # Contexto de navegación: otra página pidió el informe de una campaña
+    preseleccionar("inf_campana", opciones, consumir_contexto("informes").get("campana_id"))
     col_sel, col_refresh = st.columns([4, 1])
     with col_sel:
         sel = st.selectbox("Seleccionar campaña", list(opciones.keys()), key="inf_campana")
@@ -82,6 +85,23 @@ def _render_informe_campana() -> None:
             "Actualizar", key="btn_refresh_informe",
             icon=":material/refresh:", use_container_width=True,
         )
+
+    # Atajos del flujo con la campaña seleccionada (solo páginas que el
+    # rol de la sesión puede abrir).
+    nav1, nav2, nav3, _sp = st.columns([1.2, 1.2, 1.2, 2.4])
+    with nav1:
+        if rol_alcanza("administrador") and st.button(
+                "Ver campaña", key="inf_nav_campana",
+                icon=":material/event:", use_container_width=True):
+            ir_a("campanas", campana_id=campana_id)
+    with nav2:
+        if st.button("Resultados", key="inf_nav_resultados",
+                     icon=":material/biotech:", use_container_width=True):
+            ir_a("resultados", campana_id=campana_id)
+    with nav3:
+        if st.button("Base de Datos", key="inf_nav_bd",
+                     icon=":material/database:", use_container_width=True):
+            ir_a("base_datos", campana_id=campana_id)
 
     # Auto-cargar el informe si cambió la campaña o se presiona Actualizar
     cached_id = st.session_state.get("informe_campana_id")

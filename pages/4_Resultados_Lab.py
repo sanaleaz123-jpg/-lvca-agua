@@ -20,7 +20,16 @@ import pandas as pd
 import streamlit as st
 
 from components.auth_guard import require_rol
-from components.ui_styles import aplicar_estilos, page_header, success_check_overlay, toast, top_nav
+from components.nav_context import consumir_contexto, ir_a, preseleccionar, rol_alcanza
+from components.ui_styles import (
+    ECA_CHIP_STYLES,
+    aplicar_estilos,
+    chip_eca_html,
+    page_header,
+    success_check_overlay,
+    toast,
+    top_nav,
+)
 from services.parametro_registry import clasificar_categoria
 from services.resultado_service import (
     get_campanas,
@@ -224,8 +233,12 @@ def _panel_seleccion() -> tuple[str | None, str | None, str | None]:
         st.warning("No hay campañas registradas. Crea al menos una campaña primero.")
         return None, None, None
 
+    # Contexto de navegación: otra página pidió abrir campaña/punto/muestra
+    ctx = consumir_contexto("resultados")
+
     # ── Campaña
     opciones_c = {f"{c['nombre']} ({c.get('estado','')})": c["id"] for c in campanas}
+    preseleccionar("sel_campana", opciones_c, ctx.get("campana_id"))
     etiqueta_c = st.selectbox(
         "Campaña de monitoreo",
         list(opciones_c.keys()),
@@ -240,6 +253,7 @@ def _panel_seleccion() -> tuple[str | None, str | None, str | None]:
         return campana_id, None, None
 
     opciones_p = {f"{p['codigo']} – {p['nombre']}": p["id"] for p in puntos}
+    preseleccionar("sel_punto", opciones_p, ctx.get("punto_id"))
     etiqueta_p = st.selectbox(
         "Punto de muestreo",
         list(opciones_p.keys()),
@@ -257,6 +271,7 @@ def _panel_seleccion() -> tuple[str | None, str | None, str | None]:
         f"{m['codigo']} – {m.get('fecha_muestreo','')[:10]} [{m.get('estado','')}]": m["id"]
         for m in muestras
     }
+    preseleccionar("sel_muestra", opciones_m, ctx.get("muestra_id"))
     etiqueta_m = st.selectbox(
         "Muestra",
         list(opciones_m.keys()),
@@ -446,7 +461,50 @@ def main() -> None:
     with st.expander("Seleccionar muestra", icon=":material/list:", expanded=True):
         campana_id, punto_id, muestra_id = _panel_seleccion()
 
+    # ── Atajos del flujo con la selección actual ─────────────────────────────
+    # Campañas y Muestras exigen rol administrador: solo se ofrecen a quien
+    # puede entrar (rol_alcanza evita aterrizar en "Acceso denegado").
+    if campana_id:
+        _admin = rol_alcanza("administrador")
+        nav1, nav2, nav3, nav4, _sp = st.columns([1.2, 1.2, 1.2, 1.2, 1.6])
+        with nav1:
+            if _admin and st.button("Campaña", key="res_nav_campana",
+                                    icon=":material/event:", use_container_width=True):
+                ir_a("campanas", campana_id=campana_id)
+        with nav2:
+            if _admin and st.button("Muestras", key="res_nav_muestras",
+                                    icon=":material/edit_note:", use_container_width=True):
+                ir_a("muestras", campana_id=campana_id)
+        with nav3:
+            if st.button("Base de Datos", key="res_nav_bd",
+                         icon=":material/database:", use_container_width=True):
+                ir_a("base_datos", campana_id=campana_id, punto_id=punto_id)
+        with nav4:
+            if st.button("Informe", key="res_nav_informe",
+                         icon=":material/description:", use_container_width=True):
+                ir_a("informes", campana_id=campana_id)
+
     if not muestra_id:
+        st.stop()
+
+    # El cuerpo de captura corre como fragment: cada input/checkbox del panel
+    # re-renderiza SOLO esta zona — los selectores, la navegación y el resto
+    # de la página no se vuelven a ejecutar (Streamlit ≥1.37).
+    _cuerpo_muestra(muestra_id)
+
+
+@st.fragment
+def _cuerpo_muestra(muestra_id: str) -> None:
+    """
+    Panel de captura de una muestra (barra informativa, métricas, tabs por
+    categoría, guardado, validación, carga masiva y excedencias). Aislado en
+    un fragment para que los reruns de sus widgets no recarguen la página.
+    Los guardados llaman st.rerun() (scope app por defecto) para refrescar
+    también selectores y métricas externas.
+    """
+    sesion = st.session_state.get("sesion")
+    if not sesion:
+        st.error("Sesión expirada. Inicia sesión nuevamente.")
         st.stop()
 
     # ── Cargar datos ─────────────────────────────────────────────────────────

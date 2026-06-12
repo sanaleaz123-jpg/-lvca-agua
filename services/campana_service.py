@@ -18,6 +18,7 @@ from typing import Optional
 
 from database.client import get_admin_client
 from services.audit_service import registrar_cambio
+from services.cache import cached
 
 
 def _invalidar_cache() -> None:
@@ -71,6 +72,7 @@ FRECUENCIAS = [
 # Listado
 # ─────────────────────────────────────────────────────────────────────────────
 
+@cached(ttl=120)
 def get_campanas(
     filtro_estado: Optional[str] = None,
     fecha_desde:   Optional[str] = None,
@@ -110,6 +112,7 @@ def get_campanas(
 # Creación
 # ─────────────────────────────────────────────────────────────────────────────
 
+@cached(ttl=300)
 def get_todos_los_puntos() -> list[dict]:
     """Puntos activos para el multiselect del formulario de nueva campaña."""
     db = get_admin_client()
@@ -254,6 +257,7 @@ def actualizar_estado(campana_id: str, nuevo_estado: str, usuario_id: Optional[s
 # Detalle de campaña
 # ─────────────────────────────────────────────────────────────────────────────
 
+@cached(ttl=120)
 def get_detalle_campana(campana_id: str) -> dict:
     """
     Retorna toda la información de una campaña para la vista de detalle:
@@ -412,6 +416,7 @@ def actualizar_puntos_campana(campana_id: str, puntos_ids: list[str]) -> None:
 # al planificar la campaña.
 # ─────────────────────────────────────────────────────────────────────────────
 
+@cached(ttl=300)
 def get_parametros_lab_campana(campana_id: str) -> dict:
     """
     Retorna los parámetros de laboratorio seleccionados para la campaña:
@@ -479,6 +484,7 @@ def set_parametros_lab_campana(
         db.table("cadena_custodia_config").upsert(
             payload, on_conflict="campana_id"
         ).execute()
+        _invalidar_cache()
         return True
     except Exception:
         return False
