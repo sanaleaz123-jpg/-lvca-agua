@@ -163,7 +163,7 @@ _GLOBAL_CSS = """<style>
     --lvca-acento-rojo:       #EF4444;
     --lvca-acento-rojo-dark:  #B91C1C;
     --lvca-acento-teal:       #0a9396;
-    --lvca-bg-app:            #F8FAFC;
+    --lvca-bg-app:            #F1F5F9;
     --lvca-bg-card:           #FFFFFF;
     --lvca-border:            #E2E8F0;
     --lvca-border-soft:       #F1F5F9;
@@ -205,6 +205,14 @@ h4 { font-weight: 600 !important; font-size: 0.95rem !important; }
 small, .small, .stCaption, [data-testid="stCaption"] {
     font-size: 0.78rem !important;
     color: #94a3b8 !important;
+}
+
+/* ── Fondo de aplicación gris (estilo enterprise dashboard) ──────────────
+   El contenido vive en tarjetas blancas que resaltan sobre este fondo.
+   Refuerza el theme de config.toml por si el despliegue lo ignora. */
+[data-testid="stAppViewContainer"],
+[data-testid="stMain"] {
+    background: var(--lvca-bg-app) !important;
 }
 
 /* ── Ocultar nav nativa de Streamlit ───────────────────────────────────── */
@@ -321,7 +329,24 @@ small, .small, .stCaption, [data-testid="stCaption"] {
     background: #f1f5f9 !important;
 }
 
-/* st.table también */
+/* Gráficos Plotly como tarjeta blanca — sobre el fondo gris quedan
+   integrados al sistema de cards sin tocar cada figura. */
+[data-testid="stPlotlyChart"] {
+    background: #ffffff;
+    border: 1px solid #eef2f6;
+    border-radius: var(--lvca-radius-md);
+    box-shadow: var(--lvca-shadow-xs);
+    padding: 10px 12px;
+}
+
+/* st.table también — tarjeta blanca */
+[data-testid="stTable"] {
+    background: #ffffff;
+    border: 1px solid #eef2f6 !important;
+    border-radius: var(--lvca-radius-md);
+    box-shadow: var(--lvca-shadow-xs);
+    overflow: hidden;
+}
 [data-testid="stTable"] table {
     border-collapse: collapse;
     border: none !important;
@@ -375,6 +400,19 @@ button[kind="primary"]:focus-visible,
 button[kind="secondary"]:focus-visible {
     outline: none;
     box-shadow: var(--lvca-focus-ring) !important;
+}
+
+/* Botones secundarios — superficie blanca para resaltar sobre fondo gris */
+.stButton > button[kind="secondary"],
+button[kind="secondary"] {
+    background: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    color: #334155 !important;
+}
+.stButton > button[kind="secondary"]:hover,
+button[kind="secondary"]:hover {
+    border-color: #cbd5e1 !important;
+    background: #ffffff !important;
 }
 
 /* Botones primarios — verde institucional con gradiente sutil */
@@ -485,21 +523,28 @@ input:focus, textarea:focus, [data-baseweb="select"]:focus-within {
     font-weight: 500 !important;
 }
 
-/* ── Expanders ─────────────────────────────────────────────────────────── */
+/* ── Expanders — tarjeta blanca ────────────────────────────────────────── */
 [data-testid="stExpander"] {
-    border: 1px solid #e2e8f0;
-    border-radius: 10px;
-    transition: border-color 0.15s ease;
+    background: #ffffff;
+    border: 1px solid #eef2f6;
+    border-radius: var(--lvca-radius-md);
+    box-shadow: var(--lvca-shadow-xs);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 [data-testid="stExpander"]:hover {
-    border-color: #cbd5e1;
+    border-color: #e2e8f0;
+    box-shadow: var(--lvca-shadow-sm);
+}
+[data-testid="stExpander"] details,
+[data-testid="stExpander"] summary {
+    background: transparent !important;
 }
 
-/* ── Dividers — más aireados y casi invisibles ─────────────────────────── */
+/* ── Dividers — visibles sobre el fondo gris de la app ─────────────────── */
 hr {
-    border-color: #f1f5f9 !important;
+    border-color: #dbe3ec !important;
     margin: 1.5rem 0 !important;
-    opacity: 0.7;
+    opacity: 0.9;
 }
 
 /* ── Espaciado entre bloques principales ───────────────────────────────── */
@@ -566,10 +611,10 @@ hr {
     gap: 8px;
     color: #1e293b;
     font-size: 0.92rem;
-    font-weight: 500;
+    font-weight: 600;
     margin: 1.6rem 0 0.6rem 0;
     padding-bottom: 6px;
-    border-bottom: 1px solid #f1f5f9;
+    border-bottom: 1px solid #dbe3ec;
     text-transform: uppercase;
     letter-spacing: 0.04em;
 }
@@ -591,13 +636,15 @@ hr {
 
 /* ── Info box ──────────────────────────────────────────────────────────── */
 .lvca-info-box {
-    background: #f8fafc;
+    background: #ffffff;
+    border: 1px solid #eef2f6;
     border-left: 3px solid #1b6b35;
     border-radius: 0 8px 8px 0;
     padding: 12px 16px;
     margin: 8px 0;
     font-size: 0.88rem;
     color: #334155;
+    box-shadow: var(--lvca-shadow-xs);
 }
 
 /* ── Alertas ───────────────────────────────────────────────────────────── */
@@ -672,7 +719,7 @@ hr {
 /* ── Tabs SSDH: padding grande, underline azul al activar, fondo tintado
       en hover. Aplica a todas las st.tabs de la plataforma. ──────────── */
 [data-testid="stTabs"] {
-    border-bottom: 1px solid #eef0f2;
+    border-bottom: 1px solid #dbe3ec;
     margin-bottom: 14px;
 }
 [data-testid="stTabs"] button[data-baseweb="tab"] {
@@ -949,7 +996,8 @@ hr {
     padding: 10px 14px;
     margin: 6px 0;
     border-radius: 8px;
-    background: #f8fafc;
+    background: #ffffff;
+    border: 1px solid #eef2f6;
     border-left: 3px solid #0a9396;
     font-size: 0.85rem;
     color: #1e293b;
@@ -1418,12 +1466,10 @@ _TOP_NAV_CSS = """<style>
     left: 0 !important;
     right: 0 !important;
     z-index: 999 !important;
-    background: rgba(255, 255, 255, 0.88) !important;
-    -webkit-backdrop-filter: blur(8px);
-    backdrop-filter: blur(8px);
-    border-bottom: 1px solid #eef2f6;
+    background: linear-gradient(180deg, #0C3568 0%, #092B57 100%) !important;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
     padding: 10px 1.5rem 6px 1.5rem;
-    box-shadow: 0 1px 2px rgba(15,23,42,0.05);
+    box-shadow: 0 2px 12px rgba(8, 42, 87, 0.30);
 }
 
 /* Ocultar el stHeader de Streamlit (la delgada barra nativa arriba)
@@ -1447,33 +1493,34 @@ _TOP_NAV_CSS = """<style>
 .lvca-brand-logo {
     width: 28px; height: 28px;
     border-radius: 8px;
-    background: linear-gradient(135deg, #1f7a3d 0%, #1b6b35 100%);
+    background: linear-gradient(135deg, #22c55e 0%, #1b6b35 100%);
     color: #ffffff;
     display: inline-flex; align-items: center; justify-content: center;
     flex-shrink: 0;
-    box-shadow: 0 2px 6px rgba(27,107,53,0.25);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
 }
 .lvca-brand-logo .material-symbols-rounded { font-size: 18px; line-height: 1; }
 .lvca-brand-name {
-    font-weight: 700; color: #1b6b35; font-size: 1.15rem;
+    font-weight: 700; color: #ffffff; font-size: 1.15rem;
     letter-spacing: -0.015em;
 }
 .lvca-brand-sub {
-    font-size: 0.76rem; color: #64748b;
+    font-size: 0.76rem; color: rgba(255,255,255,0.65);
 }
 .lvca-user-block {
     display: flex; align-items: center; justify-content: flex-end;
     gap: 8px; font-size: 0.76rem; line-height: 1.3;
 }
 .lvca-user-text { text-align: right; }
-.lvca-user-name { font-weight: 600; color: #1e293b; display: block; }
-.lvca-user-rol  { color: #94a3b8; text-transform: uppercase;
+.lvca-user-name { font-weight: 600; color: #ffffff; display: block; }
+.lvca-user-rol  { color: rgba(255,255,255,0.55); text-transform: uppercase;
                   letter-spacing: 0.04em; font-size: 0.66rem; }
 .lvca-user-avatar {
     width: 30px; height: 30px;
     border-radius: 999px;
-    background: rgba(27,107,53,0.10);
-    color: #1b6b35;
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.25);
+    color: #ffffff;
     font-weight: 700; font-size: 0.72rem;
     display: inline-flex; align-items: center; justify-content: center;
     flex-shrink: 0;
@@ -1493,23 +1540,29 @@ _TOP_NAV_CSS = """<style>
     margin: 0 !important;
     font-size: 0.82rem !important;
     font-weight: 500 !important;
-    color: #475569 !important;
+    color: rgba(255,255,255,0.80) !important;
     border-radius: 8px !important;
     border: 1px solid transparent !important;
     background: transparent !important;
     transition: all 0.15s ease !important;
     white-space: nowrap;
 }
+.st-key-lvca_top_nav [data-testid="stPageLink"] a p,
+.st-key-lvca_top_nav [data-testid="stPageLink"] a span,
+.st-key-lvca_top_nav [data-testid="stPageLink"] a div {
+    color: inherit !important;
+}
 .st-key-lvca_top_nav [data-testid="stPageLink"] a:hover {
-    background: #f1f5f9 !important;
-    color: #1b6b35 !important;
+    background: rgba(255,255,255,0.10) !important;
+    color: #ffffff !important;
 }
 /* Página activa: Streamlit marca el link actual con aria-current="page".
    Si la versión instalada no lo emite, la regla simplemente no aplica. */
 .st-key-lvca_top_nav [data-testid="stPageLink"] a[aria-current="page"] {
-    background: rgba(27,107,53,0.08) !important;
-    color: #1b6b35 !important;
+    background: rgba(255,255,255,0.16) !important;
+    color: #ffffff !important;
     font-weight: 600 !important;
+    box-shadow: inset 0 -2px 0 #2dd4bf;
 }
 .st-key-lvca_top_nav [data-testid="stPageLink"] a[aria-current="page"] p {
     font-weight: 600 !important;
