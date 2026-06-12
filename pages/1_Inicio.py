@@ -21,7 +21,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from components.auth_guard import require_rol
-from components.ui_styles import aplicar_estilos, page_header, section_header, top_nav
+from components.ui_styles import COLORS, aplicar_estilos, page_header, section_header, top_nav
 from services.resultado_service import get_metricas_dashboard, get_puntos_con_estado
 
 # Centro del mapa: Arequipa / cuenca Chili-Quilca
@@ -64,13 +64,14 @@ def _render_module_grid() -> None:
             gap: 14px !important;
             padding: 26px 16px 22px 16px !important;
             background: #ffffff !important;
-            border: 1px solid #e8eaed !important;
-            border-radius: 10px !important;
+            border: 1px solid #eef2f6 !important;
+            border-radius: var(--lvca-radius-md, 12px) !important;
             text-align: center !important;
             min-height: 150px !important;
-            box-shadow: 0 1px 2px rgba(15,23,42,0.04) !important;
-            transition: transform 0.15s ease, box-shadow 0.15s ease,
-                        border-color 0.15s ease !important;
+            box-shadow: var(--lvca-shadow-xs, 0 1px 2px rgba(15,23,42,0.05)) !important;
+            transition: transform 0.18s cubic-bezier(0.4,0,0.2,1),
+                        box-shadow 0.18s cubic-bezier(0.4,0,0.2,1),
+                        border-color 0.18s cubic-bezier(0.4,0,0.2,1) !important;
             color: #1a1a1a !important;
             font-weight: 600 !important;
             font-size: 0.92rem !important;
@@ -79,15 +80,15 @@ def _render_module_grid() -> None:
         }
         .st-key-lvca_module_grid [data-testid="stPageLink"] a:hover {
             transform: translateY(-2px) !important;
-            box-shadow: 0 4px 16px rgba(21,101,192,0.15) !important;
-            border-color: #1565C0 !important;
-            color: #1565C0 !important;
+            box-shadow: var(--lvca-shadow-md, 0 4px 12px rgba(15,23,42,0.08)) !important;
+            border-color: #1b6b35 !important;
+            color: #1b6b35 !important;
         }
         /* Primer span dentro del <a> = contenedor del icono (emoji). */
         .st-key-lvca_module_grid [data-testid="stPageLink"] a > span:first-child {
             width: 56px !important;
             height: 56px !important;
-            background: rgba(21,101,192,0.08) !important;
+            background: rgba(27,107,53,0.08) !important;
             border-radius: 50% !important;
             display: inline-flex !important;
             align-items: center !important;
@@ -98,7 +99,7 @@ def _render_module_grid() -> None:
             transition: background 0.15s ease !important;
         }
         .st-key-lvca_module_grid [data-testid="stPageLink"] a:hover > span:first-child {
-            background: rgba(21,101,192,0.15) !important;
+            background: rgba(27,107,53,0.14) !important;
         }
         /* Evitar que el label se trunque con "..." en cards estrechas. */
         .st-key-lvca_module_grid [data-testid="stPageLink"] a p,
@@ -164,26 +165,14 @@ def _render_kpi_card_material(valor, label: str, color: str, icon: str) -> str:
     r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
     halo = f"rgba({r},{g},{b},0.12)"
     return f"""
-    <div style="background:#ffffff; border-radius:8px;
-         padding:14px 18px 12px 18px;
-         border:1px solid #e8eaed;
-         border-bottom:3px solid {color};
-         box-shadow:0 1px 2px rgba(15,23,42,0.04);
-         min-height:110px; display:flex; flex-direction:column;">
-        <div style="display:flex; justify-content:space-between;
-             align-items:flex-start; gap:10px; margin-bottom:14px;">
-            <div style="font-size:0.88rem; color:#374151; font-weight:500;
-                 letter-spacing:-0.01em; flex:1; line-height:1.3;">{label}</div>
-            <div style="width:42px; height:42px; border-radius:50%;
-                 background:{halo};
-                 display:inline-flex; align-items:center;
-                 justify-content:center; flex-shrink:0;">
-                <span class="material-symbols-rounded"
-                    style="font-size:22px; color:{color}; line-height:1;">{icon}</span>
+    <div class="lvca-kpi-lite" style="--kpi-accent:{color}; --kpi-accent-bg:{halo};">
+        <div class="lvca-kpi-lite-head" style="justify-content:space-between;">
+            <div class="lvca-kpi-lite-label" style="flex:1;">{label}</div>
+            <div class="lvca-kpi-lite-icon">
+                <span class="material-symbols-rounded">{icon}</span>
             </div>
         </div>
-        <div style="font-size:1.9rem; font-weight:400;
-             color:#1a1a1a; line-height:1; letter-spacing:-0.02em;">{valor}</div>
+        <div class="lvca-kpi-lite-value">{valor}</div>
     </div>"""
 
 
@@ -191,13 +180,13 @@ def _render_kpis(metricas: dict) -> None:
     cards = [
         {"valor": metricas["muestras_mes"],
          "label": "Muestras (30 d)",
-         "color": "#0A9396", "icon": "science"},
+         "color": COLORS["secondary"], "icon": "science"},
         {"valor": metricas["parametros_mes"],
          "label": "Parámetros analizados",
          "color": "#00796B", "icon": "analytics"},
         {"valor": metricas["excedencias_activas"],
          "label": "Excedencias activas",
-         "color": "#C62828", "icon": "warning"},
+         "color": COLORS["eca_excede"], "icon": "warning"},
         {"valor": metricas["puntos_monitoreados"],
          "label": "Puntos monitoreados",
          "color": "#1565C0", "icon": "place"},
@@ -405,7 +394,11 @@ def _render_donut_estado(puntos: list[dict]) -> None:
     }
     labels = [etiquetas.get(k, k) for k in estados.keys()]
     values = list(estados.values())
-    colors = [{"excedencia": "#c62828", "cumple": "#2e7d32", "sin_datos": "#9e9e9e"}.get(k, "#999") for k in estados.keys()]
+    colors = [{
+        "excedencia": COLORS["eca_excede"],
+        "cumple":     COLORS["eca_cumple"],
+        "sin_datos":  COLORS["eca_sin_dato"],
+    }.get(k, "#999") for k in estados.keys()]
 
     fig = go.Figure(data=[go.Pie(
         labels=labels,
@@ -468,9 +461,9 @@ def _render_mapa(puntos: list[dict]) -> None:
     ).add_to(m)
 
     # Leyenda estilo SSDH-ANA: sin borde, sombra más presente.
-    leyenda = """
+    leyenda = f"""
     <div style="position:fixed; bottom:24px; left:24px; z-index:1000;
-         background:#ffffff; padding:12px 16px; border-radius:8px;
+         background:#ffffff; padding:12px 16px; border-radius:10px;
          font-size:12px; line-height:1.55; min-width:160px;
          box-shadow: 0 4px 16px rgba(15,23,42,0.14),
                      0 1px 3px rgba(15,23,42,0.08);
@@ -478,9 +471,9 @@ def _render_mapa(puntos: list[dict]) -> None:
       <div style="font-weight:700; color:#1a1a1a; font-size:13px;
            letter-spacing:-0.01em; margin-bottom:6px;">Estado ECA</div>
       <div style="color:#475569;">
-        <span style="color:#c62828; font-size:14px;">&#9679;</span> Excedencia activa<br>
-        <span style="color:#2e7d32; font-size:14px;">&#9679;</span> Cumple ECA<br>
-        <span style="color:#9e9e9e; font-size:14px;">&#9679;</span> Sin datos recientes
+        <span style="color:{COLORS['eca_excede']}; font-size:14px;">&#9679;</span> Excedencia activa<br>
+        <span style="color:{COLORS['eca_cumple']}; font-size:14px;">&#9679;</span> Cumple ECA<br>
+        <span style="color:{COLORS['eca_sin_dato']}; font-size:14px;">&#9679;</span> Sin datos recientes
       </div>
     </div>
     """
@@ -497,7 +490,11 @@ def _render_mapa(puntos: list[dict]) -> None:
         icono  = ICONOS_PUNTO.get(estado, "minus-sign")
         n_exc  = p.get("n_excedencias", 0)
 
-        barra_color = {"excedencia": "#dc3545", "cumple": "#28a745", "sin_datos": "#6c757d"}.get(estado, "#6c757d")
+        barra_color = {
+            "excedencia": COLORS["eca_excede"],
+            "cumple":     COLORS["eca_cumple"],
+            "sin_datos":  COLORS["eca_sin_dato"],
+        }.get(estado, COLORS["eca_sin_dato"])
 
         popup_html = (
             f"<div style='min-width:220px; font-family:sans-serif; font-size:13px;'>"

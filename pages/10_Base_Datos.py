@@ -86,62 +86,73 @@ def _colorear_celda(val, eca_id, param_codigo, limites):
     except (ValueError, TypeError):
         return ""
     if _excede_eca(v, eca_id, param_codigo, limites):
-        return "background-color: #ffe0e0; color: #dc3545; font-weight: bold;"
+        return "background-color: #fee2e2; color: #b91c1c; font-weight: bold;"
     return ""
 
 
 # Estilos CSS para la tabla HTML con separadores amarillos por campaña.
+# Paleta alineada con el tema global (ui_styles): header gris #f8fafc,
+# solo bordes horizontales, zebra sutil y celda de excedencia con los
+# mismos tonos del chip ECA "excede".
 _BD_TABLE_CSS = """
 <style>
   .bd-table-wrap {
     overflow-x: auto;
     max-height: 720px;
-    border: 1px solid #dee2e6;
-    border-radius: 6px;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
     margin-bottom: 0.75rem;
+    box-shadow: 0 1px 2px rgba(15,23,42,0.05);
   }
   table.bd-table {
     border-collapse: collapse;
     font-size: 12px;
     width: max-content;
     min-width: 100%;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   }
   table.bd-table thead th {
     position: sticky;
     top: 0;
-    background: #f1f3f5;
-    color: #212529;
+    background: #f8fafc;
+    color: #475569;
     font-weight: 600;
-    padding: 6px 10px;
-    border: 1px solid #dee2e6;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 8px 10px;
+    border: none;
+    border-bottom: 1px solid #e2e8f0;
     text-align: center;
     white-space: nowrap;
     z-index: 2;
   }
   table.bd-table tbody td {
-    padding: 4px 10px;
-    border: 1px solid #e9ecef;
+    padding: 5px 10px;
+    border: none;
+    border-bottom: 1px solid #f1f5f9;
     background: #ffffff;
     white-space: nowrap;
     text-align: right;
+    color: #1e293b;
   }
   table.bd-table tbody td.text { text-align: left; }
-  table.bd-table tbody tr:hover td { background: #f8f9fa; }
+  table.bd-table tbody tr:nth-child(even) td { background: #fcfdfe; }
+  table.bd-table tbody tr:hover td { background: #f1f5f9; }
   table.bd-table td.exceed {
-    background: #ffe0e0 !important;
-    color: #dc3545;
+    background: #fee2e2 !important;
+    color: #b91c1c;
     font-weight: 700;
   }
   table.bd-table tr.bd-sep td {
-    background: #FFEB3B !important;
-    color: #212529;
+    background: #fef3c7 !important;
+    color: #92400e;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    padding: 6px 10px;
-    border-top: 2px solid #f1c40f;
-    border-bottom: 1px solid #e0c200;
+    padding: 7px 10px;
+    border-top: 2px solid #f59e0b;
+    border-bottom: 1px solid #fde68a;
     text-align: left;
   }
 </style>

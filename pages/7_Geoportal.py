@@ -25,6 +25,7 @@ import streamlit as st
 from components.auth_guard import require_rol
 from components.nav_context import consumir_contexto, ir_a
 from components.ui_styles import (
+    COLORS,
     aplicar_estilos,
     kpi_bold_card,
     page_header,
@@ -322,11 +323,11 @@ def _render_barras_tendencia_anual(punto: dict, parametros: list[dict]) -> None:
     colores = []
     for v in df_agg["promedio"]:
         if lim_max is not None and v > lim_max:
-            colores.append("#EF4444")     # excede ECA máx
+            colores.append(COLORS["eca_excede"])    # excede ECA máx
         elif lim_min is not None and v < lim_min:
-            colores.append("#F59E0B")     # debajo ECA mín
+            colores.append(COLORS["eca_alerta"])    # debajo ECA mín
         else:
-            colores.append("#10B981")     # cumple
+            colores.append(COLORS["eca_cumple"])    # cumple
 
     unidad = (param.get("unidades_medida") or {}).get("simbolo", "")
     y_label = f"{param['nombre']} ({unidad})" if unidad else param["nombre"]
@@ -352,19 +353,19 @@ def _render_barras_tendencia_anual(punto: dict, parametros: list[dict]) -> None:
 
     if lim_max is not None:
         fig.add_hline(
-            y=lim_max, line_dash="dash", line_color="#EF4444",
+            y=lim_max, line_dash="dash", line_color=COLORS["eca_excede"],
             line_width=1.6, opacity=0.85,
             annotation_text=f"Máx ECA: {lim_max}",
             annotation_position="top right",
-            annotation_font_size=9, annotation_font_color="#EF4444",
+            annotation_font_size=9, annotation_font_color=COLORS["eca_excede"],
         )
     if lim_min is not None:
         fig.add_hline(
-            y=lim_min, line_dash="dash", line_color="#10B981",
+            y=lim_min, line_dash="dash", line_color=COLORS["eca_cumple"],
             line_width=1.6, opacity=0.85,
             annotation_text=f"Mín ECA: {lim_min}",
             annotation_position="bottom right",
-            annotation_font_size=9, annotation_font_color="#10B981",
+            annotation_font_size=9, annotation_font_color=COLORS["eca_cumple"],
         )
 
     fig.update_layout(
@@ -902,9 +903,9 @@ def _render_linea_estacionalidad(
         if color_phyllum_unico is not None:
             colores_marker.append(color_phyllum_unico)
         elif not tiene_eca:
-            colores_marker.append("#94A3B8")
+            colores_marker.append(COLORS["eca_sin_dato"])
         elif (lim_max is not None and v > lim_max) or (lim_min is not None and v < lim_min):
-            colores_marker.append("#EF4444")
+            colores_marker.append(COLORS["eca_excede"])
         else:
             colores_marker.append("#2563EB")
 
@@ -913,7 +914,7 @@ def _render_linea_estacionalidad(
     color_linea = (
         color_phyllum_unico
         if color_phyllum_unico is not None
-        else ("#10B981" if tiene_eca else "#94A3B8")
+        else (COLORS["eca_cumple"] if tiene_eca else COLORS["eca_sin_dato"])
     )
 
     fig = go.Figure()
@@ -1030,19 +1031,19 @@ def _render_linea_estacionalidad(
     # Líneas ECA solo en físico-químico/campo con ECA
     if lim_max is not None:
         fig.add_hline(
-            y=lim_max, line_dash="dash", line_color="#EF4444",
+            y=lim_max, line_dash="dash", line_color=COLORS["eca_excede"],
             line_width=1.6, opacity=0.95,
             annotation_text=f"Máx ECA: {_format_valor(lim_max)}",
             annotation_position="top right",
-            annotation_font_size=9, annotation_font_color="#EF4444",
+            annotation_font_size=9, annotation_font_color=COLORS["eca_excede"],
         )
     if lim_min is not None:
         fig.add_hline(
-            y=lim_min, line_dash="dash", line_color="#10B981",
+            y=lim_min, line_dash="dash", line_color=COLORS["eca_cumple"],
             line_width=1.6, opacity=0.95,
             annotation_text=f"Mín ECA: {_format_valor(lim_min)}",
             annotation_position="bottom right",
-            annotation_font_size=9, annotation_font_color="#10B981",
+            annotation_font_size=9, annotation_font_color=COLORS["eca_cumple"],
         )
 
     titulo = (

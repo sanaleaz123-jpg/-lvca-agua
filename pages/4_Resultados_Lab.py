@@ -58,8 +58,8 @@ COD_CYANO_BIOVOLUMEN: str = "FITO_CYANOBACTERIA_BIOVOL"
 
 CATEGORIAS_ORDEN = ["Campo", "Fisicoquimico", "Hidrobiologico"]
 
-_BG_VERDE = "#d4edda"
-_BG_ROJO = "#f8d7da"
+_BG_VERDE = ECA_CHIP_STYLES["cumple"]["bg"]
+_BG_ROJO = ECA_CHIP_STYLES["excede"]["bg"]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -82,26 +82,15 @@ def _semaforo_eca(valor, lim_min, lim_max) -> tuple[str, str]:
     return "cumple", _BG_VERDE
 
 
-# Chip de veredicto con 5 estados (motor de cumplimiento).
-# Paleta alineada con SSDH/ANA: verde cumple, rojo excede, amarillo excepción,
-# gris no verificable, lila no aplica.
-_CHIP_ESTADOS: dict[str, dict] = {
-    EstadoECA.CUMPLE:                {"bg": "#d4edda", "fg": "#155724", "label": "Cumple"},
-    EstadoECA.EXCEDE:                {"bg": "#f8d7da", "fg": "#721c24", "label": "Excede"},
-    EstadoECA.EXCEDE_EXCEPCION_ART6: {"bg": "#fff3cd", "fg": "#856404", "label": "Art. 6"},
-    EstadoECA.NO_VERIFICABLE:        {"bg": "#e2e3e5", "fg": "#383d41", "label": "No verif."},
-    EstadoECA.NO_APLICA:             {"bg": "#ede7f6", "fg": "#4527a0", "label": "No aplica"},
-}
-
-
 def _chip_veredicto_eca(veredicto) -> str:
     """
     Retorna HTML de un chip compacto con el estado del veredicto ECA. El motivo
-    se expone via title= (tooltip nativo del navegador).
+    se expone via title= (tooltip nativo del navegador). La paleta vive en
+    components.ui_styles.ECA_CHIP_STYLES (compartida con 8_Informes).
     """
     if veredicto is None:
         return ""
-    est = _CHIP_ESTADOS.get(veredicto.estado)
+    est = ECA_CHIP_STYLES.get(veredicto.estado)
     if est is None:
         return ""
 
@@ -115,12 +104,7 @@ def _chip_veredicto_eca(veredicto) -> str:
         pct = (veredicto.valor_comparado / veredicto.eca_valor_maximo - 1) * 100
         label = f"{label} +{pct:.0f}%"
 
-    motivo = (veredicto.motivo or "").replace('"', "'")
-    return (
-        f'<div title="{motivo}" style="background:{est["bg"]};color:{est["fg"]};'
-        f'padding:2px 8px;border-radius:10px;text-align:center;font-size:0.82em;'
-        f'font-weight:500;white-space:nowrap">{label}</div>'
-    )
+    return chip_eca_html(veredicto.estado, motivo=veredicto.motivo or "", label=label)
 
 
 def _chip_oms_cianobacterias_cel(valor: float | None) -> str:

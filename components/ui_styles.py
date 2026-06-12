@@ -41,6 +41,13 @@ COLORS = {
     "border":        "#e2e8f0",
     "surface":       "#ffffff",
     "surface_alt":   "#f8fafc",
+    # Semáforo ECA unificado — espejo Python de las variables CSS
+    # --lvca-acento-* (:root). Usar SIEMPRE estas claves en gráficos
+    # Plotly/Folium y HTML inyectado, nunca hex literales.
+    "eca_cumple":    "#10B981",
+    "eca_alerta":    "#F59E0B",
+    "eca_excede":    "#EF4444",
+    "eca_sin_dato":  "#94A3B8",
 }
 
 
@@ -163,6 +170,18 @@ _GLOBAL_CSS = """<style>
     --lvca-text:              #0F172A;
     --lvca-text-muted:        #64748B;
     --lvca-text-faint:        #94A3B8;
+
+    /* Tokens de forma, profundidad y movimiento */
+    --lvca-radius-sm:   8px;
+    --lvca-radius-md:   12px;
+    --lvca-radius-lg:   16px;
+    --lvca-shadow-xs:   0 1px 2px rgba(15,23,42,0.05);
+    --lvca-shadow-sm:   0 1px 3px rgba(15,23,42,0.06), 0 1px 2px rgba(15,23,42,0.04);
+    --lvca-shadow-md:   0 4px 12px rgba(15,23,42,0.08), 0 2px 4px rgba(15,23,42,0.04);
+    --lvca-shadow-lg:   0 12px 32px rgba(15,23,42,0.12), 0 4px 8px rgba(15,23,42,0.05);
+    --lvca-ease:        cubic-bezier(0.4, 0, 0.2, 1);
+    --lvca-t:           0.18s;
+    --lvca-focus-ring:  0 0 0 3px rgba(27,107,53,0.15);
 }
 
 /* Tipografía global Inter — densidad ajustada para minimalismo */
@@ -179,10 +198,10 @@ h1, h2, h3, h4, h5, h6 {
     letter-spacing: -0.015em;
     color: #0f172a;
 }
-h1 { font-weight: 600 !important; font-size: 1.6rem !important; }
-h2 { font-weight: 600 !important; font-size: 1.3rem !important; }
-h3 { font-weight: 600 !important; font-size: 1.1rem !important; }
-h4 { font-weight: 500 !important; font-size: 0.98rem !important; }
+h1 { font-weight: 700 !important; font-size: 1.5rem !important; letter-spacing: -0.02em; }
+h2 { font-weight: 600 !important; font-size: 1.25rem !important; }
+h3 { font-weight: 600 !important; font-size: 1.05rem !important; }
+h4 { font-weight: 600 !important; font-size: 0.95rem !important; }
 small, .small, .stCaption, [data-testid="stCaption"] {
     font-size: 0.78rem !important;
     color: #94a3b8 !important;
@@ -232,18 +251,19 @@ small, .small, .stCaption, [data-testid="stCaption"] {
     padding-left: 16px !important;
 }
 
-/* ── Métricas — minimalismo equilibrado: borde casi invisible, sin sombra ── */
+/* ── Métricas — tarjeta con profundidad sutil y lift en hover ──────────── */
 [data-testid="stMetric"] {
     background: #ffffff;
-    border: 1px solid #f1f5f9;
-    border-radius: 10px;
+    border: 1px solid #eef2f6;
+    border-radius: var(--lvca-radius-md);
     padding: 18px 22px;
-    box-shadow: none;
-    transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: var(--lvca-shadow-xs);
+    transition: all var(--lvca-t) var(--lvca-ease);
 }
 [data-testid="stMetric"]:hover {
     border-color: #e2e8f0;
-    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+    box-shadow: var(--lvca-shadow-md);
+    transform: translateY(-1px);
 }
 [data-testid="stMetric"] label {
     color: #94a3b8 !important;
@@ -254,9 +274,10 @@ small, .small, .stCaption, [data-testid="stCaption"] {
 }
 [data-testid="stMetric"] [data-testid="stMetricValue"] {
     font-size: 1.85rem !important;
-    font-weight: 600 !important;
+    font-weight: 700 !important;
     color: #0f172a !important;
     letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
 }
 [data-testid="stMetric"] [data-testid="stMetricDelta"] {
     font-size: 0.78rem !important;
@@ -276,15 +297,16 @@ small, .small, .stCaption, [data-testid="stCaption"] {
 
 /* ── DataFrames — sin líneas verticales, header limpio ─────────────────── */
 [data-testid="stDataFrame"] {
-    border-radius: 10px;
+    border-radius: var(--lvca-radius-md);
     overflow: hidden;
-    border: 1px solid #f1f5f9;
+    border: 1px solid #eef2f6;
+    box-shadow: var(--lvca-shadow-xs);
 }
 [data-testid="stDataFrame"] [role="columnheader"] {
-    background: #ffffff !important;
+    background: #f8fafc !important;
     border-bottom: 1px solid #e2e8f0 !important;
     border-right: none !important;
-    color: #64748b !important;
+    color: #475569 !important;
     font-weight: 600 !important;
     font-size: 0.74rem !important;
     text-transform: uppercase;
@@ -296,7 +318,7 @@ small, .small, .stCaption, [data-testid="stCaption"] {
     font-size: 0.86rem !important;
 }
 [data-testid="stDataFrame"] [role="row"]:hover [role="gridcell"] {
-    background: #fafbfc !important;
+    background: #f1f5f9 !important;
 }
 
 /* st.table también */
@@ -351,21 +373,22 @@ button[kind="secondary"]:active {
 .stButton > button:focus-visible,
 button[kind="primary"]:focus-visible,
 button[kind="secondary"]:focus-visible {
-    outline: 2px solid #1b6b35;
-    outline-offset: 2px;
+    outline: none;
+    box-shadow: var(--lvca-focus-ring) !important;
 }
 
-/* Botones primarios — verde institucional */
+/* Botones primarios — verde institucional con gradiente sutil */
 .stButton > button[kind="primary"],
 button[kind="primary"] {
-    background-color: #1b6b35 !important;
+    background: linear-gradient(180deg, #1f7a3d 0%, #1b6b35 100%) !important;
     border-color: #1b6b35 !important;
     color: white !important;
 }
 .stButton > button[kind="primary"]:hover,
 button[kind="primary"]:hover {
-    background-color: #145228 !important;
+    background: linear-gradient(180deg, #1b6b35 0%, #175a2d 100%) !important;
     border-color: #145228 !important;
+    box-shadow: 0 4px 12px rgba(27, 107, 53, 0.25) !important;
 }
 
 /* Clase auxiliar para botones destructivos: aplicar como wrapper o mediante
@@ -408,29 +431,33 @@ input:focus, textarea:focus, [data-baseweb="select"]:focus-within {
     box-shadow: 0 0 0 3px rgba(27, 107, 53, 0.12);
 }
 
-/* ── Formularios — borde más sutil, sin sombra ─────────────────────────── */
+/* ── Formularios — tarjeta con profundidad mínima ──────────────────────── */
 [data-testid="stForm"] {
-    border: 1px solid #f1f5f9 !important;
-    border-radius: 12px !important;
+    border: 1px solid #eef2f6 !important;
+    border-radius: var(--lvca-radius-md) !important;
     padding: 24px !important;
     background: #ffffff !important;
-    box-shadow: none;
+    box-shadow: var(--lvca-shadow-xs);
 }
 
-/* Inputs estándar — más livianos, focus en verde institucional */
+/* Inputs estándar — fondo blanco limpio, focus en verde institucional */
 [data-baseweb="input"] input,
 [data-baseweb="textarea"] textarea,
 [data-baseweb="select"] > div {
-    background: #fafbfc !important;
+    background: #ffffff !important;
     border-color: #e2e8f0 !important;
-    border-radius: 8px !important;
+    border-radius: var(--lvca-radius-sm) !important;
     transition: all 0.15s ease;
+}
+[data-baseweb="input"] input {
+    padding-top: 0.55rem !important;
+    padding-bottom: 0.55rem !important;
 }
 [data-baseweb="input"] input:focus,
 [data-baseweb="textarea"] textarea:focus {
     background: #ffffff !important;
     border-color: #1b6b35 !important;
-    box-shadow: 0 0 0 3px rgba(27, 107, 53, 0.10) !important;
+    box-shadow: var(--lvca-focus-ring) !important;
 }
 
 /* Variante minimalista para formularios largos: solo borde inferior */
@@ -606,21 +633,23 @@ hr {
     background: #0D47A1;
     color: #ffffff;
     text-align: center;
-    font-size: 0.72rem;
+    font-size: 0.7rem;
     font-weight: 500;
-    padding: 7px 16px 6px 16px;
+    padding: 5px 16px;
     z-index: 100;
     letter-spacing: 0.02em;
-    box-shadow: 0 -2px 8px rgba(13, 71, 161, 0.15);
+    border-top: 1px solid rgba(255,255,255,0.12);
 }
 .lvca-footer .lvca-footer-sep {
     margin: 0 8px;
     opacity: 0.55;
 }
 /* Padding-bottom en el main container para que el contenido no se
-   oculte detrás del footer fijo. */
-[data-testid="stMainBlockContainer"] {
-    padding-bottom: 48px !important;
+   oculte detrás del footer fijo. Se duplica sobre .block-container
+   como fallback por si cambia el data-testid en versiones futuras. */
+[data-testid="stMainBlockContainer"],
+.block-container {
+    padding-bottom: 56px !important;
 }
 
 /* ── Filter bar estilo SSDH: blanco con sombra sutil ──────────────────── */
@@ -658,14 +687,16 @@ hr {
     transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease !important;
 }
 [data-testid="stTabs"] button[data-baseweb="tab"]:hover {
-    color: #1565C0 !important;
-    background: rgba(21, 101, 192, 0.04) !important;
+    color: #1b6b35 !important;
+    background: rgba(27, 107, 53, 0.05) !important;
 }
 [data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"] {
-    color: #1565C0 !important;
+    color: #1b6b35 !important;
     font-weight: 600 !important;
-    border-bottom-color: #1565C0 !important;
-    background: rgba(21, 101, 192, 0.06) !important;
+    border-bottom-color: transparent !important;
+    border-image: linear-gradient(90deg, #1b6b35, #0a9396) 1 !important;
+    border-bottom: 2.5px solid !important;
+    background: rgba(27, 107, 53, 0.06) !important;
 }
 /* El highlight nativo de Streamlit (la barrita inferior) lo ocultamos:
    nosotros estamos usando border-bottom del propio botón para el underline. */
@@ -1138,6 +1169,154 @@ hr {
     font-variant-numeric: tabular-nums;
 }
 
+/* ── Banner de página (page_header + login) ─────────────────────────────
+   Gradiente azul institucional con profundidad, textura sutil de "agua"
+   y filete inferior verde→teal que une las dos identidades cromáticas. */
+.lvca-banner {
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(120deg, #0A3D7A 0%, #0D47A1 45%, #1565C0 100%);
+    color: white;
+    padding: 22px 28px;
+    border-radius: 14px;
+    box-shadow: 0 8px 24px rgba(13, 71, 161, 0.18);
+    margin-bottom: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+.lvca-banner::before {
+    content: "";
+    position: absolute;
+    top: -60px; right: -40px;
+    width: 280px; height: 280px;
+    background: radial-gradient(circle, rgba(255,255,255,0.07) 0%, transparent 70%);
+    pointer-events: none;
+}
+.lvca-banner::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #1b6b35, #0a9396);
+}
+.lvca-banner .lvca-banner-body { flex: 1; min-width: 260px; position: relative; }
+.lvca-banner h1 {
+    margin: 0;
+    font-size: 1.45rem !important;
+    font-weight: 700 !important;
+    color: #ffffff !important;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+}
+.lvca-banner .lvca-banner-sub {
+    margin: 4px 0 0 0;
+    font-size: 0.82rem;
+    color: rgba(255,255,255,0.85);
+    font-weight: 400;
+}
+.lvca-banner .lvca-banner-ambito {
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(255,255,255,0.14);
+    border: 1px solid rgba(255,255,255,0.25);
+    backdrop-filter: blur(4px);
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    color: #ffffff;
+    font-weight: 500;
+    white-space: nowrap;
+    position: relative;
+}
+
+/* ── KPI "lite": tarjeta blanca con acento semántico ────────────────────
+   Ícono circular pastel + valor grande + borde inferior 3px de color.
+   Variantes: azul / verde / amarillo / rojo / gris. */
+.lvca-kpi-lite {
+    background: #ffffff;
+    border: 1px solid #eef2f6;
+    border-radius: var(--lvca-radius-md);
+    padding: 16px 18px;
+    box-shadow: var(--lvca-shadow-xs);
+    transition: all var(--lvca-t) var(--lvca-ease);
+    position: relative;
+    overflow: hidden;
+    height: 100%;
+}
+.lvca-kpi-lite::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    height: 3px;
+    background: var(--kpi-accent, var(--lvca-brand-azul));
+}
+.lvca-kpi-lite:hover {
+    box-shadow: var(--lvca-shadow-md);
+    transform: translateY(-1px);
+}
+.lvca-kpi-lite .lvca-kpi-lite-head {
+    display: flex; align-items: center; gap: 10px;
+}
+.lvca-kpi-lite .lvca-kpi-lite-icon {
+    width: 36px; height: 36px;
+    border-radius: 999px;
+    display: inline-flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    background: var(--kpi-accent-bg, #e0f2fe);
+    color: var(--kpi-accent, var(--lvca-brand-azul));
+}
+.lvca-kpi-lite .lvca-kpi-lite-icon .material-symbols-rounded { font-size: 20px; }
+.lvca-kpi-lite .lvca-kpi-lite-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    line-height: 1.3;
+}
+.lvca-kpi-lite .lvca-kpi-lite-value {
+    font-size: 1.9rem;
+    font-weight: 700;
+    color: #0f172a;
+    letter-spacing: -0.02em;
+    margin-top: 8px;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+}
+.lvca-kpi-lite .lvca-kpi-lite-foot {
+    font-size: 0.74rem;
+    color: #64748b;
+    margin-top: 6px;
+}
+.lvca-kpi-lite.verde    { --kpi-accent: var(--lvca-acento-verde);    --kpi-accent-bg: #dcfce7; }
+.lvca-kpi-lite.amarillo { --kpi-accent: var(--lvca-acento-amarillo); --kpi-accent-bg: #fef3c7; }
+.lvca-kpi-lite.rojo     { --kpi-accent: var(--lvca-acento-rojo);     --kpi-accent-bg: #fee2e2; }
+.lvca-kpi-lite.gris     { --kpi-accent: #94a3b8;                     --kpi-accent-bg: #f1f5f9; }
+.lvca-kpi-lite.azul     { --kpi-accent: var(--lvca-brand-azul-light); --kpi-accent-bg: #e0f2fe; }
+
+/* ── Scrollbar custom (WebKit) — detalle de pulido en tablas largas ───── */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background-color: #94a3b8; }
+
+/* ── Accesibilidad: respetar preferencia de movimiento reducido ───────── */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
 html { scroll-behavior: smooth; }
 </style>
 """
@@ -1193,31 +1372,21 @@ def page_header(titulo: str, subtitulo: str = "", ambito: str = "") -> None:
     sin cambios adicionales.
     """
     ambito_html = (
-        f'<div style="display:flex; align-items:center; gap:8px; '
-        f'background:rgba(255,255,255,0.12); padding:6px 14px; '
-        f'border-radius:20px; font-size:0.8rem; color:#ffffff; '
-        f'font-weight:500; white-space:nowrap;">'
+        f'<div class="lvca-banner-ambito">'
         f'<span class="material-symbols-rounded" '
         f'style="font-size:18px; line-height:1;">map</span> {ambito}'
         f'</div>'
         if ambito else ""
     )
     sub_html = (
-        f'<p style="margin:4px 0 0 0; font-size:0.82rem; '
-        f'color:rgba(255,255,255,0.82); font-weight:400;">{subtitulo}</p>'
+        f'<p class="lvca-banner-sub">{subtitulo}</p>'
         if subtitulo else ""
     )
     st.markdown(
         f"""
-        <div style="background:linear-gradient(135deg,#0D47A1 0%,#1565C0 100%);
-             color:white; padding:18px 26px; border-radius:10px;
-             box-shadow:0 4px 12px rgba(13,71,161,0.25);
-             margin-bottom:18px;
-             display:flex; align-items:center; justify-content:space-between;
-             gap:20px; flex-wrap:wrap;">
-            <div style="flex:1; min-width:260px;">
-                <h1 style="margin:0; font-size:1.5rem; font-weight:700;
-                     color:#ffffff; letter-spacing:-0.02em; line-height:1.2;">{titulo}</h1>
+        <div class="lvca-banner">
+            <div class="lvca-banner-body">
+                <h1>{titulo}</h1>
                 {sub_html}
             </div>
             {ambito_html}
@@ -1249,10 +1418,12 @@ _TOP_NAV_CSS = """<style>
     left: 0 !important;
     right: 0 !important;
     z-index: 999 !important;
-    background: #ffffff !important;
-    border-bottom: 1px solid #e2e8f0;
+    background: rgba(255, 255, 255, 0.88) !important;
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid #eef2f6;
     padding: 10px 1.5rem 6px 1.5rem;
-    box-shadow: 0 1px 3px rgba(15,23,42,0.04);
+    box-shadow: 0 1px 2px rgba(15,23,42,0.05);
 }
 
 /* Ocultar el stHeader de Streamlit (la delgada barra nativa arriba)
@@ -1270,9 +1441,19 @@ _TOP_NAV_CSS = """<style>
 }
 /* Línea 1: marca + usuario */
 .lvca-brand {
-    display: flex; align-items: baseline; gap: 12px;
+    display: flex; align-items: center; gap: 10px;
     margin-bottom: 4px;
 }
+.lvca-brand-logo {
+    width: 28px; height: 28px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #1f7a3d 0%, #1b6b35 100%);
+    color: #ffffff;
+    display: inline-flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    box-shadow: 0 2px 6px rgba(27,107,53,0.25);
+}
+.lvca-brand-logo .material-symbols-rounded { font-size: 18px; line-height: 1; }
 .lvca-brand-name {
     font-weight: 700; color: #1b6b35; font-size: 1.15rem;
     letter-spacing: -0.015em;
@@ -1281,11 +1462,23 @@ _TOP_NAV_CSS = """<style>
     font-size: 0.76rem; color: #64748b;
 }
 .lvca-user-block {
-    text-align: right; font-size: 0.76rem; line-height: 1.3;
+    display: flex; align-items: center; justify-content: flex-end;
+    gap: 8px; font-size: 0.76rem; line-height: 1.3;
 }
+.lvca-user-text { text-align: right; }
 .lvca-user-name { font-weight: 600; color: #1e293b; display: block; }
 .lvca-user-rol  { color: #94a3b8; text-transform: uppercase;
                   letter-spacing: 0.04em; font-size: 0.66rem; }
+.lvca-user-avatar {
+    width: 30px; height: 30px;
+    border-radius: 999px;
+    background: rgba(27,107,53,0.10);
+    color: #1b6b35;
+    font-weight: 700; font-size: 0.72rem;
+    display: inline-flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    letter-spacing: 0.02em;
+}
 
 /* Page links dentro del top-nav: se ven como pills horizontales */
 .st-key-lvca_top_nav [data-testid="stPageLink"] {
@@ -1310,6 +1503,16 @@ _TOP_NAV_CSS = """<style>
 .st-key-lvca_top_nav [data-testid="stPageLink"] a:hover {
     background: #f1f5f9 !important;
     color: #1b6b35 !important;
+}
+/* Página activa: Streamlit marca el link actual con aria-current="page".
+   Si la versión instalada no lo emite, la regla simplemente no aplica. */
+.st-key-lvca_top_nav [data-testid="stPageLink"] a[aria-current="page"] {
+    background: rgba(27,107,53,0.08) !important;
+    color: #1b6b35 !important;
+    font-weight: 600 !important;
+}
+.st-key-lvca_top_nav [data-testid="stPageLink"] a[aria-current="page"] p {
+    font-weight: 600 !important;
 }
 /* Material Symbols en los links del top-nav: tamaño y color coherentes
    con el tamaño del label (16px, color heredado). */
@@ -1402,6 +1605,9 @@ def top_nav() -> None:
         with head_l:
             st.markdown(
                 '<div class="lvca-brand">'
+                '<span class="lvca-brand-logo">'
+                '<span class="material-symbols-rounded">water_drop</span>'
+                '</span>'
                 '<span class="lvca-brand-name">LVCA</span>'
                 '<span class="lvca-brand-sub">Plataforma de Vigilancia y Calidad del Agua · AUTODEMA</span>'
                 '</div>',
@@ -1409,10 +1615,16 @@ def top_nav() -> None:
             )
         with head_r:
             rol_label = sesion.rol.replace("_", " ").capitalize()
+            iniciales = "".join(
+                p[0] for p in (sesion.nombre_completo or "").split()[:2]
+            ).upper() or "U"
             st.markdown(
                 f'<div class="lvca-user-block">'
+                f'<span class="lvca-user-text">'
                 f'<span class="lvca-user-name">{sesion.nombre_completo}</span>'
                 f'<span class="lvca-user-rol">{rol_label}</span>'
+                f'</span>'
+                f'<span class="lvca-user-avatar">{iniciales}</span>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
@@ -1747,6 +1959,38 @@ _ESTADO_RESULTADO = {
     "sin_dato": ("sin_dato", None, "Sin dato"),
     "sin_eca":  ("sin_dato", None, "Sin ECA"),
 }
+
+# Chip de veredicto ECA (motor de cumplimiento, 5 estados) — fuente única
+# compartida por 4_Resultados_Lab y 8_Informes. Las claves coinciden con los
+# valores string de services.cumplimiento_service.EstadoECA (no se importa
+# aquí para no acoplar components → services).
+ECA_CHIP_STYLES: dict[str, dict] = {
+    "cumple":                {"bg": "#dcfce7", "fg": "#166534", "label": "Cumple"},
+    "excede":                {"bg": "#fee2e2", "fg": "#b91c1c", "label": "Excede"},
+    "excede_excepcion_art6": {"bg": "#fef3c7", "fg": "#b45309", "label": "Art. 6"},
+    "no_verificable":        {"bg": "#f1f5f9", "fg": "#475569", "label": "No verif."},
+    "no_aplica":             {"bg": "#ede9fe", "fg": "#6d28d9", "label": "No aplica"},
+}
+
+
+def chip_eca_html(estado: str, motivo: str = "", label: str | None = None) -> str:
+    """
+    HTML de un chip pill compacto del veredicto ECA. El motivo se expone
+    vía title= (tooltip nativo). `label` permite sobreescribir el texto
+    (ej. "Excede +320%"); si se omite usa el label del estado.
+    """
+    info = ECA_CHIP_STYLES.get(estado)
+    if info is None:
+        return estado or ""
+    motivo = (motivo or "").replace('"', "'")
+    texto = label if label is not None else info["label"]
+    return (
+        f'<span title="{motivo}" style="display:inline-block;'
+        f'background:{info["bg"]};color:{info["fg"]};'
+        f'padding:2px 10px;border-radius:999px;text-align:center;'
+        f'font-size:0.75rem;font-weight:600;white-space:nowrap;'
+        f'line-height:1.5;">{texto}</span>'
+    )
 
 
 def estado_pill(estado: str, dominio: str = "campana", extra: str = "") -> str:

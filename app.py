@@ -112,7 +112,7 @@ def _pantalla_login() -> None:
         [data-testid='stMainBlockContainer'] {
             padding-top: 32px !important;
             padding-bottom: 60px !important;
-            background: #f8fafc;
+            background: linear-gradient(180deg, #EFF6FF 0%, #F8FAFC 60%);
             max-width: 100% !important;
         }
         /* Anti-flash: ocultar la card mientras el form nativo hidrata.
@@ -136,20 +136,21 @@ def _pantalla_login() -> None:
            blanca con sombra y banner azul arriba. */
         .st-key-lvca_login_card {
             background: #ffffff !important;
-            border-radius: 14px !important;
-            box-shadow: 0 12px 32px rgba(13, 71, 161, 0.12),
-                        0 4px 8px rgba(15, 23, 42, 0.04) !important;
+            border-radius: 16px !important;
+            box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12),
+                        0 4px 8px rgba(15, 23, 42, 0.05) !important;
             overflow: hidden !important;
             padding: 0 !important;
-            border: 1px solid #eef0f2 !important;
+            border: 1px solid #eef2f6 !important;
         }
-        /* Inputs del login con estilo más limpio. */
+        /* Inputs del login: focus verde institucional, igual que el resto
+           de la plataforma. */
         .st-key-lvca_login_card [data-baseweb="input"] {
             border-radius: 8px !important;
         }
         .st-key-lvca_login_card [data-baseweb="input"]:focus-within {
-            border-color: #1565C0 !important;
-            box-shadow: 0 0 0 3px rgba(21,101,192,0.12) !important;
+            border-color: #1b6b35 !important;
+            box-shadow: 0 0 0 3px rgba(27,107,53,0.15) !important;
         }
         /* Labels de form */
         .st-key-lvca_login_card label p,
@@ -187,8 +188,8 @@ def _pantalla_login() -> None:
            del tema oscuro / fondo gris. */
         .lvca-logo-frame {
             background: #ffffff;
-            border: 1px solid #eef0f2;
-            border-radius: 10px;
+            border: 1px solid #eef2f6;
+            border-radius: 12px;
             padding: 14px 18px;
             height: 110px;
             display: flex;
@@ -217,8 +218,12 @@ def _pantalla_login() -> None:
             # del card recorta los bordes, no necesitamos forzarlo).
             st.markdown(
                 """
-                <div style="background:linear-gradient(135deg,#0D47A1 0%,#1565C0 100%);
+                <div style="position:relative; overflow:hidden;
+                     background:linear-gradient(120deg,#0A3D7A 0%,#0D47A1 45%,#1565C0 100%);
                      color:white; padding:28px 28px 22px 28px; text-align:center;">
+                    <div style="position:absolute; top:-60px; right:-40px;
+                         width:240px; height:240px; pointer-events:none;
+                         background:radial-gradient(circle, rgba(255,255,255,0.08) 0%, transparent 70%);"></div>
                     <h1 style="margin:0; font-size:1.45rem; font-weight:700;
                          color:#ffffff; letter-spacing:-0.02em; line-height:1.25;">
                         Laboratorio de Vigilancia<br>de Calidad de Agua
@@ -228,6 +233,8 @@ def _pantalla_login() -> None:
                          letter-spacing:0.1em; text-transform:uppercase;">
                         AUTODEMA
                     </p>
+                    <div style="position:absolute; left:0; right:0; bottom:0; height:3px;
+                         background:linear-gradient(90deg,#1b6b35,#0a9396);"></div>
                 </div>
                 """,
                 unsafe_allow_html=True,

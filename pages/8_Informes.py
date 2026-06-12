@@ -18,7 +18,14 @@ import streamlit as st
 
 from components.auth_guard import require_rol
 from components.nav_context import consumir_contexto, ir_a, preseleccionar, rol_alcanza
-from components.ui_styles import aplicar_estilos, page_header, section_header, top_nav
+from components.ui_styles import (
+    ECA_CHIP_STYLES,
+    aplicar_estilos,
+    chip_eca_html,
+    page_header,
+    section_header,
+    top_nav,
+)
 from services.informe_service import (
     get_resumen_campana,
     get_resumen_punto,
@@ -35,26 +42,14 @@ from services.punto_service import get_puntos
 from services.cumplimiento_service import EstadoECA
 
 
-# Paleta de veredictos — alineada con 4_Resultados_Lab.py
-_CHIP_ESTADOS: dict[str, dict] = {
-    EstadoECA.CUMPLE:                {"bg": "#d4edda", "fg": "#155724", "label": "Cumple"},
-    EstadoECA.EXCEDE:                {"bg": "#f8d7da", "fg": "#721c24", "label": "Excede"},
-    EstadoECA.EXCEDE_EXCEPCION_ART6: {"bg": "#fff3cd", "fg": "#856404", "label": "Art. 6"},
-    EstadoECA.NO_VERIFICABLE:        {"bg": "#e2e3e5", "fg": "#383d41", "label": "No verif."},
-    EstadoECA.NO_APLICA:             {"bg": "#ede7f6", "fg": "#4527a0", "label": "No aplica"},
-}
+# Paleta de veredictos — fuente única en components.ui_styles, compartida
+# con 4_Resultados_Lab.py. Se mantiene el alias local porque varios puntos
+# del módulo consultan labels vía _CHIP_ESTADOS.get(...).
+_CHIP_ESTADOS: dict[str, dict] = ECA_CHIP_STYLES
 
 
 def _chip_estado_html(estado: str, motivo: str = "") -> str:
-    info = _CHIP_ESTADOS.get(estado)
-    if info is None:
-        return estado or ""
-    motivo = (motivo or "").replace('"', "'")
-    return (
-        f'<span title="{motivo}" style="background:{info["bg"]};color:{info["fg"]};'
-        f'padding:1px 8px;border-radius:10px;font-size:0.82em;font-weight:500;'
-        f'white-space:nowrap">{info["label"]}</span>'
-    )
+    return chip_eca_html(estado, motivo=motivo)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
