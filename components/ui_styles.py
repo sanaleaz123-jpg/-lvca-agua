@@ -121,6 +121,42 @@ def icon(name: str, size: int = 16, color: str = "currentColor", stroke: float =
     )
 
 
+@st.cache_data(show_spinner=False)
+def logo_data_uri(path: str, max_width: int = 160) -> str:
+    """
+    Lee un PNG del disco, lo redimensiona a `max_width` (preservando aspecto)
+    y lo devuelve como data:URI base64. Cacheado para ejecutarse una sola vez.
+
+    Reutilizable en el top-nav, login y footer sin volver a leer disco. Si el
+    archivo no existe o PIL no está disponible, devuelve "" (el caller decide
+    el fallback).
+    """
+    import base64
+    import io
+    from pathlib import Path as _Path
+
+    try:
+        from PIL import Image
+    except Exception:
+        return ""
+
+    p = _Path(path)
+    if not p.exists():
+        return ""
+    try:
+        with Image.open(p) as img:
+            img = img.convert("RGBA")
+            if img.width > max_width:
+                ratio = max_width / img.width
+                img = img.resize((max_width, int(img.height * ratio)), Image.LANCZOS)
+            buf = io.BytesIO()
+            img.save(buf, format="PNG", optimize=True)
+            b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+        return f"data:image/png;base64,{b64}"
+    except Exception:
+        return ""
+
+
 def icon_label(name: str, label: str, size: int = 16, color: str | None = None) -> str:
     """HTML con ícono + texto alineados horizontalmente."""
     color_attr = color or COLORS["text"]
@@ -691,6 +727,12 @@ hr {
     margin: 0 8px;
     opacity: 0.55;
 }
+.lvca-footer .lvca-footer-strong { font-weight: 700; }
+.lvca-footer .lvca-footer-link {
+    color: #ffffff; text-decoration: underline;
+    text-underline-offset: 2px; opacity: 0.9;
+}
+.lvca-footer .lvca-footer-link:hover { opacity: 1; }
 /* Padding-bottom en el main container para que el contenido no se
    oculte detrás del footer fijo. Se duplica sobre .block-container
    como fallback por si cambia el data-testid en versiones futuras. */
@@ -1510,9 +1552,17 @@ _FOOTER_HTML = """
 <div class="lvca-footer">
     <span class="material-symbols-rounded"
         style="font-size:14px; vertical-align:-2px; margin-right:4px;">water_drop</span>
-    PEIMS / LVCA &middot; AUTODEMA
+    <span class="lvca-footer-strong">Laboratorio de Vigilancia y Calidad del Agua (LVCA)</span>
+    <span class="lvca-footer-sep">&middot;</span>
+    Proyecto Especial Majes-Siguas &mdash; AUTODEMA
+    <span class="lvca-footer-sep">&middot;</span>
+    <span class="material-symbols-rounded"
+        style="font-size:13px; vertical-align:-2px; margin-right:2px;">location_on</span>
+    Arequipa, Perú
     <span class="lvca-footer-sep">&middot;</span>
     D.S. N° 004-2017-MINAM
+    <span class="lvca-footer-sep">&middot;</span>
+    <a href="https://www.gob.pe" target="_blank" rel="noopener" class="lvca-footer-link">gob.pe</a>
     <span class="lvca-footer-sep">&middot;</span>
     v1.0.0
 </div>
@@ -1649,8 +1699,28 @@ def stat_counters(items: list[dict], titulo: str = "") -> None:
             display: flex; flex-direction: column; align-items: center;
             text-align: center; padding: 6px 10px;
             border-right: 1px solid rgba(255,255,255,0.12);
+            opacity: 0;
+            animation: lvca-stat-in 0.55s cubic-bezier(0.22,1,0.36,1) forwards;
         }
         .lvca-stat:last-child { border-right: none; }
+        /* Entrada escalonada (fade + slide-up) al cargar — efecto Observatorio.
+           No es un count-up JS (Streamlit no ejecuta <script> inyectado), pero
+           da sensación de dashboard "vivo" de forma fiable en todo navegador. */
+        @keyframes lvca-stat-in {
+            from { opacity: 0; transform: translateY(10px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+        .lvca-stat:nth-child(1) { animation-delay: 0.05s; }
+        .lvca-stat:nth-child(2) { animation-delay: 0.13s; }
+        .lvca-stat:nth-child(3) { animation-delay: 0.21s; }
+        .lvca-stat:nth-child(4) { animation-delay: 0.29s; }
+        .lvca-stat:nth-child(5) { animation-delay: 0.37s; }
+        .lvca-stat:nth-child(6) { animation-delay: 0.45s; }
+        .lvca-stat-num { transition: transform 0.2s var(--lvca-ease, ease); }
+        .lvca-stat:hover .lvca-stat-num { transform: scale(1.06); }
+        @media (prefers-reduced-motion: reduce) {
+            .lvca-stat { animation: none; opacity: 1; }
+        }
         .lvca-stat-ico {
             font-size: 26px !important; line-height: 1;
             color: #7FD4FF; margin-bottom: 8px;
@@ -1740,6 +1810,22 @@ _TOP_NAV_CSS = """<style>
     box-shadow: 0 2px 8px rgba(0,0,0,0.25);
 }
 .lvca-brand-logo .material-symbols-rounded { font-size: 18px; line-height: 1; }
+/* Chip blanco que sostiene los logos institucionales reales, visible sobre
+   el azul oscuro del nav independientemente de los colores del logo. */
+.lvca-brand-chip {
+    display: inline-flex; align-items: center; gap: 10px;
+    background: #ffffff;
+    border-radius: 10px;
+    padding: 5px 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.22);
+    flex-shrink: 0;
+}
+.lvca-brand-chip img {
+    height: 26px; width: auto; display: block;
+}
+.lvca-brand-chip .lvca-brand-sep {
+    width: 1px; height: 22px; background: #e2e8f0; flex-shrink: 0;
+}
 .lvca-brand-name {
     font-weight: 700; color: #ffffff; font-size: 1.15rem;
     letter-spacing: -0.015em;
@@ -1896,12 +1982,27 @@ def top_nav() -> None:
         # Línea 1: marca + usuario
         head_l, head_r = st.columns([4, 1])
         with head_l:
+            lvca_uri = logo_data_uri("imagenes/logo_lvca.png", max_width=160)
+            autodema_uri = logo_data_uri("imagenes/autodema_logo.png", max_width=160)
+            if lvca_uri or autodema_uri:
+                imgs = []
+                if lvca_uri:
+                    imgs.append(f'<img src="{lvca_uri}" alt="LVCA">')
+                if lvca_uri and autodema_uri:
+                    imgs.append('<span class="lvca-brand-sep"></span>')
+                if autodema_uri:
+                    imgs.append(f'<img src="{autodema_uri}" alt="AUTODEMA">')
+                marca = f'<span class="lvca-brand-chip">{"".join(imgs)}</span>'
+            else:
+                marca = (
+                    '<span class="lvca-brand-logo">'
+                    '<span class="material-symbols-rounded">water_drop</span>'
+                    '</span>'
+                    '<span class="lvca-brand-name">LVCA</span>'
+                )
             st.markdown(
                 '<div class="lvca-brand">'
-                '<span class="lvca-brand-logo">'
-                '<span class="material-symbols-rounded">water_drop</span>'
-                '</span>'
-                '<span class="lvca-brand-name">LVCA</span>'
+                f'{marca}'
                 '<span class="lvca-brand-sub">Plataforma de Vigilancia y Calidad del Agua · AUTODEMA</span>'
                 '</div>',
                 unsafe_allow_html=True,

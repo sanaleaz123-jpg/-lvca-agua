@@ -685,3 +685,129 @@ def generar_pdf_campana(campana_id: str) -> bytes:
 
     doc.build(elementos)
     return output.getvalue()
+
+
+def generar_pdf_punto(
+    punto_id: str,
+    fecha_desde: Optional[str] = None,
+    fecha_hasta: Optional[str] = None,
+) -> bytes:
+    """
+    Ficha técnica en PDF de un punto de monitoreo, estilo fichas de estación
+    del SNIRH/ANA: datos del punto + tabla de resultados del periodo.
+    """
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import cm
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+    )
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+
+    AZUL = colors.HexColor("#0D47A1")
+
+    resumen = get_resumen_punto(punto_id, fecha_desde, fecha_hasta)
+    punto = resumen.get("punto") or {}
+    resultados = resumen.get("resultados") or []
+    eca = punto.get("ecas") or {}
+
+    output = BytesIO()
+    doc = SimpleDocTemplate(output, pagesize=A4,
+                            leftMargin=2*cm, rightMargin=2*cm,
+                            topMargin=2*cm, bottomMargin=2*cm)
+
+    styles = getSampleStyleSheet()
+    titulo_style = ParagraphStyle(
+        "TituloFicha", parent=styles["Title"], fontSize=16, spaceAfter=4,
+        textColor=AZUL,
+    )
+    subtitulo_style = ParagraphStyle(
+        "SubFicha", parent=styles["Heading2"], fontSize=12, spaceAfter=8,
+        textColor=AZUL,
+    )
+
+    elementos = []
+    elementos.append(Paragraph("Ficha Técnica de Punto de Monitoreo", titulo_style))
+    elementos.append(Paragraph(
+        "AUTODEMA — Laboratorio de Vigilancia y Calidad del Agua (LVCA)",
+        styles["Normal"],
+    ))
+    elementos.append(Spacer(1, 0.5*cm))
+
+    # Datos del punto
+    elementos.append(Paragraph("Datos del Punto", subtitulo_style))
+    periodo = (
+        f"{fecha_desde or '—'} a {fecha_hasta or '—'}"
+        if (fecha_desde or fecha_hasta) else "Todo el histórico"
+    )
+    info_data = [
+        ["Código:",        punto.get("codigo", "—")],
+        ["Nombre:",        punto.get("nombre", "—")],
+        ["Tipo:",          (punto.get("tipo") or "—")],
+        ["Cuenca:",        (punto.get("cuenca") or "—")],
+        ["Categoría ECA:", f"{eca.get('codigo', '—')} — {eca.get('nombre', '')}".strip(" —")],
+        ["Periodo:",       periodo],
+    ]
+    t = Table(info_data, colWidths=[5*cm, 12*cm])
+    t.setStyle(TableStyle([
+        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    elementos.append(t)
+    elementos.append(Spacer(1, 0.5*cm))
+
+    # Resultados
+    elementos.append(Paragraph("Resultados del Periodo", subtitulo_style))
+    if resultados:
+        _MAX_FILAS_PDF = 120
+        header = ["Fecha", "Muestra", "Parámetro", "Valor", "Unidad"]
+        rows = [header]
+        for r in resultados[:_MAX_FILAS_PDF]:
+            valor = r.get("valor")
+            rows.append([
+                r.get("fecha", ""),
+                str(r.get("muestra", ""))[:16],
+                str(r.get("parametro", ""))[:32],
+                f"{valor:.4g}" if isinstance(valor, (int, float)) else "—",
+                str(r.get("unidad", ""))[:12],
+            ])
+        tr = Table(rows, repeatRows=1, colWidths=[2.4*cm, 3*cm, 6.6*cm, 2.5*cm, 2.5*cm])
+        tr.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), AZUL),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f1f5f9")]),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ]))
+        elementos.append(tr)
+        omitidas = len(resultados) - _MAX_FILAS_PDF
+        if omitidas > 0:
+            elementos.append(Spacer(1, 0.2*cm))
+            elementos.append(Paragraph(
+                f"<b>Nota:</b> se muestran los primeros {_MAX_FILAS_PDF} de "
+                f"{len(resultados)} resultados. Se omitieron {omitidas}; "
+                f"consulte el detalle completo en la plataforma.",
+                styles["Normal"],
+            ))
+    else:
+        elementos.append(Paragraph(
+            "Sin resultados registrados en el periodo seleccionado.",
+            styles["Normal"],
+        ))
+
+    elementos.append(Spacer(1, 1*cm))
+    elementos.append(Paragraph(
+        f"Generado: {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC — "
+        "Sistema LVCA / AUTODEMA",
+        ParagraphStyle("PieFicha", parent=styles["Normal"], fontSize=7,
+                       textColor=colors.grey),
+    ))
+
+    doc.build(elementos)
+    return output.getvalue()

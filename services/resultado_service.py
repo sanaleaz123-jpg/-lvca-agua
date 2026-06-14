@@ -653,9 +653,13 @@ def get_excedencias_activas(dias: int = 30) -> list[dict]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 @cached(ttl=300)
-def get_metricas_dashboard(dias: int = 30) -> dict:
+def get_metricas_dashboard(dias: int = 30, cuenca: str | None = None) -> dict:
     """
     Métricas de resumen para las tarjetas del dashboard.
+
+    `cuenca` (opcional): si se indica, todas las métricas se acotan a los
+    puntos de esa cuenca (vista "por cuenca", estilo Visor por Cuencas del
+    ANA). Si es None, el comportamiento es global e idéntico al original.
 
     Retorna:
         muestras_mes       → int  (muestras tomadas en el periodo)
@@ -666,36 +670,82 @@ def get_metricas_dashboard(dias: int = 30) -> dict:
     db = get_db()
     fecha_corte = (datetime.utcnow() - timedelta(days=dias)).date().isoformat()
 
+    # IDs de los puntos de la cuenca seleccionada (None = sin filtro de cuenca)
+    punto_ids: list[str] | None = None
+    if cuenca:
+        pr = (
+            db.table("puntos_muestreo")
+            .select("id")
+            .eq("cuenca", cuenca)
+            .execute()
+        )
+        punto_ids = [r["id"] for r in (pr.data or [])]
+        if not punto_ids:
+            # Cuenca sin puntos → métricas en cero, sin más consultas.
+            return {
+                "muestras_mes": 0, "parametros_mes": 0,
+                "excedencias_activas": 0, "puntos_monitoreados": 0,
+                "excedencias_lista": [],
+            }
+
     # Muestras del periodo
-    m_res = (
+    m_q = (
         db.table("muestras")
         .select("id", count="exact")
         .gte("fecha_muestreo", fecha_corte)
-        .execute()
     )
-    muestras_mes = m_res.count or 0
+    if punto_ids is not None:
+        m_q = m_q.in_("punto_muestreo_id", punto_ids)
+    muestras_mes = m_q.execute().count or 0
 
     # Resultados individuales del periodo
-    r_res = (
-        db.table("resultados_laboratorio")
-        .select("id", count="exact")
-        .gte("fecha_analisis", fecha_corte)
-        .execute()
-    )
-    parametros_mes = r_res.count or 0
+    if punto_ids is None:
+        parametros_mes = (
+            db.table("resultados_laboratorio")
+            .select("id", count="exact")
+            .gte("fecha_analisis", fecha_corte)
+            .execute()
+            .count or 0
+        )
+    else:
+        # Acotar resultados a las muestras de la cuenca.
+        mids = [
+            r["id"] for r in (
+                db.table("muestras")
+                .select("id")
+                .in_("punto_muestreo_id", punto_ids)
+                .execute()
+                .data or []
+            )
+        ]
+        if mids:
+            parametros_mes = (
+                db.table("resultados_laboratorio")
+                .select("id", count="exact")
+                .gte("fecha_analisis", fecha_corte)
+                .in_("muestra_id", mids)
+                .execute()
+                .count or 0
+            )
+        else:
+            parametros_mes = 0
 
     # Puntos distintos con muestras en el periodo
-    pm_res = (
+    pm_q = (
         db.table("muestras")
         .select("punto_muestreo_id")
         .gte("fecha_muestreo", fecha_corte)
-        .execute()
     )
-    puntos_ids = {r["punto_muestreo_id"] for r in (pm_res.data or [])}
+    if punto_ids is not None:
+        pm_q = pm_q.in_("punto_muestreo_id", punto_ids)
+    puntos_ids = {r["punto_muestreo_id"] for r in (pm_q.execute().data or [])}
     puntos_monitoreados = len(puntos_ids)
 
-    # Excedencias (reutiliza la función existente)
+    # Excedencias (reutiliza la función existente; se filtran por punto_id)
     excedencias = get_excedencias_activas(dias)
+    if punto_ids is not None:
+        _ids = set(punto_ids)
+        excedencias = [e for e in excedencias if e.get("punto_id") in _ids]
 
     return {
         "muestras_mes":        muestras_mes,

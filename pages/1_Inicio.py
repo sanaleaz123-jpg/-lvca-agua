@@ -65,7 +65,9 @@ def _contar_cuencas() -> int:
         return 0
 
 
-def _render_hero_contadores(metricas: dict, puntos: list[dict]) -> None:
+def _render_hero_contadores(
+    metricas: dict, puntos: list[dict], n_cuencas: int | None = None
+) -> None:
     """
     Banda de estadísticas tipo Observatorio del Agua (ANA): cifras grandes de
     la vigilancia de calidad del agua, alimentadas con datos reales.
@@ -74,6 +76,7 @@ def _render_hero_contadores(metricas: dict, puntos: list[dict]) -> None:
     con_dato = [p for p in puntos if p.get("estado") in ("cumple", "excedencia")]
     cumplen  = [p for p in con_dato if p.get("estado") == "cumple"]
     pct_cumpl = round(len(cumplen) / len(con_dato) * 100) if con_dato else 0
+    cuencas_val = n_cuencas if n_cuencas is not None else _contar_cuencas()
 
     items = [
         {"valor": f"{metricas['muestras_mes']:,}".replace(",", " "),
@@ -82,7 +85,7 @@ def _render_hero_contadores(metricas: dict, puntos: list[dict]) -> None:
          "label": "Parámetros analizados", "icon": "analytics"},
         {"valor": total_puntos,
          "label": "Puntos de monitoreo", "icon": "place"},
-        {"valor": _contar_cuencas(),
+        {"valor": cuencas_val,
          "label": "Cuencas vigiladas", "icon": "water_drop"},
         {"valor": pct_cumpl, "suffix": "%",
          "label": "Cumplimiento ECA", "icon": "verified"},
@@ -595,19 +598,57 @@ def main() -> None:
         ambito="Cuenca Chili-Quilca",
     )
 
-    # ── Cargar datos ─────────────────────────────────────────────────────────
+    # ── Cargar puntos (siempre completos, para listar cuencas) ──────────────
     with st.spinner("Cargando métricas..."):
         try:
-            metricas = get_metricas_dashboard(dias=30)
-            puntos   = get_puntos_con_estado(dias=30)
+            puntos_all = get_puntos_con_estado(dias=30)
         except Exception as exc:
             st.error(f"Error al cargar datos del dashboard: {exc}")
             st.stop()
 
+    # ── Selector de cuenca (vista "por cuenca", estilo Visor por Cuencas) ───
+    cuencas_disp = sorted({
+        (p.get("cuenca") or "").strip()
+        for p in puntos_all if (p.get("cuenca") or "").strip()
+    })
+    fc_titulo, fc_sel = st.columns([3, 1.4])
+    with fc_sel:
+        sel_cuenca = st.selectbox(
+            "Cuenca",
+            ["Todas las cuencas"] + cuencas_disp,
+            key="inicio_cuenca",
+            label_visibility="collapsed",
+        )
+    cuenca_param = None if sel_cuenca == "Todas las cuencas" else sel_cuenca
+    with fc_titulo:
+        _ambito = sel_cuenca if cuenca_param else "Todas las cuencas"
+        st.markdown(
+            '<div style="display:flex; align-items:center; gap:8px; '
+            'font-size:0.82rem; color:#64748b; font-weight:600; '
+            'padding-top:6px;">'
+            '<span class="material-symbols-rounded" '
+            'style="font-size:18px; color:#0D47A1;">filter_alt</span>'
+            f'Ámbito: <span style="color:#0D47A1;">{_ambito}</span></div>',
+            unsafe_allow_html=True,
+        )
+
+    # ── Datos acotados a la cuenca seleccionada ─────────────────────────────
+    with st.spinner("Cargando métricas..."):
+        try:
+            metricas = get_metricas_dashboard(dias=30, cuenca=cuenca_param)
+        except Exception as exc:
+            st.error(f"Error al cargar datos del dashboard: {exc}")
+            st.stop()
+
+    puntos = (
+        puntos_all if cuenca_param is None
+        else [p for p in puntos_all if (p.get("cuenca") or "").strip() == cuenca_param]
+    )
+    n_cuencas = 1 if cuenca_param else (len(cuencas_disp) or _contar_cuencas())
     excedencias = metricas["excedencias_lista"]
 
     # ── Hero: contadores institucionales (estilo Observatorio ANA) ──────────
-    _render_hero_contadores(metricas, puntos)
+    _render_hero_contadores(metricas, puntos, n_cuencas)
 
     # ── 0. Acceso a módulos (grilla SSDH-ANA) ───────────────────────────────
     _render_module_grid()

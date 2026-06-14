@@ -1797,10 +1797,10 @@ def _construir_mapa(
           </div>
         </div>
         <span id="lvca-legend-caret" style="color:#94a3b8;
-             font-size:10px; margin-left:12px;">&#9656;</span>
+             font-size:10px; margin-left:12px;">&#9662;</span>
       </div>
       <div id="lvca-legend-body" style="margin-top:8px; color:#334155;
-           display:none;">
+           display:block;">
         <div style="display:flex; align-items:center; gap:10px; padding:3px 0;">
           <svg width="14" height="14" viewBox="0 0 24 24" style="flex-shrink:0;">
             <circle cx="12" cy="12" r="9" fill="#10B981" stroke="#047857" stroke-width="1"/>
@@ -2422,8 +2422,29 @@ def _firma_sync_mapa() -> tuple:
 
 @st.fragment
 def _fragmento_mapa(puntos_con_coords: list[dict], opciones_punto: dict) -> None:
-    """Columna izquierda: filtros del mapa + Folium + handler de clicks."""
+    """Columna izquierda: buscador + filtros del mapa + Folium + clicks."""
     from streamlit_folium import st_folium
+
+    # ── Buscador de punto (zoom-to) — estilo Visor Geohidro del ANA ──────
+    # Seleccionar un punto centra el mapa en él (Modo Punto) y sincroniza la
+    # sidebar, igual que un click en el marcador.
+    _PLACEHOLDER_BUSCAR = "🔍  Buscar punto de monitoreo…"
+    labels_busqueda = list(opciones_punto.keys())
+    sel_buscar = st.selectbox(
+        "Buscar punto de monitoreo",
+        [_PLACEHOLDER_BUSCAR] + labels_busqueda,
+        key="geo_buscar",
+        label_visibility="collapsed",
+    )
+    if (
+        sel_buscar
+        and sel_buscar != _PLACEHOLDER_BUSCAR
+        and sel_buscar != st.session_state.get("geo_punto")
+    ):
+        st.session_state["geo_punto"] = sel_buscar
+        st.session_state["geo_modo"] = "punto"
+        st.session_state["_geo_sync_mapa"] = _firma_sync_mapa()
+        st.rerun()  # scope app: sidebar y mapa se sincronizan
 
     # ── Filtros del mapa + exportación ───────────────────────────────
     fc1, fc2, fc3 = st.columns([2.4, 2.4, 1.4])
@@ -2879,6 +2900,31 @@ def _render_panel_punto(punto_sel: dict) -> None:
         </div>""",
         unsafe_allow_html=True,
     )
+
+    # ── Ficha técnica descargable (PDF) — estilo fichas de estación del ANA.
+    # Generación bajo demanda (solo al pulsar) para no construir el PDF en
+    # cada rerun del panel.
+    _pid = punto_sel.get("id")
+    _ficha_key = f"_ficha_pdf_{_pid}"
+    if st.button("Generar ficha técnica (PDF)", key=f"btn_ficha_{_pid}",
+                 icon=":material/picture_as_pdf:", use_container_width=True):
+        from services.informe_service import generar_pdf_punto
+        with st.spinner("Generando ficha…"):
+            try:
+                st.session_state[_ficha_key] = generar_pdf_punto(_pid)
+            except Exception as exc:
+                st.session_state[_ficha_key] = None
+                st.error(f"No se pudo generar la ficha: {exc}")
+    if st.session_state.get(_ficha_key):
+        st.download_button(
+            "Descargar ficha PDF",
+            data=st.session_state[_ficha_key],
+            file_name=f"ficha_{punto_sel.get('codigo', 'punto')}.pdf",
+            mime="application/pdf",
+            key=f"dl_ficha_{_pid}",
+            icon=":material/download:",
+            use_container_width=True,
+        )
 
     # ── Phyllum dominante (último análisis fitoplancton)
     try:
