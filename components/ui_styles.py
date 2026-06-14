@@ -1339,14 +1339,15 @@ hr {
    modo deja un hueco en blanco entre la barra azul y las tarjetas. */
 [data-testid="stMainBlockContainer"]:has(.lvca-geo-vista-integrada),
 [data-testid="stMainBlockContainer"]:has(.lvca-geo-vista-integrada):has(.st-key-lvca_top_nav) {
-    padding-top: 88px !important;
+    padding-top: 84px !important;
     padding-bottom: 10px !important;
 }
-/* El div .lvca-geo-vista-integrada es solo un ancla de CSS: su contenedor no
-   debe ocupar alto ni dejar hueco vertical sobre las tarjetas. */
-[data-testid="stElementContainer"]:has(> [data-testid="stMarkdownContainer"] .lvca-geo-vista-integrada) {
-    height: 0 !important; min-height: 0 !important;
-    margin: 0 !important; padding: 0 !important;
+/* El div .lvca-geo-vista-integrada es solo un ancla de CSS: su contenedor se
+   saca del flujo (display:none) para que NO deje hueco vertical sobre las
+   tarjetas. El elemento sigue en el DOM, así que :has(...) del padding y los
+   selectores de ancla siguen funcionando. */
+[data-testid="stElementContainer"]:has(.lvca-geo-vista-integrada) {
+    display: none !important;
 }
 /* KPI cards más compactas */
 .lvca-geo-vista-integrada ~ div .lvca-kpi-bold,

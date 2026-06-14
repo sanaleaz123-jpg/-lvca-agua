@@ -1496,21 +1496,14 @@ def _construir_mapa(
         color: #334155;
         font-size: 12.5px;
     }
-    /* Cabecera "Capas" clicable para minimizar/maximizar el panel a voluntad */
-    .lvca-layers-header {
-        display: flex; align-items: center; justify-content: space-between;
-        gap: 14px; cursor: pointer; user-select: none;
+    /* Título "Capas" del panel cuando está expandido (hover/clic). */
+    .leaflet-control-layers-expanded::before {
+        content: "Capas";
+        display: block;
         font-weight: 700; font-size: 13px; color: #0f172a;
         letter-spacing: -0.01em;
         margin: 0 0 8px 0; padding-bottom: 6px;
         border-bottom: 1px solid #f1f5f9;
-    }
-    .lvca-layers-header .lvca-layers-caret { color: #94a3b8; font-size: 11px; }
-    /* Estado minimizado: solo la cabecera, lista oculta. */
-    .leaflet-control-layers.lvca-collapsed .leaflet-control-layers-list { display: none !important; }
-    .leaflet-control-layers.lvca-collapsed { min-width: 0 !important; }
-    .leaflet-control-layers.lvca-collapsed .lvca-layers-header {
-        margin-bottom: 0; padding-bottom: 0; border-bottom: none;
     }
     .leaflet-control-layers label {
         display: flex; align-items: center; gap: 8px;
@@ -1546,33 +1539,6 @@ def _construir_mapa(
     </style>
     """
     m.get_root().header.add_child(folium.Element(_MAP_CONTROLS_CSS))
-
-    # JS: inyecta una cabecera clicable "Capas" en el control de capas para
-    # poder minimizarlo/maximizarlo (el panel ocupa espacio cuando hay muchas
-    # capas). Se reintenta hasta que Leaflet haya creado el control.
-    _MAP_LAYERS_TOGGLE_JS = """
-    (function(){
-      function setup(){
-        var lc = document.querySelector('.leaflet-control-layers');
-        if(!lc){ setTimeout(setup, 200); return; }
-        if(lc.dataset.lvcaToggle){ return; }
-        lc.dataset.lvcaToggle = '1';
-        lc.classList.add('leaflet-control-layers-expanded');
-        var header = document.createElement('div');
-        header.className = 'lvca-layers-header';
-        header.innerHTML = '<span>Capas</span><span class="lvca-layers-caret">&#9652;</span>';
-        lc.insertBefore(header, lc.firstChild);
-        header.addEventListener('click', function(e){
-          e.stopPropagation();
-          var collapsed = lc.classList.toggle('lvca-collapsed');
-          header.querySelector('.lvca-layers-caret').innerHTML =
-              collapsed ? '&#9662;' : '&#9652;';
-        });
-      }
-      setup();
-    })();
-    """
-    m.get_root().script.add_child(folium.Element(_MAP_LAYERS_TOGGLE_JS))
 
     # ── Polígonos de cuencas hidrográficas (estilo SSDH/ANA) ─────────────
     # Outline de color por cuenca para distinguirlas a simple vista. Se usan
@@ -1878,9 +1844,10 @@ def _construir_mapa(
     """
     m.get_root().script.add_child(folium.Element(utm_js))
 
-    # Panel de capas siempre visible (estilo Visor Geohidro del ANA): el
-    # usuario ve y togglea las capas sin tener que abrir el control.
-    folium.LayerControl(collapsed=False).add_to(m)
+    # Panel de capas minimizado por defecto (ícono): se expande a voluntad al
+    # pasar el cursor y se contrae al salir. Colapsado nativo de Leaflet =
+    # fiable dentro del iframe y libera espacio del mapa.
+    folium.LayerControl(collapsed=True).add_to(m)
 
     # Leyenda estilo mockup "Integrated Eco-Aura" — esquina inferior derecha,
     # con tres ítems (Cumple / Excedencia Leve / Excedencia Alta) usando
@@ -1913,10 +1880,10 @@ def _construir_mapa(
           </div>
         </div>
         <span id="lvca-legend-caret" style="color:#94a3b8;
-             font-size:10px; margin-left:12px;">&#9662;</span>
+             font-size:10px; margin-left:12px;">&#9656;</span>
       </div>
       <div id="lvca-legend-body" style="margin-top:8px; color:#334155;
-           display:block;">
+           display:none;">
         <div style="font-weight:700; color:#0F172A; font-size:12px;
              letter-spacing:-0.01em; margin-bottom:4px;">Estado ECA
           <span style="font-weight:500; color:#94a3b8; font-size:10px;">
