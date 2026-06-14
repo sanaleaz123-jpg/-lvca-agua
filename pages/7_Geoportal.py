@@ -1807,16 +1807,15 @@ def _construir_mapa(
         </div>
         <div style="display:flex; align-items:center; gap:10px; padding:3px 0;">
           <svg width="14" height="14" viewBox="0 0 24 24" style="flex-shrink:0;">
-            <polygon points="12,3 22,21 2,21" fill="#F59E0B" stroke="#B45309" stroke-width="1" stroke-linejoin="round"/>
+            <circle cx="12" cy="12" r="9" fill="#F59E0B" stroke="#B45309" stroke-width="1"/>
           </svg>
-          <span style="font-weight:500;">Excedencia Leve</span>
+          <span style="font-weight:500;">Excede ECA · leve</span>
         </div>
         <div style="display:flex; align-items:center; gap:10px; padding:3px 0;">
           <svg width="14" height="14" viewBox="0 0 24 24" style="flex-shrink:0;">
             <circle cx="12" cy="12" r="9" fill="#EF4444" stroke="#B91C1C" stroke-width="1"/>
-            <circle cx="12" cy="12" r="3" fill="#ffffff"/>
           </svg>
-          <span style="font-weight:500;">Excedencia Alta</span>
+          <span style="font-weight:500;">Excede ECA · severo</span>
         </div>
         <div style="display:flex; align-items:center; gap:10px; padding:3px 0;
              color:#64748b; font-size:11.5px;">
@@ -1827,6 +1826,7 @@ def _construir_mapa(
         </div>
         <div style="font-size:10px; color:#94a3b8; border-top:1px solid #f1f5f9;
              padding-top:6px; margin-top:6px;">
+          Color continuo (verde→ámbar→rojo) según índice de cumplimiento.<br>
           Radio = N° parámetros evaluados
         </div>
         <div style="border-top:1px solid #f1f5f9; padding-top:8px; margin-top:8px;">
@@ -2299,70 +2299,10 @@ def main() -> None:
     aplicar_estilos()
     top_nav()
 
-    # CSS específico de la vista integrada — compacto, sin scroll en 1080p.
-    st.markdown(
-        """
-        <style>
-        /* Padding superior compacto para maximizar espacio vertical */
-        [data-testid="stMainBlockContainer"]:has(.lvca-geo-vista-integrada) {
-            padding-top: 84px !important;
-            padding-bottom: 12px !important;
-        }
-        /* KPI cards más compactas */
-        .lvca-geo-vista-integrada ~ div .lvca-kpi-bold,
-        .lvca-geo-kpis .lvca-kpi-bold {
-            min-height: 102px !important;
-            padding: 12px 16px 10px 16px !important;
-            border-radius: 11px !important;
-        }
-        .lvca-geo-vista-integrada ~ div .lvca-kpi-bold .lvca-kpi-value,
-        .lvca-geo-kpis .lvca-kpi-bold .lvca-kpi-value {
-            font-size: 1.95rem !important;
-            margin: 2px 0 0 0 !important;
-        }
-        .lvca-geo-vista-integrada ~ div .lvca-kpi-bold .lvca-kpi-title,
-        .lvca-geo-kpis .lvca-kpi-bold .lvca-kpi-title {
-            font-size: 0.82rem !important;
-        }
-        .lvca-geo-vista-integrada ~ div .lvca-kpi-bold .lvca-kpi-icon,
-        .lvca-geo-kpis .lvca-kpi-bold .lvca-kpi-icon {
-            width: 32px !important; height: 32px !important;
-            border-radius: 8px !important;
-        }
-        .lvca-geo-vista-integrada ~ div .lvca-kpi-bold .lvca-kpi-icon .material-symbols-rounded,
-        .lvca-geo-kpis .lvca-kpi-bold .lvca-kpi-icon .material-symbols-rounded {
-            font-size: 20px !important;
-        }
-        .lvca-geo-vista-integrada ~ div .lvca-kpi-bold .lvca-kpi-bullets,
-        .lvca-geo-kpis .lvca-kpi-bold .lvca-kpi-bullets {
-            font-size: 0.7rem !important;
-            line-height: 1.4 !important;
-            margin: 2px 0 0 0 !important;
-        }
-        .lvca-geo-vista-integrada ~ div .lvca-kpi-bold .lvca-kpi-foot,
-        .lvca-geo-kpis .lvca-kpi-bold .lvca-kpi-foot {
-            font-size: 0.62rem !important;
-            margin-top: 2px !important;
-        }
-        .lvca-geo-vista-integrada ~ div .lvca-kpi-bold .lvca-kpi-spark,
-        .lvca-geo-kpis .lvca-kpi-bold .lvca-kpi-spark {
-            margin-top: 4px !important; height: 22px !important;
-        }
-        /* Sidebar derecha del geoportal — gaps mínimos */
-        .lvca-geo-sidebar [data-testid="stVerticalBlock"] {
-            gap: 0.5rem !important;
-        }
-        .lvca-geo-sidebar [data-testid="stRadio"] {
-            margin-bottom: -8px;
-        }
-        .lvca-geo-sidebar .stRadio > div {
-            flex-direction: row !important;
-            gap: 10px !important;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+    # El CSS de la vista integrada (KPIs compactas + sidebar) vive ahora en
+    # _GLOBAL_CSS (components/ui_styles.py) para no reinyectarse en cada rerun.
+    # Los marker-divs .lvca-geo-vista-integrada / .lvca-geo-kpis / .lvca-geo-sidebar
+    # se siguen emitiendo en runtime y son las anclas de esos selectores.
 
     try:
         import folium
@@ -2655,6 +2595,13 @@ def _render_3_selectores_parametro(
             for p in c["params"]
         }
 
+    st.markdown(
+        '<div class="lvca-geo-sel-header">'
+        '<span class="material-symbols-rounded" style="font-size:15px;">tune</span>'
+        'Parámetro a visualizar'
+        '</div>',
+        unsafe_allow_html=True,
+    )
     c1, c2, c3 = st.columns(3)
     cols = {"campo": c1, "fisicoquimico": c2, "hidrobiologico": c3}
     for cat_key, col in cols.items():
@@ -2673,10 +2620,9 @@ def _render_3_selectores_parametro(
                 )
             else:
                 st.markdown(
-                    f'<div style="font-size:0.78rem; color:#94a3b8;">'
-                    f'<div style="font-size:0.84rem; color:#475569; '
-                    f'font-weight:500; margin-bottom:4px;">{label}</div>'
-                    f'<div style="padding:7px 0;">— sin parámetros</div></div>',
+                    f'<div class="lvca-geo-sel-empty">'
+                    f'<div class="titulo">{label}</div>'
+                    f'<div class="cuerpo">— sin parámetros</div></div>',
                     unsafe_allow_html=True,
                 )
 
@@ -2716,12 +2662,8 @@ def _render_modo_campana(parametros: list[dict], campanas: list[dict]) -> None:
     parametro = _render_3_selectores_parametro(parametros, key_prefix="camp")
     if parametro is None:
         st.markdown(
-            '<div style="background:#F8FAFC; border:1px dashed #CBD5E1; '
-            'border-radius:10px; padding:24px 18px; margin-top:8px; '
-            'text-align:center; color:#64748B; font-size:0.86rem;">'
-            '<span class="material-symbols-rounded" '
-            'style="font-size:24px; color:#94A3B8; vertical-align:middle; '
-            'margin-right:6px;">touch_app</span>'
+            '<div class="lvca-geo-empty-hint">'
+            '<span class="material-symbols-rounded">touch_app</span>'
             'Selecciona un parámetro de Campo, Fisicoquímicos o '
             'Hidrobiológicos para ver el gráfico.'
             '</div>',
@@ -2797,12 +2739,8 @@ def _render_modo_punto(
     with tab_seas:
         if parametro is None:
             st.markdown(
-                '<div style="background:#F8FAFC; border:1px dashed #CBD5E1; '
-                'border-radius:10px; padding:24px 18px; margin-top:8px; '
-                'text-align:center; color:#64748B; font-size:0.86rem;">'
-                '<span class="material-symbols-rounded" '
-                'style="font-size:24px; color:#94A3B8; vertical-align:middle; '
-                'margin-right:6px;">touch_app</span>'
+                '<div class="lvca-geo-empty-hint">'
+                '<span class="material-symbols-rounded">touch_app</span>'
                 'Selecciona un parámetro de Campo, Fisicoquímicos o '
                 'Hidrobiológicos para ver la estacionalidad.'
                 '</div>',
@@ -2919,26 +2857,16 @@ def _render_panel_punto(punto_sel: dict) -> None:
         nombre_dis = _display_nombre_parametro(param_fake)
         cel_str = _format_valor(phyllum_info["cel_ml_equiv"])
         st.markdown(
-            f'<div style="background:#ffffff; border:1px solid #f1f5f9; '
-            f'border-left:4px solid {col_phy}; border-radius:8px; '
-            f'padding:10px 12px; margin-top:10px; font-size:0.78rem;">'
-            f'<div style="color:var(--lvca-text-faint); font-size:0.66rem; '
-            f'text-transform:uppercase; letter-spacing:0.04em; '
-            f'font-weight:600;">Phyllum dominante</div>'
-            f'<div style="display:flex; align-items:center; '
-            f'justify-content:space-between; gap:10px; margin-top:4px;">'
-            f'<div>'
-            f'<span style="display:inline-block; width:10px; height:10px; '
-            f'background:{col_phy}; border-radius:50%; '
-            f'margin-right:6px; vertical-align:-1px;"></span>'
-            f'<b style="color:#0F172A;">{nombre_dis}</b>'
-            f'<span style="color:#94A3B8; margin-left:8px; font-size:0.72rem;">'
-            f'{phyllum_info["n_filos"]} filo(s) detectado(s)</span>'
+            f'<div class="lvca-panel-phyllum" style="--lvca-phy-color:{col_phy};">'
+            f'<div class="lbl">Phyllum dominante</div>'
+            f'<div class="row">'
+            f'<div><span class="dot"></span>'
+            f'<b>{nombre_dis}</b>'
+            f'<span class="cel" style="margin-left:8px;">'
+            f'{phyllum_info["n_filos"]} filo(s) detectado(s)</span></div>'
+            f'<div class="cel">{cel_str} cel/mL</div>'
             f'</div>'
-            f'<div style="font-size:0.72rem; color:#475569;">'
-            f'{cel_str} <span style="color:#94A3B8;">cel/mL</span>'
-            f'</div></div>'
-            f'<div style="font-size:0.66rem; color:#94A3B8; margin-top:3px;">'
+            f'<div class="meta">'
             f'Muestra {phyllum_info["muestra_codigo"]} · {phyllum_info["fecha_muestreo"]}'
             f'</div></div>',
             unsafe_allow_html=True,

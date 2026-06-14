@@ -1217,6 +1217,138 @@ hr {
     font-variant-numeric: tabular-nums;
 }
 
+/* ── Geoportal: tarjeta "Phyllum dominante" ─────────────────────────────
+   Coherente con .lvca-panel-punto (mismo radius/sombra). El color del filo
+   entra como custom property --lvca-phy-color (dinámico por phyllum). */
+.lvca-panel-phyllum {
+    background: #ffffff;
+    border: 1px solid var(--lvca-border-soft);
+    border-left: 4px solid var(--lvca-phy-color, var(--lvca-text-faint));
+    border-radius: 12px;
+    box-shadow: 0 4px 14px rgba(15,23,42,0.05),
+                0 1px 3px rgba(15,23,42,0.03);
+    padding: 10px 14px;
+    margin-top: 10px;
+    font-size: 0.78rem;
+}
+.lvca-panel-phyllum .lbl {
+    color: var(--lvca-text-faint);
+    font-size: 0.66rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 600;
+}
+.lvca-panel-phyllum .row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; margin-top: 4px;
+}
+.lvca-panel-phyllum .dot {
+    display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+    margin-right: 6px; vertical-align: -1px;
+    background: var(--lvca-phy-color, var(--lvca-text-faint));
+}
+.lvca-panel-phyllum b { color: var(--lvca-text); }
+.lvca-panel-phyllum .cel { font-size: 0.72rem; color: var(--lvca-text-muted); }
+.lvca-panel-phyllum .meta {
+    color: var(--lvca-text-faint); font-size: 0.66rem; margin-top: 3px;
+}
+
+/* ── Geoportal: hint "Selecciona un parámetro…" (estado vacío) ──────────── */
+.lvca-geo-empty-hint {
+    background: var(--lvca-surface-alt, #F8FAFC);
+    border: 1px dashed var(--lvca-border, #CBD5E1);
+    border-radius: 10px;
+    padding: 24px 18px;
+    margin-top: 8px;
+    text-align: center;
+    color: var(--lvca-text-muted);
+    font-size: 0.86rem;
+}
+.lvca-geo-empty-hint .material-symbols-rounded {
+    font-size: 24px; color: var(--lvca-text-faint);
+    vertical-align: middle; margin-right: 6px;
+}
+
+/* ── Geoportal: placeholder "— sin parámetros" del selector de categoría ── */
+.lvca-geo-sel-empty {
+    font-size: 0.78rem; color: var(--lvca-text-faint);
+}
+.lvca-geo-sel-empty .titulo {
+    font-size: 0.84rem; color: var(--lvca-text-muted);
+    font-weight: 500; margin-bottom: 4px;
+}
+.lvca-geo-sel-empty .cuerpo { padding: 7px 0; }
+
+/* ── Geoportal: encabezado de grupo de los 3 selectores de parámetro ───── */
+.lvca-geo-sel-header {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 0.72rem; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.04em; color: var(--lvca-text-faint);
+    margin: 2px 0 4px 0;
+}
+.lvca-geo-sel-header svg { flex-shrink: 0; }
+
+/* ── Geoportal: vista integrada (KPIs compactas + sidebar) ──────────────
+   Movido desde el st.markdown inline de pages/7_Geoportal.py para no
+   reinyectar ~60 líneas de CSS en cada rerun completo. Selectores
+   namespaced: no afectan otras páginas. */
+/* Padding superior compacto para maximizar espacio vertical */
+[data-testid="stMainBlockContainer"]:has(.lvca-geo-vista-integrada) {
+    padding-top: 84px !important;
+    padding-bottom: 12px !important;
+}
+/* KPI cards más compactas */
+.lvca-geo-vista-integrada ~ div .lvca-kpi-bold,
+.lvca-geo-kpis .lvca-kpi-bold {
+    min-height: 102px !important;
+    padding: 12px 16px 10px 16px !important;
+    border-radius: 11px !important;
+}
+.lvca-geo-vista-integrada ~ div .lvca-kpi-bold .lvca-kpi-value,
+.lvca-geo-kpis .lvca-kpi-bold .lvca-kpi-value {
+    font-size: 1.95rem !important;
+    margin: 2px 0 0 0 !important;
+}
+.lvca-geo-vista-integrada ~ div .lvca-kpi-bold .lvca-kpi-title,
+.lvca-geo-kpis .lvca-kpi-bold .lvca-kpi-title {
+    font-size: 0.82rem !important;
+}
+.lvca-geo-vista-integrada ~ div .lvca-kpi-bold .lvca-kpi-icon,
+.lvca-geo-kpis .lvca-kpi-bold .lvca-kpi-icon {
+    width: 32px !important; height: 32px !important;
+    border-radius: 8px !important;
+}
+.lvca-geo-vista-integrada ~ div .lvca-kpi-bold .lvca-kpi-icon .material-symbols-rounded,
+.lvca-geo-kpis .lvca-kpi-bold .lvca-kpi-icon .material-symbols-rounded {
+    font-size: 20px !important;
+}
+.lvca-geo-vista-integrada ~ div .lvca-kpi-bold .lvca-kpi-bullets,
+.lvca-geo-kpis .lvca-kpi-bold .lvca-kpi-bullets {
+    font-size: 0.7rem !important;
+    line-height: 1.4 !important;
+    margin: 2px 0 0 0 !important;
+}
+.lvca-geo-vista-integrada ~ div .lvca-kpi-bold .lvca-kpi-foot,
+.lvca-geo-kpis .lvca-kpi-bold .lvca-kpi-foot {
+    font-size: 0.62rem !important;
+    margin-top: 2px !important;
+}
+.lvca-geo-vista-integrada ~ div .lvca-kpi-bold .lvca-kpi-spark,
+.lvca-geo-kpis .lvca-kpi-bold .lvca-kpi-spark {
+    margin-top: 4px !important; height: 22px !important;
+}
+/* Sidebar derecha del geoportal — gaps mínimos */
+.lvca-geo-sidebar [data-testid="stVerticalBlock"] {
+    gap: 0.5rem !important;
+}
+.lvca-geo-sidebar [data-testid="stRadio"] {
+    margin-bottom: -8px;
+}
+.lvca-geo-sidebar .stRadio > div {
+    flex-direction: row !important;
+    gap: 10px !important;
+}
+
 /* ── Banner de página (page_header + login) ─────────────────────────────
    Gradiente azul institucional con profundidad, textura sutil de "agua"
    y filete inferior verde→teal que une las dos identidades cromáticas. */
