@@ -17,7 +17,7 @@ from typing import Optional
 
 import pandas as pd
 
-from database.client import get_admin_client
+from database.client import get_db
 from services.cache import cached
 
 
@@ -45,7 +45,7 @@ def get_resumen_campana(campana_id: str) -> dict:
     """
     from services.cumplimiento_service import evaluar, ContextoEvaluacion, EstadoECA
 
-    db = get_admin_client()
+    db = get_db()
 
     campana = (
         db.table("campanas")
@@ -277,7 +277,7 @@ def get_resumen_punto(
     fecha_hasta: Optional[str] = None,
 ) -> dict:
     """Resultados de un punto en un rango de fechas."""
-    db = get_admin_client()
+    db = get_db()
 
     punto = (
         db.table("puntos_muestreo")

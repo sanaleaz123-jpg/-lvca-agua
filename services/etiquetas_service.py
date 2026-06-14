@@ -31,7 +31,7 @@ from docx import Document
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
-from database.client import get_admin_client
+from database.client import get_db
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -194,7 +194,7 @@ def generar_etiquetas_campana(
 
 def _cargar_datos(campana_id: str) -> tuple[dict, list[dict]]:
     """Trae la campaña y sus puntos ordenados por código."""
-    db = get_admin_client()
+    db = get_db()
 
     camp = (
         db.table("campanas")

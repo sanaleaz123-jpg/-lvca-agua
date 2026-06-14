@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Optional
 
-from database.client import get_admin_client
+from database.client import get_db
 from services.cache import cached
 from services.audit_service import registrar_cambio
 
@@ -83,7 +83,7 @@ class ResultadoItem:
 @cached(ttl=300)
 def get_campanas() -> list[dict]:
     """Campañas ordenadas por fecha descendente."""
-    db = get_admin_client()
+    db = get_db()
     res = (
         db.table("campanas")
         .select("id, codigo, nombre, fecha_inicio, fecha_fin, estado")
@@ -99,7 +99,7 @@ def get_puntos_de_campana(campana_id: str) -> list[dict]:
     Retorna los puntos de muestreo que tienen al menos una muestra
     en la campaña indicada.
     """
-    db = get_admin_client()
+    db = get_db()
     res = (
         db.table("muestras")
         .select("punto_muestreo_id, puntos_muestreo(id, codigo, nombre)")
@@ -120,7 +120,7 @@ def get_puntos_de_campana(campana_id: str) -> list[dict]:
 @cached(ttl=120)
 def get_muestras(campana_id: str, punto_id: str) -> list[dict]:
     """Muestras de una campaña y punto concretos."""
-    db = get_admin_client()
+    db = get_db()
     res = (
         db.table("muestras")
         .select("id, codigo, fecha_muestreo, estado")
@@ -147,7 +147,7 @@ def get_datos_muestra(muestra_id: str) -> dict:
         mediciones    → {parametro_text: valor}  (pH, T, etc. in situ)
         excepciones   → {parametro_id: True}  (Art. 6 vigentes para el punto)
     """
-    db = get_admin_client()
+    db = get_db()
 
     # 1. Muestra → punto (con flag Art. 7) → ECA
     m = (
@@ -347,7 +347,7 @@ def guardar_resultado(
     Upsert idempotente de un resultado individual.
     Conflict key: (muestra_id, parametro_id).
     """
-    db = get_admin_client()
+    db = get_db()
     fila = {
         "muestra_id":     muestra_id,
         "parametro_id":   parametro_id,
@@ -376,7 +376,7 @@ def guardar_resultados_lote(
 
     Retorna (ok_count, lista_de_errores, lista_de_bloqueados).
     """
-    db = get_admin_client()
+    db = get_db()
     hoy = datetime.utcnow().date().isoformat()
     ok = 0
     errores: list[str] = []
@@ -452,7 +452,7 @@ def validar_resultados(
     Una vez validados quedan bloqueados contra ediciones por upsert.
     Retorna el número de resultados validados.
     """
-    db = get_admin_client()
+    db = get_db()
     payload = {
         "validado":     True,
         "validado_por": validador_id,
@@ -487,7 +487,7 @@ def desvalidar_resultados(
     Quita la marca de validado para permitir corregir un resultado.
     Solo administradores deben llamar a esta función (la UI debe enforzarlo).
     """
-    db = get_admin_client()
+    db = get_db()
     payload = {
         "validado":     False,
         "validado_por": None,
@@ -519,7 +519,7 @@ def desvalidar_resultados(
 
 def eliminar_resultado(resultado_id: str) -> None:
     """Elimina un resultado individual de laboratorio por su ID."""
-    db = get_admin_client()
+    db = get_db()
     db.table("resultados_laboratorio").delete().eq("id", resultado_id).execute()
     _invalidar_cache()
 
@@ -529,7 +529,7 @@ def eliminar_resultados_muestra(muestra_id: str, usuario_id: Optional[str] = Non
     Elimina todos los resultados de laboratorio de una muestra.
     Retorna la cantidad eliminada.
     """
-    db = get_admin_client()
+    db = get_db()
     res = (
         db.table("resultados_laboratorio")
         .select("id", count="exact")
@@ -562,7 +562,7 @@ def get_excedencias_activas(dias: int = 30) -> list[dict]:
         fecha, muestra_codigo, punto_nombre, eca_codigo,
         parametro_codigo, parametro_nombre, valor, lim_max, lim_min, unidad
     """
-    db = get_admin_client()
+    db = get_db()
     fecha_corte = (datetime.utcnow() - timedelta(days=dias)).isoformat()
 
     # 1. Resultados recientes con valor numérico y cadena de joins
@@ -663,7 +663,7 @@ def get_metricas_dashboard(dias: int = 30) -> dict:
         excedencias_activas→ int  (resultados que superan ECA)
         puntos_monitoreados→ int  (puntos distintos con muestras)
     """
-    db = get_admin_client()
+    db = get_db()
     fecha_corte = (datetime.utcnow() - timedelta(days=dias)).date().isoformat()
 
     # Muestras del periodo
@@ -716,7 +716,7 @@ def get_puntos_con_estado(dias: int = 30) -> list[dict]:
         estado → 'excedencia' | 'cumple' | 'sin_datos'
         n_excedencias → int
     """
-    db = get_admin_client()
+    db = get_db()
 
     # Todos los puntos activos con coordenadas
     pts = (
@@ -770,7 +770,7 @@ def _get_usuario_interno_id(auth_id: str) -> Optional[str]:
     """Resuelve el UUID interno de 'usuarios' a partir del auth_id de Supabase."""
     try:
         res = (
-            get_admin_client()
+            get_db()
             .table("usuarios")
             .select("id")
             .eq("auth_id", auth_id)

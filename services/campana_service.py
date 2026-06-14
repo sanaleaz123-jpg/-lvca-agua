@@ -16,7 +16,7 @@ from collections import Counter
 from datetime import datetime
 from typing import Optional
 
-from database.client import get_admin_client
+from database.client import get_db
 from services.audit_service import registrar_cambio
 from services.cache import cached
 
@@ -86,7 +86,7 @@ def get_campanas(
     incluir_archivadas: por defecto False — campañas archivadas quedan ocultas
                        hasta que se pidan explícitamente.
     """
-    db = get_admin_client()
+    db = get_db()
     query = (
         db.table("campanas")
         .select(
@@ -115,7 +115,7 @@ def get_campanas(
 @cached(ttl=300, grupo="referencia")
 def get_todos_los_puntos() -> list[dict]:
     """Puntos activos para el multiselect del formulario de nueva campaña."""
-    db = get_admin_client()
+    db = get_db()
     res = (
         db.table("puntos_muestreo")
         .select("id, codigo, nombre, tipo, cuenca")
@@ -138,7 +138,7 @@ def crear_campana(datos: dict, usuario_id: Optional[str] = None) -> dict:
 
     Retorna el dict de la campaña creada.
     """
-    db = get_admin_client()
+    db = get_db()
     codigo = _generar_codigo(db)
 
     campana = {
@@ -193,7 +193,7 @@ def actualizar_estado(campana_id: str, nuevo_estado: str, usuario_id: Optional[s
 
     Desde cualquier estado (excepto completada) se puede ir a 'anulada'.
     """
-    db = get_admin_client()
+    db = get_db()
 
     # Obtener estado actual
     res = (
@@ -266,7 +266,7 @@ def get_detalle_campana(campana_id: str) -> dict:
         muestras → muestras con conteo de resultados y % de avance
         avance   → resumen global de progreso
     """
-    db = get_admin_client()
+    db = get_db()
 
     # 1. Campaña
     campana = (
@@ -368,7 +368,7 @@ def actualizar_campana(campana_id: str, datos: dict) -> dict:
         nombre, fecha_inicio, fecha_fin, frecuencia,
         responsable_campo, responsable_laboratorio, observaciones
     """
-    db = get_admin_client()
+    db = get_db()
     campos = {}
     for key in (
         "nombre", "fecha_inicio", "fecha_fin", "frecuencia",
@@ -396,7 +396,7 @@ def actualizar_puntos_campana(campana_id: str, puntos_ids: list[str]) -> None:
     Reemplaza los puntos vinculados a una campaña.
     Elimina los existentes y crea los nuevos vínculos.
     """
-    db = get_admin_client()
+    db = get_db()
     # Eliminar vínculos actuales
     db.table("campana_puntos").delete().eq("campana_id", campana_id).execute()
     # Crear nuevos
@@ -426,7 +426,7 @@ def get_parametros_lab_campana(campana_id: str) -> dict:
     (el consumidor debe interpretar eso como "todos seleccionados por defecto").
     """
     try:
-        db = get_admin_client()
+        db = get_db()
         res = (
             db.table("cadena_custodia_config")
             .select("config")
@@ -459,7 +459,7 @@ def set_parametros_lab_campana(
     parametros_lab_extra: lista de nombres libres.
     """
     try:
-        db = get_admin_client()
+        db = get_db()
         # Leer config actual para mezclar con el resto de campos
         existente = (
             db.table("cadena_custodia_config")
@@ -498,7 +498,7 @@ def archivar_campana(campana_id: str, motivo: str = "", usuario_id: Optional[str
     (muestras, resultados, mediciones, audit) se preservan íntegros.
     Recuperable con restaurar_campana().
     """
-    db = get_admin_client()
+    db = get_db()
     payload: dict = {
         "estado": "archivada",
         "archivada_at": datetime.utcnow().isoformat(),
@@ -527,7 +527,7 @@ def restaurar_campana(campana_id: str, nuevo_estado: str = "completada", usuario
     """Saca una campaña del archivo y la devuelve a un estado operativo."""
     if nuevo_estado == "archivada":
         raise ValueError("Para restaurar elige un estado distinto a 'archivada'.")
-    db = get_admin_client()
+    db = get_db()
     payload = {
         "estado": nuevo_estado,
         "archivada_at": None,
@@ -561,7 +561,7 @@ def eliminar_campana(campana_id: str, forzar: bool = False, usuario_id: Optional
 
     Retorna dict con conteo de registros eliminados.
     """
-    db = get_admin_client()
+    db = get_db()
 
     # Obtener estado
     res = (
@@ -654,7 +654,7 @@ def peek_siguiente_codigo() -> str:
     year = datetime.utcnow().year
     prefijo = f"CAMP-{year}-"
     try:
-        db = get_admin_client()
+        db = get_db()
         res = (
             db.table("campanas")
             .select("codigo")

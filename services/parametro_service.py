@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from database.client import get_admin_client
+from database.client import get_db
 from services.audit_service import registrar_cambio, registrar_cambios_multiples
 from services.cache import cached
 from services.parametro_registry import invalidar_cache_parametros
@@ -37,7 +37,7 @@ def get_parametros(
     solo_activos: bool = False,
 ) -> list[dict]:
     """Retorna parámetros con categoría y unidad, filtros opcionales."""
-    db = get_admin_client()
+    db = get_db()
     query = (
         db.table("parametros")
         .select(
@@ -77,7 +77,7 @@ def get_parametros(
 @cached(ttl=120, grupo="referencia")
 def get_parametro(parametro_id: str) -> dict | None:
     """Detalle de un parámetro con joins."""
-    db = get_admin_client()
+    db = get_db()
     res = (
         db.table("parametros")
         .select(
@@ -97,7 +97,7 @@ def get_parametro(parametro_id: str) -> dict | None:
 
 def crear_parametro(datos: dict) -> dict:
     """Inserta un nuevo parámetro. Retorna el registro creado."""
-    db = get_admin_client()
+    db = get_db()
     fila = {
         "codigo":           datos["codigo"],
         "nombre":           datos["nombre"],
@@ -121,7 +121,7 @@ def crear_parametro(datos: dict) -> dict:
 
 def actualizar_parametro(parametro_id: str, datos: dict) -> dict:
     """Actualiza campos de un parámetro existente."""
-    db = get_admin_client()
+    db = get_db()
 
     # Leer valores anteriores para auditoría
     anterior = (
@@ -164,7 +164,7 @@ def actualizar_parametro(parametro_id: str, datos: dict) -> dict:
 
 def toggle_parametro(parametro_id: str, activo: bool) -> None:
     """Activa o desactiva un parámetro."""
-    db = get_admin_client()
+    db = get_db()
     db.table("parametros").update({"activo": activo}).eq("id", parametro_id).execute()
     registrar_cambio(
         tabla="parametros",
@@ -184,7 +184,7 @@ def eliminar_parametro(parametro_id: str) -> str:
 
     Retorna 'eliminado' o 'desactivado'.
     """
-    db = get_admin_client()
+    db = get_db()
 
     # Leer datos para auditoría
     param_data = (
@@ -236,7 +236,7 @@ def eliminar_parametro(parametro_id: str) -> str:
 @cached(ttl=600, grupo="referencia")
 def get_categorias() -> list[dict]:
     """Todas las categorías de parámetro."""
-    db = get_admin_client()
+    db = get_db()
     res = (
         db.table("categorias_parametro")
         .select("id, nombre, descripcion")
@@ -249,7 +249,7 @@ def get_categorias() -> list[dict]:
 @cached(ttl=600, grupo="referencia")
 def get_unidades() -> list[dict]:
     """Todas las unidades de medida."""
-    db = get_admin_client()
+    db = get_db()
     res = (
         db.table("unidades_medida")
         .select("id, simbolo, nombre")
@@ -261,7 +261,7 @@ def get_unidades() -> list[dict]:
 
 def crear_unidad(simbolo: str, nombre: str) -> dict:
     """Crea una nueva unidad de medida. Retorna el registro creado."""
-    db = get_admin_client()
+    db = get_db()
     fila = {"simbolo": simbolo.strip(), "nombre": nombre.strip()}
     res = db.table("unidades_medida").insert(fila).execute()
     invalidar_cache_parametros()
@@ -282,7 +282,7 @@ def get_ecas(incluir_legacy: bool = False) -> list[dict]:
     canónicos: '1 A2', '3 D1', '4 E1', '4 E2' (D.S. 004-2017-MINAM).
     Los seeds o scripts internos pueden pedir incluir_legacy=True.
     """
-    db = get_admin_client()
+    db = get_db()
     res = (
         db.table("ecas")
         .select("id, codigo, nombre, categoria, subcategoria, descripcion, activo")
@@ -303,7 +303,7 @@ def get_valores_eca(eca_id: str) -> list[dict]:
     Retorna lista de {id, parametro_id, valor_minimo, valor_maximo,
                       parametro_codigo, parametro_nombre, unidad}.
     """
-    db = get_admin_client()
+    db = get_db()
     res = (
         db.table("eca_valores")
         .select(
@@ -342,7 +342,7 @@ def guardar_valor_eca(
     valor_maximo: Optional[float],
 ) -> None:
     """Upsert de un valor límite ECA."""
-    db = get_admin_client()
+    db = get_db()
     fila = {
         "eca_id":       eca_id,
         "parametro_id": parametro_id,
@@ -357,6 +357,6 @@ def guardar_valor_eca(
 
 def eliminar_valor_eca(valor_id: str) -> None:
     """Elimina un registro de eca_valores por su ID."""
-    db = get_admin_client()
+    db = get_db()
     db.table("eca_valores").delete().eq("id", valor_id).execute()
     invalidar_cache_parametros()

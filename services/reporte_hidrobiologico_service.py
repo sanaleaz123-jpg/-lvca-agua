@@ -31,7 +31,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
 
-from database.client import get_admin_client
+from database.client import get_db
 from services.fitoplancton_service import TAXONOMIA_FITOPLANCTON
 
 
@@ -109,7 +109,7 @@ def _cargar_muestras_campana(campana_id: str) -> tuple[dict, list[dict]]:
     Devuelve (campana, muestras_unicas_por_punto). Ordena por código de punto.
     Sólo incluye muestras con ``datos_fitoplancton`` no nulo.
     """
-    db = get_admin_client()
+    db = get_db()
 
     campana_res = (
         db.table("campanas")
@@ -154,7 +154,7 @@ def _cargar_muestras_campana(campana_id: str) -> tuple[dict, list[dict]]:
 
 def tiene_analisis_hidrobiologico(campana_id: str) -> bool:
     """True si la campaña tiene al menos una muestra con análisis fitoplancton."""
-    db = get_admin_client()
+    db = get_db()
     res = (
         db.table("muestras")
         .select("id", count="exact")

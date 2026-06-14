@@ -31,7 +31,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from database.client import get_admin_client
+from database.client import get_db
 from services.cache import cached
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -159,7 +159,7 @@ def get_parametros_activos() -> list[dict]:
     Si las columnas rango_min/rango_max/lmd/lcm no existen aún (migración 006),
     cae al select básico sin romper.
     """
-    db = get_admin_client()
+    db = get_db()
     try:
         res = (
             db.table("parametros")

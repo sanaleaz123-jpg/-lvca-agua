@@ -21,7 +21,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from database.client import get_admin_client
+from database.client import get_db
 from services.audit_service import registrar_cambio
 from services.cache import cached, invalidate_operational
 from services.logging_config import get_logger
@@ -617,7 +617,7 @@ def get_clorofila_de_muestra(muestra_id: str) -> Optional[dict]:
     Lee el resultado de Clorofila A (P124) para la muestra. Retorna
     {valor, unidad, fecha_analisis, validado} o None si no hay resultado.
     """
-    db = get_admin_client()
+    db = get_db()
     try:
         res = (
             db.table("resultados_laboratorio")
@@ -767,7 +767,7 @@ def _sincronizar_resultados_laboratorio(
     por permisos, se reporta como excepción al caller pero no se hace rollback
     del JSONB ya guardado.
     """
-    db = get_admin_client()
+    db = get_db()
     ids = _ids_parametros_fitoplancton(db)
     if not ids:
         # Migración 016 no aplicada o parámetros ausentes — saltar sin romper.
@@ -807,7 +807,7 @@ def _eliminar_resultados_laboratorio_fitoplancton(muestra_id: str) -> int:
     Elimina las filas agregadas de fitoplancton (8 phyla + biovol + total)
     para una muestra. Se llama desde borrar_analisis_fitoplancton.
     """
-    db = get_admin_client()
+    db = get_db()
     ids = _ids_parametros_fitoplancton(db)
     if not ids:
         return 0
@@ -854,7 +854,7 @@ def guardar_analisis_fitoplancton(
         },
         "resultados": resultados_por_filo,
     }
-    db = get_admin_client()
+    db = get_db()
 
     # Detecta si es upsert sobre análisis previo (audit accion='actualizar')
     # o un primer guardado (audit accion='crear').
@@ -918,7 +918,7 @@ def get_analisis_fitoplancton(muestra_id: str) -> Optional[dict]:
     Lee el JSONB datos_fitoplancton de la muestra. Retorna None si no hay
     análisis cargado o si la columna aún no existe (pre-migración 015).
     """
-    db = get_admin_client()
+    db = get_db()
     try:
         res = (
             db.table("muestras")
@@ -943,7 +943,7 @@ def borrar_analisis_fitoplancton(
         biovolumen + total Fitoplancton)
       - audita la operación
     """
-    db = get_admin_client()
+    db = get_db()
     db.table("muestras").update({"datos_fitoplancton": None}).eq("id", muestra_id).execute()
 
     try:
@@ -1003,7 +1003,7 @@ def get_phyllum_dominante_punto(punto_muestreo_id: str) -> Optional[dict]:
 
     Retorna None si el punto no tiene ningún análisis fitoplancton.
     """
-    db = get_admin_client()
+    db = get_db()
 
     # Ruta A: JSONB Sedgewick-Rafter
     res = (
@@ -1130,7 +1130,7 @@ def get_historico_cianobacterias_por_punto(
     Cada elemento incluye: muestra_id, codigo_muestra, fecha_muestreo,
     total_cyano_cel_ml, nivel_oms (label o None), color_bg.
     """
-    db = get_admin_client()
+    db = get_db()
     res = (
         db.table("muestras")
         .select("id, codigo, fecha_muestreo, datos_fitoplancton")
@@ -1177,7 +1177,7 @@ def get_historico_cianobacterias_por_muestra(muestra_id: str) -> list[dict]:
     y devuelve el histórico de cianobacterias en ese punto. La muestra actual
     se incluye en la serie si ya tiene datos guardados.
     """
-    db = get_admin_client()
+    db = get_db()
     try:
         res = (
             db.table("muestras")
@@ -1306,7 +1306,7 @@ def get_alertas_oms_por_punto() -> dict[str, dict]:
         2. resultados_laboratorio para FITO_CYANOBACTERIA_CEL / BIOVOL
            (cuando la entrada se hizo por la pestaña Resultados clásica)
     """
-    db = get_admin_client()
+    db = get_db()
     res = (
         db.table("muestras")
         .select("punto_muestreo_id, fecha_muestreo, datos_fitoplancton")

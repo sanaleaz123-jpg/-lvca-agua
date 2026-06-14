@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from database.client import get_admin_client
+from database.client import get_db
 from services.audit_service import registrar_cambio
 from services.cache import cached
 from services.parametro_registry import (
@@ -59,7 +59,7 @@ def get_datos_consolidados(
         punto_ids: filtra por varios punto_muestreo_id (tuple, hashable para cache).
                    Útil cuando un mismo "lugar de muestreo" agrupa varios puntos.
     """
-    db = get_admin_client()
+    db = get_db()
 
     # 1. Muestras con punto y ECA (campañas se cargan aparte, ver paso 1b).
     # Intentar incluir codigo_laboratorio (requiere migración 004)
@@ -227,7 +227,7 @@ def get_limites_eca_todos() -> dict[tuple[str, str], dict]:
     Retorna un dict {(eca_id, parametro_codigo): {valor_minimo, valor_maximo}}
     para todos los ECAs y parámetros activos.
     """
-    db = get_admin_client()
+    db = get_db()
 
     # Parámetros con código
     params = (
@@ -259,7 +259,7 @@ def get_limites_eca_todos() -> dict[tuple[str, str], dict]:
 
 def actualizar_resultado(resultado_id: str, valor: float | None) -> None:
     """Actualiza el valor numérico de un resultado existente. Registra el cambio."""
-    db = get_admin_client()
+    db = get_db()
 
     # Leer valor anterior para auditoría
     anterior = (
@@ -292,7 +292,7 @@ def actualizar_resultado(resultado_id: str, valor: float | None) -> None:
 
 def crear_resultado(muestra_id: str, parametro_id: str, valor: float) -> dict:
     """Crea un nuevo resultado de laboratorio."""
-    db = get_admin_client()
+    db = get_db()
     res = db.table("resultados_laboratorio").insert({
         "muestra_id": muestra_id,
         "parametro_id": parametro_id,
@@ -305,7 +305,7 @@ def crear_resultado(muestra_id: str, parametro_id: str, valor: float) -> dict:
 @cached(ttl=300, grupo="referencia")
 def get_parametros_map() -> dict[str, str]:
     """Retorna {codigo: parametro_id} para crear nuevos resultados."""
-    db = get_admin_client()
+    db = get_db()
     params = (
         db.table("parametros")
         .select("id, codigo")

@@ -24,7 +24,7 @@ from __future__ import annotations
 from datetime import datetime, date
 from typing import Optional
 
-from database.client import get_admin_client
+from database.client import get_db
 
 
 UMBRAL_DELTA_C: float = 3.0  # regla fija del DS
@@ -38,7 +38,7 @@ def obtener_linea_base(punto_id: str, mes: int) -> Optional[dict]:
     """Retorna la línea base para (punto, mes) o None si no existe."""
     if not punto_id or not (1 <= mes <= 12):
         return None
-    db = get_admin_client()
+    db = get_db()
     res = (
         db.table("linea_base_temperatura")
         .select(
@@ -55,7 +55,7 @@ def obtener_linea_base(punto_id: str, mes: int) -> Optional[dict]:
 
 def listar_linea_base(punto_id: str) -> list[dict]:
     """Todas las líneas base del punto, ordenadas por mes."""
-    db = get_admin_client()
+    db = get_db()
     res = (
         db.table("linea_base_temperatura")
         .select(
@@ -88,7 +88,7 @@ def registrar_linea_base(
     """UPSERT por (punto, mes)."""
     if not (1 <= mes <= 12):
         raise ValueError("mes debe estar entre 1 y 12")
-    db = get_admin_client()
+    db = get_db()
     fila = {
         "punto_muestreo_id":     punto_id,
         "mes":                   mes,
@@ -109,7 +109,7 @@ def registrar_linea_base(
 
 
 def eliminar_linea_base(punto_id: str, mes: int) -> None:
-    db = get_admin_client()
+    db = get_db()
     db.table("linea_base_temperatura").delete().eq(
         "punto_muestreo_id", punto_id
     ).eq("mes", mes).execute()
@@ -144,7 +144,7 @@ def calcular_linea_base_desde_historico(punto_id: str) -> dict[int, dict]:
     No persiste nada. Para guardar el resultado llamar a registrar_linea_base()
     con los valores que el usuario confirme.
     """
-    db = get_admin_client()
+    db = get_db()
     muestras = (
         db.table("muestras")
         .select("id, fecha_muestreo, mediciones_insitu(parametro, valor)")

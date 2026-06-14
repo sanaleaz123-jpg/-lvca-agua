@@ -17,7 +17,7 @@ from __future__ import annotations
 import re
 from typing import Optional
 
-from database.client import get_admin_client
+from database.client import get_db
 from services.audit_service import registrar_cambio, registrar_cambios_multiples
 from services.cache import cached
 
@@ -149,7 +149,7 @@ def get_puntos(
     solo_activos: bool = False,
 ) -> list[dict]:
     """Retorna puntos de muestreo con ECA asociado."""
-    db = get_admin_client()
+    db = get_db()
     query = (
         db.table("puntos_muestreo")
         .select(
@@ -202,7 +202,7 @@ def get_puntos(
 @cached(ttl=120, grupo="referencia")
 def get_punto(punto_id: str) -> dict | None:
     """Detalle de un punto con ECA."""
-    db = get_admin_client()
+    db = get_db()
     res = (
         db.table("puntos_muestreo")
         .select(
@@ -230,7 +230,7 @@ def get_punto(punto_id: str) -> dict | None:
 
 def crear_punto(datos: dict) -> dict:
     """Inserta un nuevo punto de muestreo."""
-    db = get_admin_client()
+    db = get_db()
     fila = _build_fila(datos)
     res = db.table("puntos_muestreo").insert(fila).execute()
     creado = res.data[0]
@@ -246,7 +246,7 @@ def crear_punto(datos: dict) -> dict:
 
 def actualizar_punto(punto_id: str, datos: dict) -> dict:
     """Actualiza un punto existente."""
-    db = get_admin_client()
+    db = get_db()
 
     # Leer valores anteriores para auditoría
     anterior = (
@@ -303,7 +303,7 @@ def actualizar_punto(punto_id: str, datos: dict) -> dict:
 
 def toggle_punto(punto_id: str, activo: bool) -> None:
     """Activa o desactiva un punto."""
-    db = get_admin_client()
+    db = get_db()
     db.table("puntos_muestreo").update({"activo": activo}).eq("id", punto_id).execute()
     registrar_cambio(
         tabla="puntos_muestreo",
@@ -321,7 +321,7 @@ def eliminar_punto(punto_id: str) -> None:
     Elimina un punto de muestreo de forma permanente.
     Solo se permite si no tiene muestras asociadas.
     """
-    db = get_admin_client()
+    db = get_db()
 
     # Leer datos para auditoría
     punto_data = (
@@ -369,7 +369,7 @@ def get_cuencas() -> list[str]:
     en BD (normalizadas), ordenadas: primero las canónicas en orden fijo,
     luego cualquier cuenca custom adicional.
     """
-    db = get_admin_client()
+    db = get_db()
     res = (
         db.table("puntos_muestreo")
         .select("cuenca")
@@ -388,7 +388,7 @@ def get_cuencas() -> list[str]:
 @cached(ttl=300, grupo="referencia")
 def get_tipos() -> list[str]:
     """Valores únicos de tipo existentes en la tabla."""
-    db = get_admin_client()
+    db = get_db()
     res = (
         db.table("puntos_muestreo")
         .select("tipo")

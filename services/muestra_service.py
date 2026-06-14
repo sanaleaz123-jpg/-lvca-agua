@@ -23,7 +23,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from database.client import get_admin_client
+from database.client import get_db
 from services.audit_service import registrar_cambio
 from services.parametro_registry import (
     get_parametros_insitu,
@@ -137,7 +137,7 @@ PARAMETROS_INSITU = get_parametros_insitu
 
 def get_campanas_en_campo() -> list[dict]:
     """Campañas con estado 'en_campo' (aptas para registrar muestras)."""
-    db = get_admin_client()
+    db = get_db()
     res = (
         db.table("campanas")
         .select("id, codigo, nombre, fecha_inicio, fecha_fin")
@@ -150,7 +150,7 @@ def get_campanas_en_campo() -> list[dict]:
 
 def get_puntos_de_campana_activa(campana_id: str) -> list[dict]:
     """Puntos vinculados a la campaña (desde campana_puntos)."""
-    db = get_admin_client()
+    db = get_db()
     res = (
         db.table("campana_puntos")
         .select("puntos_muestreo(id, codigo, nombre, tipo, cuenca, eca_id)")
@@ -170,7 +170,7 @@ def get_usuarios_campo() -> list[dict]:
     Usuarios activos aptos para trabajo de campo.
     Incluye administrador, analista_lab, tecnico_campo y visualizador.
     """
-    db = get_admin_client()
+    db = get_db()
     res = (
         db.table("usuarios")
         .select("id, nombre, apellido, rol, institucion")
@@ -184,7 +184,7 @@ def get_usuarios_campo() -> list[dict]:
 
 def get_responsables_lab() -> list[dict]:
     """Usuarios activos aptos para responsable de laboratorio."""
-    db = get_admin_client()
+    db = get_db()
     res = (
         db.table("usuarios")
         .select("id, nombre, apellido, rol")
@@ -201,7 +201,7 @@ def get_campana_detalle(campana_id: str) -> dict:
     Detalle de una campaña por id (codigo, nombre, fechas, responsable_campo,
     estado). Retorna dict vacío si no existe.
     """
-    db = get_admin_client()
+    db = get_db()
     res = (
         db.table("campanas")
         .select(
@@ -244,7 +244,7 @@ def crear_muestra(datos: dict) -> dict:
 
 def _crear_muestra_simple(datos: dict) -> dict:
     """Crea una sola muestra (superficial o normal)."""
-    db = get_admin_client()
+    db = get_db()
     codigo = _generar_codigo_muestra(db)
 
     fila = _build_fila(datos, codigo)
@@ -263,7 +263,7 @@ def _crear_muestras_columna(datos: dict) -> dict:
     en orden) o, por compatibilidad, todas las claves presentes en
     `datos["profundidades"]`. Si no se especifica, se asume el clásico S/M/F.
     """
-    db = get_admin_client()
+    db = get_db()
     grupo_id = str(uuid.uuid4())
     profundidades = datos.get("profundidades", {})
     niveles = datos.get("niveles_columna") or list(profundidades.keys()) or ["S", "M", "F"]
@@ -301,7 +301,7 @@ def agregar_nivel_a_grupo(
     edición de una muestra de columna."""
     if nivel not in ("S", "M", "F"):
         raise ValueError(f"Nivel inválido: {nivel}")
-    db = get_admin_client()
+    db = get_db()
     codigo = _generar_codigo_muestra(db)
     fila = _build_fila(datos_base, codigo)
     fila["modo_muestreo"] = "columna"
@@ -411,7 +411,7 @@ def registrar_insitu(
 
     Retorna (ok_count, errores).
     """
-    db = get_admin_client()
+    db = get_db()
     ok = 0
     errores: list[str] = []
 
@@ -489,7 +489,7 @@ def get_mediciones_insitu(muestra_id: str) -> dict[str, dict]:
     Retorna mediciones in situ existentes.
     Formato: {clave_parametro: {valor, unidad, equipo, numero_serie}}
     """
-    db = get_admin_client()
+    db = get_db()
     res = (
         db.table("mediciones_insitu")
         .select("parametro, valor, unidad, equipo, numero_serie")
@@ -509,7 +509,7 @@ def get_limites_insitu(muestra_id: str) -> dict[str, dict]:
     La búsqueda compara los nombres de los parámetros ECA contra
     los nombres definidos en PARAMETROS_INSITU.
     """
-    db = get_admin_client()
+    db = get_db()
 
     # Muestra → punto → eca_id
     m = (
@@ -566,7 +566,7 @@ def actualizar_estado_muestra(muestra_id: str, nuevo_estado: str, usuario_id: Op
     campaña ya están analizadas, la campaña se cierra automáticamente
     (en_laboratorio → completada).
     """
-    db = get_admin_client()
+    db = get_db()
 
     res = (
         db.table("muestras")
@@ -617,7 +617,7 @@ def _autocompletar_campana_si_todas_analizadas(
     se grabó — no queremos romper esa operación por un fallo en la
     transición de la campaña).
     """
-    db = get_admin_client()
+    db = get_db()
 
     estados_muestras = (
         db.table("muestras")
@@ -670,7 +670,7 @@ def recibir_en_laboratorio(
             "puede registrarse sin identificar quién recibió la muestra."
         )
 
-    db = get_admin_client()
+    db = get_db()
 
     # Verificar que esté en estado 'en_transporte'
     res = (
@@ -715,7 +715,7 @@ def get_muestras_por_campana(
     filtro_punto:  Optional[str] = None,
 ) -> list[dict]:
     """Muestras de una campaña con filtros opcionales."""
-    db = get_admin_client()
+    db = get_db()
     _select_base = (
         "id, codigo, tipo_muestra, fecha_muestreo, hora_recoleccion, "
         "estado, clima, nivel_agua, temperatura_transporte, "
@@ -763,7 +763,7 @@ def get_muestras_por_campana(
 def get_muestra_por_campana_punto(campana_id: str, punto_id: str) -> dict | None:
     """Retorna la muestra más reciente de un punto en una campaña, o None.
     Para muestras de columna, retorna la primera (S) del grupo."""
-    db = get_admin_client()
+    db = get_db()
     _select = (
         "id, codigo, tipo_muestra, fecha_muestreo, hora_recoleccion, "
         "estado, clima, caudal_estimado, nivel_agua, preservante, "
@@ -820,7 +820,7 @@ def get_muestra_por_campana_punto(campana_id: str, punto_id: str) -> dict | None
 
 def get_muestras_grupo(grupo_profundidad: str) -> list[dict]:
     """Retorna las muestras de un grupo de profundidad (S, M, F)."""
-    db = get_admin_client()
+    db = get_db()
     res = (
         db.table("muestras")
         .select("id, codigo, profundidad_tipo, profundidad_valor")
@@ -833,7 +833,7 @@ def get_muestras_grupo(grupo_profundidad: str) -> list[dict]:
 
 def get_muestra_detalle(muestra_id: str) -> dict:
     """Detalle completo de una muestra individual."""
-    db = get_admin_client()
+    db = get_db()
     res = (
         db.table("muestras")
         .select(
@@ -863,7 +863,7 @@ def actualizar_muestra(muestra_id: str, datos: dict) -> dict:
         clima, caudal_estimado, nivel_agua, preservante,
         temperatura_transporte, observaciones_campo, codigo_laboratorio
     """
-    db = get_admin_client()
+    db = get_db()
     campos = {}
     campos_texto = (
         "tipo_muestra", "fecha_muestreo", "hora_recoleccion",
@@ -924,7 +924,7 @@ def eliminar_muestra(muestra_id: str, usuario_id: Optional[str] = None) -> None:
     Elimina una muestra y sus registros relacionados.
     Solo se permite eliminar muestras en estado 'recolectada'.
     """
-    db = get_admin_client()
+    db = get_db()
 
     # Verificar estado
     res = (
@@ -1021,7 +1021,7 @@ def renumerar_codigos_campana(campana_id: str) -> int:
 
     Retorna la cantidad de muestras renumeradas.
     """
-    db = get_admin_client()
+    db = get_db()
 
     muestras = (
         db.table("muestras")

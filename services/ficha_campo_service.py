@@ -16,7 +16,7 @@ import copy
 from io import BytesIO
 from pathlib import Path
 
-from database.client import get_admin_client
+from database.client import get_db
 from services.parametro_registry import get_cat_params, get_columnas_parametros
 from services.storage_service import get_croquis_url, get_fotos_campo, download_imagen
 
@@ -122,7 +122,7 @@ def _get_datos_punto(punto: dict) -> dict:
 
 def get_datos_fichas_campana(campana_id: str) -> list[dict]:
     """Reúne datos de todas las muestras de una campaña para generar fichas."""
-    db = get_admin_client()
+    db = get_db()
 
     m_res = (
         db.table("muestras")

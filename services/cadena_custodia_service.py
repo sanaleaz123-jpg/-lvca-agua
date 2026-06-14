@@ -19,7 +19,7 @@ from datetime import datetime
 from io import BytesIO
 from typing import Optional
 
-from database.client import get_admin_client
+from database.client import get_db
 from services.parametro_registry import (
     get_parametros_lab_cadena,
     get_parametros_campo_cadena,
@@ -128,7 +128,7 @@ def get_equipos_registrados() -> list[dict]:
     Si la tabla no existe, retorna EQUIPOS_DEFAULT.
     """
     try:
-        db = get_admin_client()
+        db = get_db()
         res = (
             db.table("equipos_medicion")
             .select("id, codigo, nombre, activo")
@@ -148,7 +148,7 @@ def get_equipos_registrados() -> list[dict]:
 def registrar_equipo(codigo: str, nombre: str) -> dict:
     """Registra un nuevo equipo de medición."""
     try:
-        db = get_admin_client()
+        db = get_db()
         res = db.table("equipos_medicion").insert({
             "codigo": codigo,
             "nombre": nombre,
@@ -208,7 +208,7 @@ def get_datos_cadena(campana_id: str) -> dict:
     Recopila todos los datos necesarios para generar la cadena de custodia:
         campana, muestras (con punto, coordenadas, mediciones insitu)
     """
-    db = get_admin_client()
+    db = get_db()
 
     # Campaña
     campana = (
@@ -236,11 +236,9 @@ def get_datos_cadena(campana_id: str) -> dict:
         ", modo_muestreo, profundidad_tipo, profundidad_valor, "
         "grupo_profundidad, profundidad_total, profundidad_secchi"
     )
-    try:
-        db.table("muestras").select("modo_muestreo").limit(1).execute()
+    from services.muestra_service import columna_muestras_existe
+    if columna_muestras_existe(db, "modo_muestreo"):
         _select_muestras += _depth_fields
-    except Exception:
-        pass
     m_res = (
         db.table("muestras")
         .select(_select_muestras)
@@ -318,8 +316,8 @@ def get_config_persistida(campana_id: str) -> dict | None:
     Requiere migración 006 (tabla cadena_custodia_config).
     """
     try:
-        from database.client import get_admin_client
-        db = get_admin_client()
+        from database.client import get_db
+        db = get_db()
         res = (
             db.table("cadena_custodia_config")
             .select("config")
@@ -345,8 +343,8 @@ def guardar_config_persistida(
     Retorna True si se guardó, False si la tabla no existe (migración 006 pendiente).
     """
     try:
-        from database.client import get_admin_client
-        db = get_admin_client()
+        from database.client import get_db
+        db = get_db()
         payload = {
             "campana_id":      campana_id,
             "config":          config,

@@ -19,7 +19,7 @@ Funciones públicas:
 from __future__ import annotations
 
 from typing import Optional
-from database.client import get_admin_client
+from database.client import get_db
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -75,7 +75,7 @@ def lookup_eca_matricial(
             "motivo": str,
         }
     """
-    db = get_admin_client()
+    db = get_db()
     # Un solo query con joins ilativos vía códigos
     res = (
         db.table("eca_valores_matriciales")

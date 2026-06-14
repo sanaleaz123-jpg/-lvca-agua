@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import Optional
 from datetime import date
 
-from database.client import get_admin_client
+from database.client import get_db
 from services.cache import cached
 
 
@@ -25,7 +25,7 @@ def punto_dentro_zona_mezcla(punto_id: str) -> bool:
     """Retorna True si el punto está marcado como dentro de zona de mezcla."""
     if not punto_id:
         return False
-    db = get_admin_client()
+    db = get_db()
     res = (
         db.table("puntos_muestreo")
         .select("dentro_zona_mezcla")
@@ -51,7 +51,7 @@ def tiene_excepcion_art6(punto_id: str, parametro_id: str) -> bool:
     """
     if not punto_id or not parametro_id:
         return False
-    db = get_admin_client()
+    db = get_db()
     res = (
         db.table("excepciones_art6")
         .select("id, fecha_vencimiento")
@@ -73,7 +73,7 @@ def listar_excepciones_art6(punto_id: Optional[str] = None) -> list[dict]:
     Lista excepciones Art. 6. Filtra por punto si se provee.
     Retorna filas con datos del punto y parámetro ya resueltos.
     """
-    db = get_admin_client()
+    db = get_db()
     query = (
         db.table("excepciones_art6")
         .select(
@@ -103,7 +103,7 @@ def registrar_excepcion_art6(
     registrado_por: Optional[str] = None,
 ) -> dict:
     """Crea o actualiza una excepción Art. 6 (UPSERT por punto+parámetro)."""
-    db = get_admin_client()
+    db = get_db()
     fila = {
         "punto_muestreo_id": punto_id,
         "parametro_id":      parametro_id,
@@ -127,7 +127,7 @@ def registrar_excepcion_art6(
 
 def revocar_excepcion_art6(punto_id: str, parametro_id: str) -> None:
     """Marca la excepción como no vigente (soft-delete)."""
-    db = get_admin_client()
+    db = get_db()
     db.table("excepciones_art6").update({"vigente": False}).eq(
         "punto_muestreo_id", punto_id
     ).eq("parametro_id", parametro_id).execute()
