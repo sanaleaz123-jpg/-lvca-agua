@@ -1421,6 +1421,16 @@ def _construir_mapa(
     # Tile layers — max_native_zoom evita que Leaflet quede en blanco al
     # pedir tiles más allá de lo que el proveedor sirve. max_zoom mantiene
     # el control de zoom disponible (sobreescala el último tile válido).
+    #
+    # El primer TileLayer añadido es el basemap activo por defecto. Usamos un
+    # mapa claro (CartoDB Positron) para el look limpio de geoportal: deja
+    # respirar a las capas (cuencas, ríos, puntos) sin la saturación del
+    # satélite, que queda como opción.
+    folium.TileLayer(
+        "CartoDB positron",
+        name="Mapa claro",
+        max_native_zoom=20, max_zoom=22,
+    ).add_to(m)
     folium.TileLayer(
         "OpenStreetMap",
         name="Calles",
@@ -1457,6 +1467,81 @@ def _construir_mapa(
         active_color="#1565C0",
         completed_color="#0D47A1",
     ).add_to(m)
+
+    # ── Estilizado de los controles Leaflet para integrarlos con la app ──────
+    # El control de capas, el zoom, fullscreen y la regla usan por defecto el
+    # look genérico de Leaflet. Lo reemplazamos por el lenguaje visual del
+    # portal: tarjetas redondeadas, sombra suave, fuente Inter y azules de
+    # marca. Se inyecta en el <head> del mapa, así aplica sin importar el
+    # orden de creación de los controles.
+    _MAP_CONTROLS_CSS = """
+    <style>
+    .leaflet-container { font-family: 'Inter','Segoe UI',sans-serif; }
+    /* Panel de capas */
+    .leaflet-control-layers {
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 12px !important;
+        box-shadow: 0 8px 24px rgba(15,23,42,0.10), 0 2px 6px rgba(15,23,42,0.06) !important;
+        overflow: hidden;
+        background: #ffffff !important;
+    }
+    .leaflet-control-layers-toggle {
+        border-radius: 12px !important;
+        width: 38px !important; height: 38px !important;
+        background-size: 20px 20px !important;
+    }
+    .leaflet-control-layers-expanded {
+        padding: 12px 14px 12px 12px !important;
+        min-width: 188px;
+        color: #334155;
+        font-size: 12.5px;
+    }
+    /* Título "Capas" del panel expandido */
+    .leaflet-control-layers-expanded::before {
+        content: "Capas";
+        display: block;
+        font-weight: 700;
+        font-size: 13px;
+        color: #0f172a;
+        letter-spacing: -0.01em;
+        margin: 0 0 8px 0;
+        padding-bottom: 6px;
+        border-bottom: 1px solid #f1f5f9;
+    }
+    .leaflet-control-layers label {
+        display: flex; align-items: center; gap: 8px;
+        margin: 2px 0; font-weight: 500; cursor: pointer;
+        line-height: 1.5;
+    }
+    .leaflet-control-layers label span { display: inline-flex; align-items: center; gap: 8px; }
+    .leaflet-control-layers-selector { accent-color: #0D47A1; width: 15px; height: 15px; }
+    .leaflet-control-layers-separator {
+        border-top: 1px solid #e2e8f0 !important; margin: 8px 0 !important;
+    }
+    /* Botones de barra: zoom, fullscreen, regla */
+    .leaflet-bar {
+        border: none !important;
+        border-radius: 10px !important;
+        box-shadow: 0 4px 12px rgba(15,23,42,0.10) !important;
+        overflow: hidden;
+    }
+    .leaflet-bar a, .leaflet-bar a:hover {
+        width: 32px !important; height: 32px !important;
+        line-height: 32px !important;
+        color: #0D47A1 !important;
+        border-bottom: 1px solid #eef2f6 !important;
+    }
+    .leaflet-bar a:hover { background: #f1f5f9 !important; }
+    .leaflet-bar a.leaflet-disabled { color: #cbd5e1 !important; }
+    /* Atribución más sutil */
+    .leaflet-control-attribution {
+        background: rgba(255,255,255,0.78) !important;
+        border-radius: 6px 0 0 0 !important;
+        font-size: 10px !important; color: #94a3b8 !important;
+    }
+    </style>
+    """
+    m.get_root().header.add_child(folium.Element(_MAP_CONTROLS_CSS))
 
     # ── Polígonos de cuencas hidrográficas (estilo SSDH/ANA) ─────────────
     # Outline de color por cuenca para distinguirlas a simple vista. Se usan
@@ -1791,9 +1876,9 @@ def _construir_mapa(
            padding-bottom:6px; border-bottom:1px solid #f1f5f9;">
         <div>
           <div style="font-weight:700; color:#0f172a; font-size:13px;
-               letter-spacing:-0.01em;">Estado ECA</div>
+               letter-spacing:-0.01em;">Leyenda</div>
           <div style="font-size:10px; color:#94a3b8; margin-top:1px;">
-            D.S. N° 004-2017-MINAM
+            Monitoreo de calidad del agua
           </div>
         </div>
         <span id="lvca-legend-caret" style="color:#94a3b8;
@@ -1801,6 +1886,11 @@ def _construir_mapa(
       </div>
       <div id="lvca-legend-body" style="margin-top:8px; color:#334155;
            display:block;">
+        <div style="font-weight:700; color:#0F172A; font-size:12px;
+             letter-spacing:-0.01em; margin-bottom:4px;">Estado ECA
+          <span style="font-weight:500; color:#94a3b8; font-size:10px;">
+            · D.S. 004-2017-MINAM</span>
+        </div>
         <div style="display:flex; align-items:center; gap:10px; padding:3px 0;">
           <svg width="14" height="14" viewBox="0 0 24 24" style="flex-shrink:0;">
             <circle cx="12" cy="12" r="9" fill="#10B981" stroke="#047857" stroke-width="1"/>
