@@ -65,7 +65,9 @@ def verificar_acceso(rol_minimo: Rol = "visitante") -> None:
     La navegación se sirve desde top_nav() dentro de cada página.
     """
     if not verificar_sesion():
-        _pantalla_sin_sesion()
+        # Sin sesión: redirigir directamente al login (app.py), sin pantalla
+        # intermedia de "Acceso restringido".
+        st.switch_page("app.py")
         st.stop()
 
     sesion = st.session_state["sesion"]
@@ -95,14 +97,6 @@ def require_rol(rol_minimo: Rol = "visitante") -> Callable:
 
 
 # ─── pantallas de bloqueo ─────────────────────────────────────────────────────
-
-def _pantalla_sin_sesion() -> None:
-    aplicar_estilos()
-    st.warning("### Acceso restringido")
-    st.info("Por favor, inicia sesión para continuar.")
-    if st.button("Ir al inicio de sesión", type="primary"):
-        st.switch_page("app.py")
-
 
 def _pantalla_acceso_denegado(rol_requerido: Rol, rol_actual: Rol) -> None:
     aplicar_estilos()
