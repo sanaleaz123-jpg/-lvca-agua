@@ -10,6 +10,10 @@ Incluye reintentos automáticos ante desconexiones del servidor.
 
 from __future__ import annotations
 
+import base64
+import json
+import time
+
 import httpx
 from supabase import create_client, Client
 from supabase.lib.client_options import SyncClientOptions
@@ -88,6 +92,60 @@ def get_user_client(access_token: str, refresh_token: str = "") -> Client:
     return client
 
 
+# Margen (segundos) antes de la expiración del JWT para renovarlo proactivamente.
+_MARGEN_REFRESCO_SEG = 120
+
+
+def _jwt_exp(token: str) -> float | None:
+    """Lee el claim `exp` (epoch) de un JWT sin verificar la firma. None si falla."""
+    try:
+        payload = token.split(".")[1]
+        payload += "=" * (-len(payload) % 4)  # padding base64url
+        data = json.loads(base64.urlsafe_b64decode(payload))
+        exp = data.get("exp")
+        return float(exp) if exp is not None else None
+    except Exception:
+        return None
+
+
+def _asegurar_token_vigente(sesion) -> tuple[str, str]:
+    """
+    Devuelve (access_token, refresh_token) vigentes, renovando el JWT si está por
+    expirar. Actualiza in-place el objeto `sesion` (y por tanto
+    st.session_state["sesion"]) con los tokens nuevos. Si no puede renovar,
+    devuelve los tokens actuales.
+
+    Sin esto, el cliente autenticado dejaría de funcionar ~1 h después del login
+    (JWT expirado) cuando RLS está activo.
+    """
+    access = getattr(sesion, "access_token", "") or ""
+    refresh = getattr(sesion, "refresh_token", "") or ""
+    if not refresh:
+        return access, refresh
+
+    exp = _jwt_exp(access)
+    if exp is not None and (exp - time.time()) > _MARGEN_REFRESCO_SEG:
+        return access, refresh  # todavía vigente
+
+    # Cerca de expirar (o exp ilegible): renovar con el refresh_token usando un
+    # cliente efímero (no toca el singleton anon compartido).
+    try:
+        tmp = create_client(SUPABASE_URL, SUPABASE_ANON_KEY, _make_options())
+        resp = tmp.auth.refresh_session(refresh)
+        nueva = getattr(resp, "session", None)
+        if nueva and getattr(nueva, "access_token", ""):
+            sesion.access_token = nueva.access_token
+            sesion.refresh_token = nueva.refresh_token or refresh
+            return sesion.access_token, sesion.refresh_token
+    except Exception:
+        from services.logging_config import get_logger
+        get_logger(__name__).warning(
+            "No se pudo renovar el JWT del usuario; se usa el token actual "
+            "(puede requerir re-login).", exc_info=True,
+        )
+    return access, refresh
+
+
 def get_db() -> Client:
     """
     Cliente de datos según el modo de RLS (interruptor LVCA_RLS / USE_RLS).
@@ -112,15 +170,17 @@ def get_db() -> Client:
     except Exception:
         sesion = None
 
-    token = getattr(sesion, "access_token", "") if sesion else ""
-    if not token:
+    if not sesion or not getattr(sesion, "access_token", ""):
         # Sin sesión de usuario: no hay JWT que usar → cliente admin.
         return get_admin_client()
+
+    # Renueva el JWT si está por expirar (mantiene RLS operativo más de 1 h).
+    token, refresh = _asegurar_token_vigente(sesion)
 
     cache = st.session_state.setdefault("_user_db_cache", {})
     if token not in cache:
         cache.clear()  # descarta clientes con tokens viejos (p. ej. tras refresh)
-        cache[token] = get_user_client(token, getattr(sesion, "refresh_token", ""))
+        cache[token] = get_user_client(token, refresh)
     return cache[token]
 
 
