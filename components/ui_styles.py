@@ -1576,6 +1576,75 @@ _FOOTER_HTML = """
 """
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Responsividad + accesibilidad — bloque independiente para no tocar el
+# _GLOBAL_CSS. Se inyecta después del global, así sus reglas (media queries
+# y :focus-visible) ganan en orden de cascada cuando empatan en especificidad.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_RESPONSIVE_A11Y_CSS = """<style>
+/* ── Accesibilidad: foco visible para navegación por teclado (WCAG 2.4.7) ── */
+a:focus-visible,
+button:focus-visible,
+[role="button"]:focus-visible,
+.stButton > button:focus-visible,
+[data-testid="stPageLink"] a:focus-visible,
+[data-baseweb="input"] input:focus-visible,
+[data-baseweb="select"]:focus-within,
+textarea:focus-visible,
+[data-baseweb="tab"]:focus-visible {
+    outline: 2px solid #1565C0 !important;
+    outline-offset: 2px !important;
+    border-radius: 6px;
+}
+/* Sobre el nav azul oscuro, un anillo claro (teal) tiene mejor contraste. */
+.st-key-lvca_top_nav [data-testid="stPageLink"] a:focus-visible {
+    outline: 2px solid #5eead4 !important;
+}
+/* Contraste AA: subir levemente textos tenues sobre el nav oscuro. */
+.lvca-brand-sub { color: rgba(255,255,255,0.80) !important; }
+.lvca-user-rol  { color: rgba(255,255,255,0.72) !important; }
+
+/* ── Respiración entre secciones ─────────────────────────────────────────── */
+.lvca-section-header { margin-top: 1.9rem !important; }
+
+/* ── Responsividad: tablet ───────────────────────────────────────────────── */
+@media (max-width: 820px) {
+    /* El subtítulo de marca ocupa demasiado: se oculta y deja sitio a los logos. */
+    .lvca-brand-sub { display: none !important; }
+    .lvca-brand-chip img { height: 22px; }
+    /* Links de nav más compactos y con espacio para envolver. */
+    .st-key-lvca_top_nav [data-testid="stPageLink"] a {
+        padding: 6px 9px !important;
+        font-size: 0.78rem !important;
+    }
+    /* El nav fijo crece al envolver los links → más colchón para el contenido. */
+    [data-testid="stMainBlockContainer"]:has(.st-key-lvca_top_nav) {
+        padding-top: 134px !important;
+    }
+    /* Banner de página más compacto. */
+    .lvca-banner { padding: 16px 18px !important; }
+    .lvca-banner h1 { font-size: 1.15rem !important; }
+}
+
+/* ── Responsividad: móvil ────────────────────────────────────────────────── */
+@media (max-width: 560px) {
+    /* Contadores del hero a ancho completo, uno por fila. */
+    .lvca-stat { flex-basis: 100% !important; border-right: none !important; }
+    .lvca-stat-num { font-size: 1.7rem; }
+    .lvca-footer { font-size: 0.62rem; padding: 5px 10px; }
+    [data-testid="stMainBlockContainer"]:has(.st-key-lvca_top_nav) {
+        padding-top: 152px !important;
+    }
+}
+
+/* Respeta a quienes prefieren menos movimiento. */
+@media (prefers-reduced-motion: reduce) {
+    * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+}
+</style>"""
+
+
 def aplicar_estilos() -> None:
     """
     Inyecta el CSS global y la fuente Inter. Llamar al inicio de cada página.
@@ -1591,6 +1660,7 @@ def aplicar_estilos() -> None:
     """
     st.markdown(_FONT_LINK, unsafe_allow_html=True)
     st.markdown(_GLOBAL_CSS, unsafe_allow_html=True)
+    st.markdown(_RESPONSIVE_A11Y_CSS, unsafe_allow_html=True)
     st.markdown(_FOOTER_HTML, unsafe_allow_html=True)
 
 
