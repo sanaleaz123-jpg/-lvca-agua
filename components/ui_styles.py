@@ -1334,10 +1334,19 @@ hr {
    Movido desde el st.markdown inline de pages/7_Geoportal.py para no
    reinyectar ~60 líneas de CSS en cada rerun completo. Selectores
    namespaced: no afectan otras páginas. */
-/* Padding superior compacto para maximizar espacio vertical */
-[data-testid="stMainBlockContainer"]:has(.lvca-geo-vista-integrada) {
-    padding-top: 84px !important;
-    padding-bottom: 12px !important;
+/* Padding superior compacto para maximizar espacio vertical.
+   Doble :has para ganar a la regla genérica del top-nav (108px), que de otro
+   modo deja un hueco en blanco entre la barra azul y las tarjetas. */
+[data-testid="stMainBlockContainer"]:has(.lvca-geo-vista-integrada),
+[data-testid="stMainBlockContainer"]:has(.lvca-geo-vista-integrada):has(.st-key-lvca_top_nav) {
+    padding-top: 88px !important;
+    padding-bottom: 10px !important;
+}
+/* El div .lvca-geo-vista-integrada es solo un ancla de CSS: su contenedor no
+   debe ocupar alto ni dejar hueco vertical sobre las tarjetas. */
+[data-testid="stElementContainer"]:has(> [data-testid="stMarkdownContainer"] .lvca-geo-vista-integrada) {
+    height: 0 !important; min-height: 0 !important;
+    margin: 0 !important; padding: 0 !important;
 }
 /* KPI cards más compactas */
 .lvca-geo-vista-integrada ~ div .lvca-kpi-bold,

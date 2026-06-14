@@ -35,16 +35,22 @@ CUENCAS_CANONICAS: list[str] = [
 
 
 def _slug_cuenca(raw: str) -> str:
-    """Clave de comparación: minúsculas, sin tildes, sin espacios ni guiones."""
+    """
+    Clave de comparación de cuencas: minúsculas, sin tildes y **sin importar el
+    orden de las palabras** ni los separadores. Así "Quilca-Vitor-Chili",
+    "Quilca Chili Vítor" y "quilca_chili_vitor" colapsan a la misma clave y se
+    unifican en una sola cuenca canónica.
+    """
     if not raw:
         return ""
     s = raw.strip().lower()
     repl = (("á", "a"), ("é", "e"), ("í", "i"), ("ó", "o"), ("ú", "u"), ("ñ", "n"))
     for a, b in repl:
         s = s.replace(a, b)
-    for ch in (" ", "-", "_", ".", "/"):
-        s = s.replace(ch, "")
-    return s
+    # Tokenizar por cualquier separador y ordenar para ignorar el orden.
+    import re
+    tokens = [t for t in re.split(r"[ \-_./]+", s) if t]
+    return "".join(sorted(tokens))
 
 
 _CUENCA_SLUG_MAP = {_slug_cuenca(c): c for c in CUENCAS_CANONICAS}

@@ -670,16 +670,21 @@ def get_metricas_dashboard(dias: int = 30, cuenca: str | None = None) -> dict:
     db = get_db()
     fecha_corte = (datetime.utcnow() - timedelta(days=dias)).date().isoformat()
 
-    # IDs de los puntos de la cuenca seleccionada (None = sin filtro de cuenca)
+    # IDs de los puntos de la cuenca seleccionada (None = sin filtro de cuenca).
+    # Se compara por forma canónica para tolerar variantes de grafía en BD.
     punto_ids: list[str] | None = None
     if cuenca:
+        from services.punto_service import normalizar_cuenca
+        objetivo = normalizar_cuenca(cuenca)
         pr = (
             db.table("puntos_muestreo")
-            .select("id")
-            .eq("cuenca", cuenca)
+            .select("id, cuenca")
             .execute()
         )
-        punto_ids = [r["id"] for r in (pr.data or [])]
+        punto_ids = [
+            r["id"] for r in (pr.data or [])
+            if normalizar_cuenca(r.get("cuenca")) == objetivo
+        ]
         if not punto_ids:
             # Cuenca sin puntos → métricas en cero, sin más consultas.
             return {
@@ -777,6 +782,12 @@ def get_puntos_con_estado(dias: int = 30) -> list[dict]:
         .execute()
     )
     puntos = pts.data or []
+
+    # Unificar la grafía de cuenca a la forma canónica (BD con variantes).
+    from services.punto_service import normalizar_cuenca
+    for _p in puntos:
+        if _p.get("cuenca"):
+            _p["cuenca"] = normalizar_cuenca(_p["cuenca"])
 
     # Puntos que tienen excedencias activas (por ID, no por nombre)
     excedencias = get_excedencias_activas(dias)

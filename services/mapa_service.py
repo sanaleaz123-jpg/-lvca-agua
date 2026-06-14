@@ -60,6 +60,13 @@ def get_puntos_geoportal(
     )
     puntos = pts.data or []
 
+    # Unificar la grafía de cuenca (BD con variantes) a la forma canónica,
+    # para que filtros y leyendas muestren solo las cuencas reales.
+    from services.punto_service import normalizar_cuenca
+    for _p in puntos:
+        if _p.get("cuenca"):
+            _p["cuenca"] = normalizar_cuenca(_p["cuenca"])
+
     # Completar lat/lon desde UTM para puntos que solo tienen coordenadas UTM
     for _p in puntos:
         completar_latlon_desde_utm(_p)
