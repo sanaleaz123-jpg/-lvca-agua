@@ -143,14 +143,14 @@ def _pantalla_login() -> None:
             padding: 0 !important;
             border: 1px solid #eef2f6 !important;
         }
-        /* Inputs del login: focus verde institucional, igual que el resto
+        /* Inputs del login: focus azul institucional, igual que el resto
            de la plataforma. */
         .st-key-lvca_login_card [data-baseweb="input"] {
             border-radius: 8px !important;
         }
         .st-key-lvca_login_card [data-baseweb="input"]:focus-within {
-            border-color: #1b6b35 !important;
-            box-shadow: 0 0 0 3px rgba(27,107,53,0.15) !important;
+            border-color: #0D47A1 !important;
+            box-shadow: 0 0 0 3px rgba(13,71,161,0.15) !important;
         }
         /* Labels de form */
         .st-key-lvca_login_card label p,
@@ -234,7 +234,7 @@ def _pantalla_login() -> None:
                         AUTODEMA
                     </p>
                     <div style="position:absolute; left:0; right:0; bottom:0; height:3px;
-                         background:linear-gradient(90deg,#1b6b35,#0a9396);"></div>
+                         background:linear-gradient(90deg,#0D47A1,#0a9396);"></div>
                 </div>
                 """,
                 unsafe_allow_html=True,

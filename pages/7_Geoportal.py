@@ -1459,17 +1459,19 @@ def _construir_mapa(
     ).add_to(m)
 
     # ── Polígonos de cuencas hidrográficas (estilo SSDH/ANA) ─────────────
-    # Outline de color por cuenca para distinguirlas a simple vista:
-    #   Quilca-Vítor-Chili → verde    · Colca-Camaná → rojo
+    # Outline de color por cuenca para distinguirlas a simple vista. Se usan
+    # tonos de agua (azul institucional + teal) en vez de verde/rojo para no
+    # competir con el semáforo ECA de los puntos (verde=cumple, rojo=excede).
+    #   Quilca-Vítor-Chili → azul institucional   · Colca-Camaná → teal
     cuencas = _cargar_geojson_cuencas()
 
     def _color_cuenca(nombre: str) -> tuple[str, str]:
         """Devuelve (color_base, color_hover) según la cuenca."""
         n = nombre.lower()
         if "quilca" in n or "vitor" in n or "chili" in n:
-            return ("#22c55e", "#15803d")    # verde / verde oscuro
+            return ("#0D47A1", "#0A3D7A")    # azul institucional
         if "colca" in n or "caman" in n:
-            return ("#dc2626", "#991b1b")    # rojo / rojo oscuro
+            return ("#0a9396", "#07686a")    # teal / teal oscuro
         return ("#64748b", "#334155")         # gris fallback
 
     if cuencas:
@@ -1760,9 +1762,9 @@ def _construir_mapa(
     """
     m.get_root().script.add_child(folium.Element(utm_js))
 
-    # Colapsado por defecto: el panel expandido tapaba una porción grande
-    # del mapa. El usuario lo abre solo cuando necesita togglear capas.
-    folium.LayerControl(collapsed=True).add_to(m)
+    # Panel de capas siempre visible (estilo Visor Geohidro del ANA): el
+    # usuario ve y togglea las capas sin tener que abrir el control.
+    folium.LayerControl(collapsed=False).add_to(m)
 
     # Leyenda estilo mockup "Integrated Eco-Aura" — esquina inferior derecha,
     # con tres ítems (Cumple / Excedencia Leve / Excedencia Alta) usando
@@ -1851,6 +1853,37 @@ def _construir_mapa(
           </div>
           <div style="font-size:10px; color:#94a3b8; margin-top:4px;">
             Color del anillo = nivel (verde/amarillo/rojo)
+          </div>
+        </div>
+        <div style="border-top:1px solid #f1f5f9; padding-top:8px; margin-top:8px;">
+          <div style="font-weight:700; color:#0F172A; font-size:12px;
+               letter-spacing:-0.01em; margin-bottom:4px;">Capas base</div>
+          <div style="display:flex; align-items:center; gap:10px; padding:2px 0;">
+            <svg width="16" height="10" viewBox="0 0 16 10" style="flex-shrink:0;">
+              <rect x="1" y="1" width="14" height="8" rx="1" fill="rgba(13,71,161,0.06)"
+                    stroke="#0D47A1" stroke-width="1.6"/>
+            </svg>
+            <span style="font-weight:500;">Cuenca Quilca-Vítor-Chili</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px; padding:2px 0;">
+            <svg width="16" height="10" viewBox="0 0 16 10" style="flex-shrink:0;">
+              <rect x="1" y="1" width="14" height="8" rx="1" fill="rgba(10,147,150,0.06)"
+                    stroke="#0a9396" stroke-width="1.6"/>
+            </svg>
+            <span style="font-weight:500;">Cuenca Colca-Camaná</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px; padding:2px 0;">
+            <svg width="16" height="10" viewBox="0 0 16 10" style="flex-shrink:0;">
+              <line x1="1" y1="5" x2="15" y2="5" stroke="#1d4ed8" stroke-width="2.5"/>
+            </svg>
+            <span style="font-weight:500;">Ríos</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px; padding:2px 0;">
+            <svg width="16" height="10" viewBox="0 0 16 10" style="flex-shrink:0;">
+              <line x1="1" y1="5" x2="15" y2="5" stroke="#60a5fa" stroke-width="1.6"
+                    stroke-dasharray="3,3"/>
+            </svg>
+            <span style="font-weight:500;">Quebradas</span>
           </div>
         </div>
       </div>
@@ -2135,7 +2168,10 @@ def _render_barras_comparativa_puntos(
         return
 
     df = pd.DataFrame(db_data).sort_values("valor", ascending=True)
-    colores = ["#c62828" if r["estado"] == "excede" else "#1b6b35" for _, r in df.iterrows()]
+    colores = [
+        COLORS["eca_excede"] if r["estado"] == "excede" else COLORS["eca_cumple"]
+        for _, r in df.iterrows()
+    ]
 
     unidad = (parametro.get("unidades_medida") or {}).get("simbolo", "")
     x_label = f"{parametro['nombre']} ({unidad})" if unidad else parametro["nombre"]
@@ -2221,7 +2257,7 @@ def _render_barras_mensuales(
     valores_por_mes = {int(r["mes"]): r["valor"] for _, r in df_agg.iterrows()}
     valores = [valores_por_mes.get(m) for m in range(1, 13)]
 
-    color_barra = "#1b6b35"
+    color_barra = COLORS["primary"]
     fig = go.Figure(go.Bar(
         x=MESES, y=valores,
         marker_color=color_barra,

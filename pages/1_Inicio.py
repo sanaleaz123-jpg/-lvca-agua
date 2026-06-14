@@ -21,7 +21,14 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from components.auth_guard import require_rol
-from components.ui_styles import COLORS, aplicar_estilos, page_header, section_header, top_nav
+from components.ui_styles import (
+    COLORS,
+    aplicar_estilos,
+    page_header,
+    section_header,
+    stat_counters,
+    top_nav,
+)
 from services.cache import cached
 from services.resultado_service import get_metricas_dashboard, get_puntos_con_estado
 
@@ -40,6 +47,47 @@ ICONOS_PUNTO = {
     "cumple":     "ok-sign",
     "sin_datos":  "minus-sign",
 }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Sección hero — Franja de contadores institucionales (estilo Observatorio ANA)
+# ─────────────────────────────────────────────────────────────────────────────
+
+from pathlib import Path
+
+
+def _contar_cuencas() -> int:
+    """N° de cuencas con cartografía disponible (archivos GeoJSON)."""
+    try:
+        carpeta = Path(__file__).resolve().parents[1] / "static" / "geojson" / "cuencas"
+        return len(list(carpeta.glob("*.geojson")))
+    except Exception:
+        return 0
+
+
+def _render_hero_contadores(metricas: dict, puntos: list[dict]) -> None:
+    """
+    Banda de estadísticas tipo Observatorio del Agua (ANA): cifras grandes de
+    la vigilancia de calidad del agua, alimentadas con datos reales.
+    """
+    total_puntos = len(puntos)
+    con_dato = [p for p in puntos if p.get("estado") in ("cumple", "excedencia")]
+    cumplen  = [p for p in con_dato if p.get("estado") == "cumple"]
+    pct_cumpl = round(len(cumplen) / len(con_dato) * 100) if con_dato else 0
+
+    items = [
+        {"valor": f"{metricas['muestras_mes']:,}".replace(",", " "),
+         "label": "Muestras (30 días)", "icon": "science"},
+        {"valor": f"{metricas['parametros_mes']:,}".replace(",", " "),
+         "label": "Parámetros analizados", "icon": "analytics"},
+        {"valor": total_puntos,
+         "label": "Puntos de monitoreo", "icon": "place"},
+        {"valor": _contar_cuencas(),
+         "label": "Cuencas vigiladas", "icon": "water_drop"},
+        {"valor": pct_cumpl, "suffix": "%",
+         "label": "Cumplimiento ECA", "icon": "verified"},
+    ]
+    stat_counters(items, titulo="Observatorio de Calidad del Agua")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -82,14 +130,14 @@ def _render_module_grid() -> None:
         .st-key-lvca_module_grid [data-testid="stPageLink"] a:hover {
             transform: translateY(-2px) !important;
             box-shadow: var(--lvca-shadow-md, 0 4px 12px rgba(15,23,42,0.08)) !important;
-            border-color: #1b6b35 !important;
-            color: #1b6b35 !important;
+            border-color: #0D47A1 !important;
+            color: #0D47A1 !important;
         }
         /* Primer span dentro del <a> = contenedor del icono (emoji). */
         .st-key-lvca_module_grid [data-testid="stPageLink"] a > span:first-child {
             width: 56px !important;
             height: 56px !important;
-            background: rgba(27,107,53,0.08) !important;
+            background: rgba(13,71,161,0.08) !important;
             border-radius: 50% !important;
             display: inline-flex !important;
             align-items: center !important;
@@ -100,7 +148,7 @@ def _render_module_grid() -> None:
             transition: background 0.15s ease !important;
         }
         .st-key-lvca_module_grid [data-testid="stPageLink"] a:hover > span:first-child {
-            background: rgba(27,107,53,0.14) !important;
+            background: rgba(13,71,161,0.14) !important;
         }
         /* Evitar que el label se trunque con "..." en cards estrechas. */
         .st-key-lvca_module_grid [data-testid="stPageLink"] a p,
@@ -363,7 +411,11 @@ def _render_excedencias_por_punto(excedencias: list[dict]) -> None:
         orientation="h",
         marker=dict(
             color=df_chart["Excedencias"],
-            colorscale=[[0, "#0a9396"], [0.5, "#1b6b35"], [1, "#c62828"]],
+            colorscale=[
+                [0, COLORS["eca_cumple"]],
+                [0.5, COLORS["eca_alerta"]],
+                [1, COLORS["eca_excede"]],
+            ],
         ),
         text=df_chart["Excedencias"],
         textposition="outside",
@@ -543,10 +595,6 @@ def main() -> None:
         ambito="Cuenca Chili-Quilca",
     )
 
-    # ── 0. Acceso a módulos (grilla SSDH-ANA) ───────────────────────────────
-    _render_module_grid()
-    st.divider()
-
     # ── Cargar datos ─────────────────────────────────────────────────────────
     with st.spinner("Cargando métricas..."):
         try:
@@ -557,6 +605,13 @@ def main() -> None:
             st.stop()
 
     excedencias = metricas["excedencias_lista"]
+
+    # ── Hero: contadores institucionales (estilo Observatorio ANA) ──────────
+    _render_hero_contadores(metricas, puntos)
+
+    # ── 0. Acceso a módulos (grilla SSDH-ANA) ───────────────────────────────
+    _render_module_grid()
+    st.divider()
 
     # ── 1. Tarjetas KPI ─────────────────────────────────────────────────────
     _render_kpis(metricas)
