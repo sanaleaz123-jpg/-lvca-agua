@@ -1342,14 +1342,21 @@ hr {
 /* KPI cards más compactas */
 .lvca-geo-vista-integrada ~ div .lvca-kpi-bold,
 .lvca-geo-kpis .lvca-kpi-bold {
-    min-height: 102px !important;
-    padding: 12px 16px 10px 16px !important;
+    min-height: 118px !important;
+    padding: 13px 16px 12px 16px !important;
     border-radius: 11px !important;
 }
 .lvca-geo-vista-integrada ~ div .lvca-kpi-bold .lvca-kpi-value,
 .lvca-geo-kpis .lvca-kpi-bold .lvca-kpi-value {
     font-size: 1.95rem !important;
-    margin: 2px 0 0 0 !important;
+    margin: 2px 0 4px 0 !important;
+}
+/* Bullets en una sola línea con ellipsis: evita el amontonamiento cuando
+   el bullet es "CÓDIGO — Nombre largo". El texto completo queda en title. */
+.lvca-geo-vista-integrada ~ div .lvca-kpi-bold .lvca-kpi-bullets li,
+.lvca-geo-kpis .lvca-kpi-bold .lvca-kpi-bullets li {
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    max-width: 100%;
 }
 .lvca-geo-vista-integrada ~ div .lvca-kpi-bold .lvca-kpi-title,
 .lvca-geo-kpis .lvca-kpi-bold .lvca-kpi-title {
@@ -1366,9 +1373,9 @@ hr {
 }
 .lvca-geo-vista-integrada ~ div .lvca-kpi-bold .lvca-kpi-bullets,
 .lvca-geo-kpis .lvca-kpi-bold .lvca-kpi-bullets {
-    font-size: 0.7rem !important;
-    line-height: 1.4 !important;
-    margin: 2px 0 0 0 !important;
+    font-size: 0.72rem !important;
+    line-height: 1.55 !important;
+    margin: 3px 0 0 0 !important;
 }
 .lvca-geo-vista-integrada ~ div .lvca-kpi-bold .lvca-kpi-foot,
 .lvca-geo-kpis .lvca-kpi-bold .lvca-kpi-foot {
@@ -1885,13 +1892,18 @@ _TOP_NAV_CSS = """<style>
 /* Página activa: Streamlit marca el link actual con aria-current="page".
    Si la versión instalada no lo emite, la regla simplemente no aplica. */
 .st-key-lvca_top_nav [data-testid="stPageLink"] a[aria-current="page"] {
-    background: rgba(255,255,255,0.16) !important;
+    background: rgba(255,255,255,0.22) !important;
     color: #ffffff !important;
-    font-weight: 600 !important;
-    box-shadow: inset 0 -2px 0 #2dd4bf;
+    font-weight: 700 !important;
+    border: 1px solid rgba(255,255,255,0.18) !important;
+    box-shadow: inset 0 -3px 0 #2dd4bf;
 }
 .st-key-lvca_top_nav [data-testid="stPageLink"] a[aria-current="page"] p {
-    font-weight: 600 !important;
+    font-weight: 700 !important;
+}
+/* Ícono de la página activa en teal de acento para reforzar el "estás aquí". */
+.st-key-lvca_top_nav [data-testid="stPageLink"] a[aria-current="page"] .material-symbols-rounded {
+    color: #5eead4 !important;
 }
 /* Material Symbols en los links del top-nav: tamaño y color coherentes
    con el tamaño del label (16px, color heredado). */
@@ -2167,7 +2179,7 @@ def kpi_bold_card(
     """
     bullets_html = ""
     if bullets:
-        items = "".join(f"<li>{b}</li>" for b in bullets)
+        items = "".join(f'<li title="{b}">{b}</li>' for b in bullets)
         bullets_html = f'<ul class="lvca-kpi-bullets">{items}</ul>'
 
     foot_html = (

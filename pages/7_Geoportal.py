@@ -3164,13 +3164,25 @@ def _render_comparativa_eca_filtered(datos_f: list[dict], cat: str = "") -> None
     df_show.columns = ["Parámetro", "Valor", "Unidad", "Lím. Mín", "Lím. Máx", "Estado", "Fecha"]
 
     def _color_estado_cell(val):
+        # Alineado al semáforo ECA de la app (eca_excede / eca_cumple).
         if val == "EXCEDE":
-            return "background-color:#ffe0e0; color:#dc3545; font-weight:bold;"
+            return "background-color:#fee2e2; color:#b91c1c; font-weight:700;"
         elif val == "Cumple":
-            return "background-color:#e0ffe0; color:#28a745; font-weight:bold;"
+            return "background-color:#dcfce7; color:#047857; font-weight:700;"
         elif val == "SIN ECA":
-            return "color:#888;"
+            return "color:#94a3b8;"
         return ""
+
+    def _color_valor_row(row):
+        # Resalta la celda "Valor" según el estado de la fila, para leer de un
+        # vistazo qué medición disparó (o no) la excedencia.
+        estilos = [""] * len(row)
+        idx = row.index.get_loc("Valor")
+        if row["Estado"] == "EXCEDE":
+            estilos[idx] = "background-color:#fff1f1; color:#b91c1c; font-weight:600;"
+        elif row["Estado"] == "Cumple":
+            estilos[idx] = "color:#047857; font-weight:600;"
+        return estilos
 
     n_exc = sum(1 for d in datos_with_data if d["estado"] == "excede")
     n_ok = sum(1 for d in datos_with_data if d["estado"] == "cumple")
@@ -3182,7 +3194,9 @@ def _render_comparativa_eca_filtered(datos_f: list[dict], cat: str = "") -> None
     c3.metric("Sin dato", n_sin)
 
     st.dataframe(
-        df_show.style.map(_color_estado_cell, subset=["Estado"]),
+        df_show.style
+            .map(_color_estado_cell, subset=["Estado"])
+            .apply(_color_valor_row, axis=1),
         use_container_width=True, hide_index=True,
         height=min(400, 35 * len(df_show) + 38),
         key=f"comp_eca_filtered_{cat}",
