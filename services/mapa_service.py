@@ -15,7 +15,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Optional
 
-from database.client import get_admin_client
+from database.client import get_db
 from services.cache import cached
 from services.punto_service import completar_latlon_desde_utm
 
@@ -43,7 +43,7 @@ def get_puntos_geoportal(
         excedencias → [{parametro, codigo, valor, lim_max, lim_min, unidad, fecha}]
         ultima_fecha → str ISO date del resultado más reciente
     """
-    db = get_admin_client()
+    db = get_db()
 
     # 1. Todos los puntos activos con ECA
     pts = (
@@ -226,7 +226,7 @@ def get_historial_punto(
     de tendencia. `fecha_analisis` se conserva por si alguna pantalla la
     necesita explícitamente.
     """
-    db = get_admin_client()
+    db = get_db()
 
     # Muestras de este punto
     m_res = (
@@ -282,7 +282,7 @@ def get_limite_eca_parametro(
     Retorna los límites ECA de un parámetro para el punto indicado.
     {valor_minimo: float|None, valor_maximo: float|None, eca_codigo: str}
     """
-    db = get_admin_client()
+    db = get_db()
 
     pt = (
         db.table("puntos_muestreo")
@@ -321,7 +321,7 @@ def get_limites_eca_parametro_todos(parametro_id: str) -> dict[str, dict]:
     para TODOS los puntos en 2 queries (en vez de 2 por punto dentro de
     un loop). Retorna {punto_id: {valor_minimo, valor_maximo, eca_codigo}}.
     """
-    db = get_admin_client()
+    db = get_db()
 
     pts = (
         db.table("puntos_muestreo")
@@ -366,7 +366,7 @@ def get_ultimos_resultados_punto(
     Últimos N resultados de un punto con nombre del parámetro y unidad.
     Ordenados por fecha descendente.
     """
-    db = get_admin_client()
+    db = get_db()
 
     m_res = (
         db.table("muestras")
@@ -413,7 +413,7 @@ def get_ultimos_resultados_punto(
 @cached(ttl=600, grupo="referencia")
 def get_parametros_selector() -> list[dict]:
     """Todos los parámetros activos con código, nombre, categoría y unidad."""
-    db = get_admin_client()
+    db = get_db()
     res = (
         db.table("parametros")
         .select("id, codigo, nombre, categorias_parametro(nombre), unidades_medida(simbolo)")
@@ -441,7 +441,7 @@ def get_comparativa_eca_punto(
     Cada dict: {parametro, codigo, categoria, valor, unidad, fecha,
                 lim_min, lim_max, estado: 'excede'|'cumple'|'sin_dato'}
     """
-    db = get_admin_client()
+    db = get_db()
 
     # ECA del punto
     pt = (
@@ -558,7 +558,7 @@ def get_ultimo_valor_parametro_por_punto(
 
     Retorna: { punto_muestreo_id: {valor, fecha, lim_max, lim_min, estado} }
     """
-    db = get_admin_client()
+    db = get_db()
 
     query = (
         db.table("resultados_laboratorio")
@@ -647,7 +647,7 @@ def get_datos_mensuales_parametro(
 
     Cada dict: {punto_codigo, punto_nombre, mes (1-12), valor, fecha}
     """
-    db = get_admin_client()
+    db = get_db()
 
     fecha_inicio = f"{anio}-01-01"
     fecha_fin = f"{anio}-12-31"

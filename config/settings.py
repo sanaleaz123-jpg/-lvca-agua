@@ -70,6 +70,12 @@ SMTP_PASSWORD: str = _optional("SMTP_PASSWORD")
 APP_ENV: str = _optional("APP_ENV", "production")
 IS_DEV: bool = APP_ENV == "development"
 
+# Interruptor del cutover a RLS (Row Level Security). Mientras esté desactivado
+# (default), la app usa el cliente service_role como siempre. Al ponerlo en "1"
+# los servicios migrados pasan a usar el cliente autenticado del usuario y RLS
+# entra en vigor. Ver database/migrations/019_RLS_RUNBOOK.md
+USE_RLS: bool = _optional("LVCA_RLS", "0").strip().lower() in ("1", "true", "yes")
+
 # ── Constantes de negocio ─────────────────────────────────────────────────────
 APP_NOMBRE  = "LVCA – Gestión de Calidad de Agua"
 APP_ENTIDAD = "AUTODEMA – Arequipa"

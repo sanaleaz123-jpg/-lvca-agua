@@ -13,7 +13,12 @@ from __future__ import annotations
 import httpx
 from supabase import create_client, Client
 from supabase.lib.client_options import SyncClientOptions
-from config.settings import SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_KEY
+from config.settings import (
+    SUPABASE_URL,
+    SUPABASE_ANON_KEY,
+    SUPABASE_SERVICE_KEY,
+    USE_RLS,
+)
 
 try:
     from streamlit import cache_resource as _cache
@@ -81,6 +86,42 @@ def get_user_client(access_token: str, refresh_token: str = "") -> Client:
     except Exception:
         pass
     return client
+
+
+def get_db() -> Client:
+    """
+    Cliente de datos según el modo de RLS (interruptor LVCA_RLS / USE_RLS).
+
+    - USE_RLS desactivado (default): devuelve get_admin_client() — exactamente
+      el comportamiento actual (service_role, omite RLS).
+    - USE_RLS activado y hay sesión de usuario en st.session_state["sesion"]:
+      devuelve el cliente autenticado del usuario (RLS en vigor), cacheado por
+      sesión para no recrearlo en cada llamada.
+    - USE_RLS activado pero sin sesión (seeds, scripts, contexto sin login):
+      cae a get_admin_client().
+
+    Los servicios deben llamar a get_db() en lugar de get_admin_client() para
+    quedar listos para el cutover; mientras LVCA_RLS=0 nada cambia.
+    """
+    if not USE_RLS:
+        return get_admin_client()
+
+    try:
+        import streamlit as st
+        sesion = st.session_state.get("sesion")
+    except Exception:
+        sesion = None
+
+    token = getattr(sesion, "access_token", "") if sesion else ""
+    if not token:
+        # Sin sesión de usuario: no hay JWT que usar → cliente admin.
+        return get_admin_client()
+
+    cache = st.session_state.setdefault("_user_db_cache", {})
+    if token not in cache:
+        cache.clear()  # descarta clientes con tokens viejos (p. ej. tras refresh)
+        cache[token] = get_user_client(token, getattr(sesion, "refresh_token", ""))
+    return cache[token]
 
 
 def reset_clients() -> None:
