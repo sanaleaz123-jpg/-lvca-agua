@@ -18,12 +18,18 @@ import streamlit as st
 from components.auth_guard import require_rol
 from components.nav_context import consumir_contexto, ir_a, preseleccionar, rol_alcanza
 from services.base_datos_service import (
+    LIMITE_MUESTRAS,
     actualizar_resultado,
     crear_resultado,
     get_datos_consolidados,
     get_limites_eca_todos,
     get_parametros_map,
 )
+
+# Filas por página en la vista de tabla. La paginación solo se activa cuando
+# hay más registros que esto; con conjuntos pequeños la tabla se muestra
+# completa como antes. Reduce drásticamente el tamaño del DOM/HTML renderizado.
+_FILAS_POR_PAGINA = 200
 from services.parametro_registry import (
     get_columnas_parametros,
     get_codigos_parametros,
@@ -380,6 +386,16 @@ def main() -> None:
         st.info("No se encontraron resultados con los filtros seleccionados.")
         st.stop()
 
+    # Si se alcanzó el techo de muestras, los datos podrían estar truncados:
+    # avisar para que el usuario acote los filtros en lugar de mostrar un
+    # subconjunto silenciosamente.
+    if len(datos) >= LIMITE_MUESTRAS:
+        st.warning(
+            f"Se alcanzó el máximo de {LIMITE_MUESTRAS:,} muestras por consulta. "
+            "Es posible que falten registros: acota el rango de fechas, la campaña "
+            "o el lugar para ver el conjunto completo."
+        )
+
     # ── Filtrar columnas por categoría (dinámico desde BD) ──────────────
     cat_params = get_cat_params()
     COLUMNAS_PARAMETROS = get_columnas_parametros()
@@ -488,16 +504,43 @@ def main() -> None:
         st.markdown(f"**{n_muestras} registros** · {n_puntos} puntos · "
                     f"Las celdas en **rojo** exceden su ECA respectivo")
 
+        # Paginación del render: con muchos registros, construir la tabla HTML
+        # completa genera un DOM enorme y vuelve lenta la página. Mostramos solo
+        # una página de filas; las métricas (arriba) y el CSV (abajo) siguen
+        # cubriendo el conjunto completo. Con pocos registros no se pagina.
+        total_filas = len(datos)
+        if total_filas > _FILAS_POR_PAGINA:
+            n_paginas = (total_filas + _FILAS_POR_PAGINA - 1) // _FILAS_POR_PAGINA
+            pcol1, pcol2 = st.columns([1, 3])
+            with pcol1:
+                pagina = int(st.number_input(
+                    f"Página (de {n_paginas})",
+                    min_value=1, max_value=n_paginas, value=1, step=1,
+                    key="bd_pagina",
+                ))
+            inicio = (pagina - 1) * _FILAS_POR_PAGINA
+            fin = min(inicio + _FILAS_POR_PAGINA, total_filas)
+            with pcol2:
+                st.caption(
+                    f"Mostrando registros {inicio + 1:,}–{fin:,} de {total_filas:,}. "
+                    "Descarga el CSV para el conjunto completo."
+                )
+            datos_vista = datos[inicio:fin]
+            df_vista = df.iloc[inicio:fin]
+        else:
+            datos_vista = datos
+            df_vista = df
+
         html_table = _render_tabla_por_campana(
-            df=df,
-            datos=datos,
+            df=df_vista,
+            datos=datos_vista,
             columnas_visibles=columnas_visibles,
             formato_codigo=formato_codigo,
             limites=limites,
         )
         st.markdown(html_table, unsafe_allow_html=True)
 
-        # Botón de descarga
+        # Botón de descarga (siempre el conjunto completo filtrado)
         csv = df.to_csv(index=False).encode("utf-8")
         st.download_button(
             "Descargar CSV",

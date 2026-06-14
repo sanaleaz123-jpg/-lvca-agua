@@ -28,6 +28,12 @@ from services.parametro_registry import (
 COLUMNAS_PARAMETROS = get_columnas_parametros
 CODIGOS_PARAMETROS = get_codigos_parametros
 
+# Techo de muestras por consulta consolidada. Actúa como salvaguarda contra
+# cargar la tabla entera de golpe. Con los filtros por defecto (rango de un año)
+# rara vez se alcanza; si se alcanza, la página avisa para acotar el filtro en
+# vez de truncar los datos en silencio.
+LIMITE_MUESTRAS = 5000
+
 
 @cached(ttl=120)
 def get_datos_consolidados(
@@ -80,7 +86,7 @@ def get_datos_consolidados(
                 "ecas(id, codigo, nombre))" + _depth_extra
             )
             .order("codigo", desc=False)
-            .limit(5000)
+            .limit(LIMITE_MUESTRAS)
         )
         # Test if the query works
         if campana_id:
@@ -100,7 +106,7 @@ def get_datos_consolidados(
             db.table("muestras")
             .select(select_campos)
             .order("codigo", desc=False)
-            .limit(5000)
+            .limit(LIMITE_MUESTRAS)
         )
         if campana_id:
             q_muestras = q_muestras.eq("campana_id", campana_id)
