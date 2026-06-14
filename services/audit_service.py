@@ -13,15 +13,20 @@ Funciones públicas:
 from __future__ import annotations
 
 import json
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 from database.client import get_admin_client
+from services.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 _LOG_PATH = Path(__file__).resolve().parent.parent / "data" / "audit_log.json"
 _DB_AVAILABLE: bool | None = None  # cache tras primer intento
 _DB_CHECK_TIME: float = 0.0  # timestamp del último chequeo
+_LOCAL_LOCK = threading.Lock()  # creado al import — evita locks duplicados bajo concurrencia
 
 
 def _check_db() -> bool:
@@ -40,6 +45,8 @@ def _check_db() -> bool:
         db.table("audit_log").select("id").limit(1).execute()
         _DB_AVAILABLE = True
     except Exception:
+        # Esperado si la migración 004 aún no se aplicó: se usa el fallback local.
+        logger.debug("Tabla audit_log no disponible; usando fallback local JSON.", exc_info=True)
         _DB_AVAILABLE = False
     _DB_CHECK_TIME = now
     return _DB_AVAILABLE
@@ -47,10 +54,7 @@ def _check_db() -> bool:
 
 def _write_local(entry: dict) -> None:
     """Escribe en el archivo JSON local como fallback (con protección básica)."""
-    import threading
-    if not hasattr(_write_local, "_lock"):
-        _write_local._lock = threading.Lock()
-    with _write_local._lock:
+    with _LOCAL_LOCK:
         entries = []
         if _LOG_PATH.exists():
             try:
@@ -103,7 +107,10 @@ def registrar_cambio(
             db.table("audit_log").insert(entry).execute()
             return
         except Exception:
-            pass
+            logger.warning(
+                "No se pudo escribir el audit_log en BD (tabla=%s, accion=%s); "
+                "se guarda en el fallback local.", tabla, accion, exc_info=True,
+            )
 
     # Fallback: local JSON
     _write_local(entry)
@@ -158,7 +165,10 @@ def get_historial(
                 q = q.eq("registro_id", registro_id)
             return q.execute().data or []
         except Exception:
-            pass
+            logger.warning(
+                "Falló la lectura del audit_log en BD (tabla=%s); "
+                "se intenta el fallback local.", tabla, exc_info=True,
+            )
 
     # Fallback: local JSON
     if not _LOG_PATH.exists():

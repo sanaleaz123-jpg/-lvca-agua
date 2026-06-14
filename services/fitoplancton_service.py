@@ -24,6 +24,9 @@ from typing import Optional
 from database.client import get_admin_client
 from services.audit_service import registrar_cambio
 from services.cache import cached, invalidate_operational
+from services.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -880,7 +883,11 @@ def guardar_analisis_fitoplancton(
         # Si la sincronización falla (permisos, parámetro validado, etc.)
         # el JSONB ya quedó guardado — el caller verá los detalles del error
         # más arriba si vuelve a guardar. No se hace rollback.
-        pass
+        logger.error(
+            "Falló la sincronización de resultados_laboratorio de fitoplancton "
+            "(muestra_id=%s): el JSONB se guardó pero las filas derivadas pueden "
+            "quedar inconsistentes.", muestra_id, exc_info=True,
+        )
 
     # Resumen del cambio para el audit log: total cianobacterias + nº especies.
     total_cyano = total_cel_ml_filo(resultados_por_filo, CYANOBACTERIA_FILO)
@@ -943,7 +950,11 @@ def borrar_analisis_fitoplancton(
         _eliminar_resultados_laboratorio_fitoplancton(muestra_id)
     except Exception:
         # No romper el borrado del JSONB si falla la limpieza de derivados.
-        pass
+        logger.error(
+            "Falló la limpieza de resultados_laboratorio derivados al borrar "
+            "fitoplancton (muestra_id=%s): pueden quedar filas huérfanas.",
+            muestra_id, exc_info=True,
+        )
 
     try:
         registrar_cambio(
