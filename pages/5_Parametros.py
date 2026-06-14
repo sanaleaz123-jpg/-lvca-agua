@@ -548,18 +548,20 @@ def _render_valores_eca() -> None:
             with ve1:
                 nuevo_min = st.number_input(
                     "Valor mínimo",
-                    value=val_sel["valor_minimo"] if val_sel["valor_minimo"] is not None else 0.0,
+                    value=float(val_sel["valor_minimo"]) if val_sel["valor_minimo"] is not None else None,
                     format="%.6f",
                     key="edit_eca_min",
-                    help="Dejar en 0 si no aplica límite mínimo",
+                    help="Dejar vacío si no aplica límite mínimo (0 es un límite válido)",
+                    placeholder="Sin límite",
                 )
             with ve2:
                 nuevo_max = st.number_input(
                     "Valor máximo",
-                    value=val_sel["valor_maximo"] if val_sel["valor_maximo"] is not None else 0.0,
+                    value=float(val_sel["valor_maximo"]) if val_sel["valor_maximo"] is not None else None,
                     format="%.6f",
                     key="edit_eca_max",
-                    help="Dejar en 0 si no aplica límite máximo",
+                    help="Dejar vacío si no aplica límite máximo (0 es un límite válido)",
+                    placeholder="Sin límite",
                 )
 
             ec1, ec2 = st.columns(2)
@@ -569,14 +571,18 @@ def _render_valores_eca() -> None:
                 btn_eliminar = st.form_submit_button("Eliminar límite")
 
         if btn_guardar:
-            guardar_valor_eca(
-                eca_id,
-                val_sel["parametro_id"],
-                nuevo_min if nuevo_min != 0 else None,
-                nuevo_max if nuevo_max != 0 else None,
-            )
-            st.success("Valor ECA actualizado.")
-            st.rerun()
+            if nuevo_min is None and nuevo_max is None:
+                st.error("Debes definir al menos un valor (mínimo o máximo). "
+                         "Para quitar el límite usa 'Eliminar límite'.")
+            else:
+                guardar_valor_eca(
+                    eca_id,
+                    val_sel["parametro_id"],
+                    nuevo_min,
+                    nuevo_max,
+                )
+                st.success("Valor ECA actualizado.")
+                st.rerun()
 
         if btn_eliminar:
             eliminar_valor_eca(val_sel["id"])
@@ -615,13 +621,15 @@ def _render_valores_eca() -> None:
         vn1, vn2 = st.columns(2)
         with vn1:
             val_min = st.number_input(
-                "Valor mínimo", value=0.0, format="%.6f", key="nuevo_eca_min",
-                help="Dejar en 0 si no aplica",
+                "Valor mínimo", value=None, format="%.6f", key="nuevo_eca_min",
+                help="Dejar vacío si no aplica (0 es un límite válido)",
+                placeholder="Sin límite",
             )
         with vn2:
             val_max = st.number_input(
-                "Valor máximo", value=0.0, format="%.6f", key="nuevo_eca_max",
-                help="Dejar en 0 si no aplica",
+                "Valor máximo", value=None, format="%.6f", key="nuevo_eca_max",
+                help="Dejar vacío si no aplica (0 es un límite válido)",
+                placeholder="Sin límite",
             )
 
         submitted = st.form_submit_button(
@@ -629,15 +637,15 @@ def _render_valores_eca() -> None:
         )
 
     if submitted:
-        if val_min == 0 and val_max == 0:
+        if val_min is None and val_max is None:
             st.error("Debes definir al menos un valor (mínimo o máximo).")
             return
 
         guardar_valor_eca(
             eca_id,
             param_opciones[sel_param],
-            val_min if val_min != 0 else None,
-            val_max if val_max != 0 else None,
+            val_min,
+            val_max,
         )
         st.success("Nuevo límite ECA agregado.")
         st.rerun()

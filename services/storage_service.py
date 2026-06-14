@@ -91,7 +91,10 @@ def get_croquis_url(punto_id: str) -> Optional[str]:
         files = storage.from_(BUCKET_CROQUIS).list(path="", options={"search": punto_id})
         for f in (files or []):
             name = f.get("name", "")
-            if name.startswith(punto_id):
+            # Match exacto "{punto_id}.{ext}" — startswith daría falso positivo
+            # si un punto_id es prefijo de otro.
+            stem, _, _ext = name.rpartition(".")
+            if stem == punto_id:
                 return _public_url(BUCKET_CROQUIS, name)
     except Exception:
         pass

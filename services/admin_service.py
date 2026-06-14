@@ -82,7 +82,14 @@ def actualizar_usuario(usuario_id: str, datos: dict) -> dict:
     campos = {}
     for key in ("nombre", "apellido", "institucion"):
         if key in datos:
-            campos[key] = datos[key].strip() if datos[key] else None
+            valor = (datos[key] or "").strip()
+            # nombre y apellido son NOT NULL en la BD — validar aquí para dar
+            # un error claro en vez de un fallo de constraint.
+            if not valor and key in ("nombre", "apellido"):
+                raise ValueError(f"El campo '{key}' no puede estar vacío.")
+            campos[key] = valor
+    if not campos:
+        raise ValueError("No se proporcionaron campos para actualizar.")
     res = (
         db.table("usuarios")
         .update(campos)
@@ -141,11 +148,22 @@ def eliminar_usuario(usuario_id: str) -> None:
     # Eliminar perfil de la tabla usuarios
     db.table("usuarios").delete().eq("id", usuario_id).execute()
 
-    # Eliminar de Supabase Auth
+    # Eliminar de Supabase Auth — si falla, el perfil ya fue eliminado pero
+    # queda una cuenta huérfana en Auth; lo dejamos registrado en auditoría.
+    auth_eliminado = True
     try:
         db.auth.admin.delete_user(auth_id)
     except Exception:
-        pass  # Si falla Auth, el perfil ya fue eliminado
+        auth_eliminado = False
+
+    from services.audit_service import registrar_cambio
+    registrar_cambio(
+        tabla="usuarios",
+        registro_id=usuario_id,
+        accion="eliminar",
+        valor_anterior=f"auth_id={auth_id}",
+        valor_nuevo=None if auth_eliminado else f"ADVERTENCIA: cuenta Auth huérfana ({auth_id})",
+    )
 
 
 def resetear_password(usuario_id: str, nueva_password: str) -> None:
