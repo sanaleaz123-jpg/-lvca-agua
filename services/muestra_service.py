@@ -38,10 +38,36 @@ PROFUNDIDAD_SUFIJOS = {"S": "(S)", "M": "(M)", "F": "(F)"}
 def _invalidar_cache() -> None:
     """Limpia cachés tras modificar muestras/mediciones."""
     try:
-        import streamlit as st
-        st.cache_data.clear()
+        from services.cache import invalidate_operational
+        invalidate_operational()
     except Exception:
         pass
+
+
+# Cache del schema-probing: {columna: (existe, timestamp)}. Evita un
+# round-trip extra a Supabase en cada listado de muestras.
+_COLUMNAS_DETECTADAS: dict[str, tuple[bool, float]] = {}
+_PROBE_TTL_NEGATIVO = 300.0  # reintentar columnas ausentes cada 5 min
+
+
+def columna_muestras_existe(db, columna: str) -> bool:
+    """Detecta si una columna existe en la tabla `muestras`, cacheado a nivel
+    de módulo. Un resultado positivo se cachea indefinidamente; uno negativo
+    se reintenta cada 5 minutos por si la migración se aplica en caliente."""
+    import time
+    now = time.time()
+    cached = _COLUMNAS_DETECTADAS.get(columna)
+    if cached is not None:
+        existe, ts = cached
+        if existe or (now - ts) < _PROBE_TTL_NEGATIVO:
+            return existe
+    try:
+        db.table("muestras").select(columna).limit(1).execute()
+        existe = True
+    except Exception:
+        existe = False
+    _COLUMNAS_DETECTADAS[columna] = (existe, now)
+    return existe
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Constantes
@@ -676,6 +702,7 @@ def recibir_en_laboratorio(
         valor_nuevo=f"en_laboratorio (frasco: {estado_frasco})",
         usuario_id=receptor_id,
     )
+    _invalidar_cache()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -708,19 +735,13 @@ def get_muestras_por_campana(
         "grupo_profundidad, profundidad_total, profundidad_secchi"
     )
 
-    # Detectar si codigo_laboratorio existe (test con query separada)
-    try:
-        db.table("muestras").select("codigo_laboratorio").limit(1).execute()
-        select_fields = _select_con_lab
-    except Exception:
-        select_fields = _select_base
-
-    # Intentar agregar campos de profundidad
-    try:
-        db.table("muestras").select("modo_muestreo").limit(1).execute()
+    # Detección de columnas según migraciones aplicadas (cacheado a nivel módulo)
+    select_fields = (
+        _select_con_lab if columna_muestras_existe(db, "codigo_laboratorio")
+        else _select_base
+    )
+    if columna_muestras_existe(db, "modo_muestreo"):
         select_fields += _depth_fields
-    except Exception:
-        pass
 
     query = (
         db.table("muestras")
@@ -881,6 +902,7 @@ def actualizar_muestra(muestra_id: str, datos: dict) -> dict:
             .eq("id", muestra_id)
             .execute()
         )
+        _invalidar_cache()
         return res.data[0] if res.data else {}
     except Exception:
         # Quitar campos de migración 005 y reintentar
@@ -893,6 +915,7 @@ def actualizar_muestra(muestra_id: str, datos: dict) -> dict:
             .eq("id", muestra_id)
             .execute()
         )
+        _invalidar_cache()
         return res.data[0] if res.data else {}
 
 
@@ -941,6 +964,7 @@ def eliminar_muestra(muestra_id: str, usuario_id: Optional[str] = None) -> None:
         valor_anterior=f"estado={estado}",
         usuario_id=usuario_id,
     )
+    _invalidar_cache()
 
 
 def _generar_codigo_muestra(db) -> str:

@@ -131,8 +131,8 @@ def utm_a_latlon(
 def _invalidar_cache() -> None:
     """Limpia el caché de puntos y del geoportal tras cualquier modificación."""
     try:
-        import streamlit as st
-        st.cache_data.clear()
+        from services.cache import invalidate_all
+        invalidate_all()
     except Exception:
         pass
 
@@ -141,7 +141,7 @@ def _invalidar_cache() -> None:
 # Listado
 # ─────────────────────────────────────────────────────────────────────────────
 
-@cached(ttl=300)
+@cached(ttl=300, grupo="referencia")
 def get_puntos(
     filtro_cuenca: Optional[str] = None,
     filtro_tipo: Optional[str] = None,
@@ -199,7 +199,7 @@ def get_puntos(
 # Detalle
 # ─────────────────────────────────────────────────────────────────────────────
 
-@cached(ttl=120)
+@cached(ttl=120, grupo="referencia")
 def get_punto(punto_id: str) -> dict | None:
     """Detalle de un punto con ECA."""
     db = get_admin_client()
@@ -362,7 +362,7 @@ def eliminar_punto(punto_id: str) -> None:
 # Helpers para selectores
 # ─────────────────────────────────────────────────────────────────────────────
 
-@cached(ttl=300)
+@cached(ttl=300, grupo="referencia")
 def get_cuencas() -> list[str]:
     """
     Cuencas únicas para selectores. Combina las canónicas con las existentes
@@ -385,7 +385,7 @@ def get_cuencas() -> list[str]:
     return list(CUENCAS_CANONICAS) + extras
 
 
-@cached(ttl=300)
+@cached(ttl=300, grupo="referencia")
 def get_tipos() -> list[str]:
     """Valores únicos de tipo existentes en la tabla."""
     db = get_admin_client()

@@ -20,7 +20,7 @@ from services.cache import cached
 # Art. 7 — zona de mezcla
 # ─────────────────────────────────────────────────────────────────────────────
 
-@cached(ttl=300)
+@cached(ttl=300, grupo="referencia")
 def punto_dentro_zona_mezcla(punto_id: str) -> bool:
     """Retorna True si el punto está marcado como dentro de zona de mezcla."""
     if not punto_id:
@@ -41,7 +41,7 @@ def punto_dentro_zona_mezcla(punto_id: str) -> bool:
 # Art. 6 — excepciones por condiciones naturales
 # ─────────────────────────────────────────────────────────────────────────────
 
-@cached(ttl=300)
+@cached(ttl=300, grupo="referencia")
 def tiene_excepcion_art6(punto_id: str, parametro_id: str) -> bool:
     """
     Retorna True si existe una excepción Art. 6 vigente para (punto, parámetro).

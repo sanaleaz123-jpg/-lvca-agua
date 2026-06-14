@@ -27,8 +27,8 @@ from services.audit_service import registrar_cambio
 def _invalidar_cache() -> None:
     """Limpia cachés tras modificar resultados."""
     try:
-        import streamlit as st
-        st.cache_data.clear()
+        from services.cache import invalidate_operational
+        invalidate_operational()
     except Exception:
         pass
 

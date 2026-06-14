@@ -4,6 +4,12 @@ port = 8501
 
 [client]
 showSidebarNavigation = false
+# Oculta la toolbar de desarrollo y reduce el ruido en producción.
+toolbarMode = "minimal"
+
+[logger]
+# Menos logging = menos overhead en cada rerun.
+level = "error"
 
 [theme]
 primaryColor = "#1b6b35"

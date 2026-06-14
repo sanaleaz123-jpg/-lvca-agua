@@ -273,7 +273,7 @@ def get_historial_punto(
     return items
 
 
-@cached(ttl=600)
+@cached(ttl=600, grupo="referencia")
 def get_limite_eca_parametro(
     punto_id:     str,
     parametro_id: str,
@@ -314,7 +314,7 @@ def get_limite_eca_parametro(
     }
 
 
-@cached(ttl=600)
+@cached(ttl=600, grupo="referencia")
 def get_limites_eca_parametro_todos(parametro_id: str) -> dict[str, dict]:
     """
     Versión batched de get_limite_eca_parametro: límites de UN parámetro
@@ -410,7 +410,7 @@ def get_ultimos_resultados_punto(
 # Selector de parámetros (para el filtro del geoportal)
 # ─────────────────────────────────────────────────────────────────────────────
 
-@cached(ttl=600)
+@cached(ttl=600, grupo="referencia")
 def get_parametros_selector() -> list[dict]:
     """Todos los parámetros activos con código, nombre, categoría y unidad."""
     db = get_admin_client()

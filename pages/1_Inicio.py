@@ -22,6 +22,7 @@ import streamlit as st
 
 from components.auth_guard import require_rol
 from components.ui_styles import COLORS, aplicar_estilos, page_header, section_header, top_nav
+from services.cache import cached
 from services.resultado_service import get_metricas_dashboard, get_puntos_con_estado
 
 # Centro del mapa: Arequipa / cuenca Chili-Quilca
@@ -587,13 +588,13 @@ def main() -> None:
     _render_tareas_pendientes()
 
 
-@st.cache_data(ttl=120, show_spinner=False)
+@cached(ttl=120)
 def _datos_tareas_pendientes() -> dict:
     """
     Consultas del bloque 'Tareas pendientes' agrupadas y cacheadas (TTL 2 min)
-    para no golpear Supabase en cada rerun del dashboard. Cualquier mutación
-    en services/ limpia st.cache_data, así que el bloque se refresca al instante
-    tras registrar datos.
+    para no golpear Supabase en cada rerun del dashboard. Está registrado en el
+    grupo "operacional", así que cualquier mutación operacional (muestras,
+    resultados, campañas) lo invalida y el bloque se refresca al instante.
     """
     from database.client import get_admin_client
     db = get_admin_client()

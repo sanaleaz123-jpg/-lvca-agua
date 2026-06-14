@@ -215,7 +215,7 @@ def get_datos_consolidados(
     return filas
 
 
-@cached(ttl=600)
+@cached(ttl=600, grupo="referencia")
 def get_limites_eca_todos() -> dict[tuple[str, str], dict]:
     """
     Retorna un dict {(eca_id, parametro_codigo): {valor_minimo, valor_maximo}}
@@ -296,7 +296,7 @@ def crear_resultado(muestra_id: str, parametro_id: str, valor: float) -> dict:
     return res.data[0]
 
 
-@cached(ttl=300)
+@cached(ttl=300, grupo="referencia")
 def get_parametros_map() -> dict[str, str]:
     """Retorna {codigo: parametro_id} para crear nuevos resultados."""
     db = get_admin_client()
@@ -311,7 +311,7 @@ def get_parametros_map() -> dict[str, str]:
 
 def _invalidar_cache() -> None:
     try:
-        import streamlit as st
-        st.cache_data.clear()
+        from services.cache import invalidate_operational
+        invalidate_operational()
     except Exception:
         pass

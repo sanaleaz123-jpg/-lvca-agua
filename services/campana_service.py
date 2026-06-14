@@ -24,8 +24,8 @@ from services.cache import cached
 def _invalidar_cache() -> None:
     """Limpia cachés tras modificar campañas."""
     try:
-        import streamlit as st
-        st.cache_data.clear()
+        from services.cache import invalidate_operational
+        invalidate_operational()
     except Exception:
         pass
 
@@ -112,7 +112,7 @@ def get_campanas(
 # Creación
 # ─────────────────────────────────────────────────────────────────────────────
 
-@cached(ttl=300)
+@cached(ttl=300, grupo="referencia")
 def get_todos_los_puntos() -> list[dict]:
     """Puntos activos para el multiselect del formulario de nueva campaña."""
     db = get_admin_client()

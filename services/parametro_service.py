@@ -30,7 +30,7 @@ from services.parametro_registry import invalidar_cache_parametros
 # Parámetros
 # ─────────────────────────────────────────────────────────────────────────────
 
-@cached(ttl=300)
+@cached(ttl=300, grupo="referencia")
 def get_parametros(
     filtro_categoria: Optional[str] = None,
     busqueda: Optional[str] = None,
@@ -74,7 +74,7 @@ def get_parametros(
     return data
 
 
-@cached(ttl=120)
+@cached(ttl=120, grupo="referencia")
 def get_parametro(parametro_id: str) -> dict | None:
     """Detalle de un parámetro con joins."""
     db = get_admin_client()
@@ -233,7 +233,7 @@ def eliminar_parametro(parametro_id: str) -> str:
 # Categorías y unidades
 # ─────────────────────────────────────────────────────────────────────────────
 
-@cached(ttl=600)
+@cached(ttl=600, grupo="referencia")
 def get_categorias() -> list[dict]:
     """Todas las categorías de parámetro."""
     db = get_admin_client()
@@ -246,7 +246,7 @@ def get_categorias() -> list[dict]:
     return res.data or []
 
 
-@cached(ttl=600)
+@cached(ttl=600, grupo="referencia")
 def get_unidades() -> list[dict]:
     """Todas las unidades de medida."""
     db = get_admin_client()
@@ -272,7 +272,7 @@ def crear_unidad(simbolo: str, nombre: str) -> dict:
 # ECAs y valores límite
 # ─────────────────────────────────────────────────────────────────────────────
 
-@cached(ttl=600)
+@cached(ttl=600, grupo="referencia")
 def get_ecas(incluir_legacy: bool = False) -> list[dict]:
     """
     ECAs activos.
@@ -296,7 +296,7 @@ def get_ecas(incluir_legacy: bool = False) -> list[dict]:
     return data
 
 
-@cached(ttl=300)
+@cached(ttl=300, grupo="referencia")
 def get_valores_eca(eca_id: str) -> list[dict]:
     """
     Valores límite de un ECA con datos del parámetro.

@@ -152,7 +152,7 @@ _INSITU_A_CADENA = {
 # Consulta base (cacheada)
 # ─────────────────────────────────────────────────────────────────────────────
 
-@cached(ttl=300)
+@cached(ttl=300, grupo="referencia")
 def get_parametros_activos() -> list[dict]:
     """
     Todos los parámetros activos con categoría, unidad, rangos físicos y LMD/LCM.
@@ -370,7 +370,7 @@ def get_parametros_campo_cadena() -> list[dict]:
 def invalidar_cache_parametros() -> None:
     """Limpia todos los cachés relacionados con parámetros."""
     try:
-        import streamlit as st
-        st.cache_data.clear()
+        from services.cache import invalidate_all
+        invalidate_all()
     except Exception:
         pass

@@ -23,6 +23,7 @@ from typing import Optional
 
 from database.client import get_admin_client
 from services.audit_service import registrar_cambio
+from services.cache import cached, invalidate_operational
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -901,6 +902,9 @@ def guardar_analisis_fitoplancton(
         # El audit no debe romper el guardado si falla.
         pass
 
+    # Invalida cachés operacionales (geoportal, dashboard) tras guardar.
+    invalidate_operational()
+
 
 def get_analisis_fitoplancton(muestra_id: str) -> Optional[dict]:
     """
@@ -953,6 +957,9 @@ def borrar_analisis_fitoplancton(
     except Exception:
         pass
 
+    # Invalida cachés operacionales (geoportal, dashboard) tras borrar.
+    invalidate_operational()
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Histórico por punto (serie temporal de cianobacterias)
@@ -972,6 +979,7 @@ _FITO_CODIGO_A_FILO: dict[str, str] = {
 }
 
 
+@cached(ttl=300)
 def get_phyllum_dominante_punto(punto_muestreo_id: str) -> Optional[dict]:
     """
     Retorna el filo con MAYOR densidad celular en el último análisis
@@ -1275,6 +1283,7 @@ def _alertas_oms_desde_resultados(
     return salida
 
 
+@cached(ttl=300)
 def get_alertas_oms_por_punto() -> dict[str, dict]:
     """
     Para uso del geoportal: devuelve {punto_muestreo_id: {ultima_fecha,
