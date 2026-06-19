@@ -125,7 +125,7 @@ def _render_editar_usuario(usuario_id: str) -> None:
 
     # ── Resetear contraseña ───────────────────────────────────────────────
     with bc2:
-        with st.expander("🔑 Resetear contraseña", expanded=False):
+        with st.expander("Resetear contraseña", expanded=False, icon=":material/key:"):
             nueva_pass = st.text_input(
                 "Nueva contraseña",
                 type="password",
@@ -143,13 +143,17 @@ def _render_editar_usuario(usuario_id: str) -> None:
                         st.error(f"Error: {exc}")
 
     # ── Eliminar usuario ──────────────────────────────────────────────────
-    with st.expander("🗑️ Eliminar usuario", expanded=False):
+    with st.expander("Eliminar usuario", expanded=False, icon=":material/delete:"):
         st.warning("Esta acción eliminará al usuario de forma permanente.")
         confirmar_email = st.text_input(
             f"Escribe el email **{usuario.get('email', '')}** para confirmar:",
             key="confirmar_eliminar_usr",
         )
-        if st.button("Eliminar permanentemente", key="btn_eliminar_usr", type="primary"):
+        st.markdown('<div class="lvca-danger">', unsafe_allow_html=True)
+        _del_usr = st.button("Eliminar permanentemente", key="btn_eliminar_usr",
+                             type="primary", icon=":material/delete:")
+        st.markdown('</div>', unsafe_allow_html=True)
+        if _del_usr:
             if confirmar_email.strip().lower() != (usuario.get("email") or "").lower():
                 st.error("El email ingresado no coincide.")
             else:

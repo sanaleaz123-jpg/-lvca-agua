@@ -213,8 +213,8 @@ _GLOBAL_CSS = """<style>
     --lvca-radius-lg:   16px;
     --lvca-shadow-xs:   0 1px 2px rgba(15,23,42,0.05);
     --lvca-shadow-sm:   0 1px 3px rgba(15,23,42,0.06), 0 1px 2px rgba(15,23,42,0.04);
-    --lvca-shadow-md:   0 4px 12px rgba(15,23,42,0.08), 0 2px 4px rgba(15,23,42,0.04);
-    --lvca-shadow-lg:   0 12px 32px rgba(15,23,42,0.12), 0 4px 8px rgba(15,23,42,0.05);
+    --lvca-shadow-md:   0 3px 8px rgba(15,23,42,0.05), 0 1px 2px rgba(15,23,42,0.03);
+    --lvca-shadow-lg:   0 8px 24px rgba(15,23,42,0.08), 0 2px 6px rgba(15,23,42,0.04);
     --lvca-ease:        cubic-bezier(0.4, 0, 0.2, 1);
     --lvca-t:           0.18s;
     --lvca-focus-ring:  0 0 0 3px rgba(13,71,161,0.15);
@@ -451,18 +451,18 @@ button[kind="secondary"]:hover {
     background: #ffffff !important;
 }
 
-/* Botones primarios — azul institucional con gradiente sutil */
+/* Botones primarios — azul institucional sólido (minimalista, sin gradiente) */
 .stButton > button[kind="primary"],
 button[kind="primary"] {
-    background: linear-gradient(180deg, #1565C0 0%, #0D47A1 100%) !important;
+    background: #0D47A1 !important;
     border-color: #0D47A1 !important;
     color: white !important;
 }
 .stButton > button[kind="primary"]:hover,
 button[kind="primary"]:hover {
-    background: linear-gradient(180deg, #0D47A1 0%, #0A3D7A 100%) !important;
+    background: #0A3D7A !important;
     border-color: #0A3D7A !important;
-    box-shadow: 0 4px 12px rgba(13, 71, 161, 0.25) !important;
+    box-shadow: 0 3px 8px rgba(13, 71, 161, 0.18) !important;
 }
 
 /* Clase auxiliar para botones destructivos: aplicar como wrapper o mediante
@@ -648,8 +648,8 @@ hr {
     color: #1e293b;
     font-size: 0.92rem;
     font-weight: 600;
-    margin: 1.6rem 0 0.6rem 0;
-    padding-bottom: 6px;
+    margin: 2rem 0 0.8rem 0;
+    padding-bottom: 7px;
     border-bottom: 1px solid #dbe3ec;
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -1060,17 +1060,15 @@ hr {
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    box-shadow: 0 4px 14px rgba(15,23,42,0.06),
-                0 1px 3px rgba(15,23,42,0.04);
+    box-shadow: var(--lvca-shadow-xs);
     transition: transform 0.18s cubic-bezier(0.4,0,0.2,1),
                 box-shadow 0.18s cubic-bezier(0.4,0,0.2,1);
     position: relative;
     overflow: hidden;
 }
 .lvca-kpi-bold:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 22px rgba(15,23,42,0.10),
-                0 2px 6px rgba(15,23,42,0.06);
+    transform: translateY(-1px);
+    box-shadow: var(--lvca-shadow-sm);
 }
 .lvca-kpi-bold .lvca-kpi-head {
     display: flex; align-items: flex-start;
@@ -1120,25 +1118,25 @@ hr {
     font-weight: 500;
 }
 
-/* Variantes por color semántico */
+/* Variantes por color semántico — fondo sólido (minimalista, sin gradiente) */
 .lvca-kpi-bold.azul {
-    background: linear-gradient(135deg, var(--lvca-brand-azul) 0%, var(--lvca-brand-azul-dark) 100%);
+    background: var(--lvca-brand-azul-dark);
     color: #ffffff;
 }
 .lvca-kpi-bold.amarillo {
-    background: linear-gradient(135deg, var(--lvca-acento-amarillo) 0%, var(--lvca-acento-amarillo-dark) 100%);
-    color: #1a1a1a;
+    background: var(--lvca-acento-amarillo-dark);
+    color: #ffffff;
 }
 .lvca-kpi-bold.rojo {
-    background: linear-gradient(135deg, var(--lvca-acento-rojo) 0%, var(--lvca-acento-rojo-dark) 100%);
+    background: var(--lvca-acento-rojo-dark);
     color: #ffffff;
 }
 .lvca-kpi-bold.verde {
-    background: linear-gradient(135deg, var(--lvca-acento-verde) 0%, var(--lvca-acento-verde-dark) 100%);
+    background: var(--lvca-acento-verde-dark);
     color: #ffffff;
 }
 .lvca-kpi-bold.gris {
-    background: linear-gradient(135deg, #94a3b8 0%, #64748b 100%);
+    background: #64748b;
     color: #ffffff;
 }
 
@@ -1200,8 +1198,7 @@ hr {
     background: #ffffff;
     border-radius: 12px;
     border: 1px solid var(--lvca-border-soft);
-    box-shadow: 0 4px 14px rgba(15,23,42,0.05),
-                0 1px 3px rgba(15,23,42,0.03);
+    box-shadow: var(--lvca-shadow-xs);
     padding: 0;
     overflow: hidden;
 }
@@ -1210,7 +1207,7 @@ hr {
     border-bottom: 1px solid var(--lvca-border-soft);
     display: flex; align-items: center; justify-content: space-between;
     gap: 10px;
-    background: linear-gradient(180deg, #F8FAFC 0%, #FFFFFF 100%);
+    background: #F8FAFC;
 }
 .lvca-panel-punto .lvca-panel-head .lvca-panel-codigo {
     font-size: 1.05rem;
@@ -1409,63 +1406,56 @@ hr {
 }
 
 /* ── Banner de página (page_header + login) ─────────────────────────────
-   Gradiente azul institucional con profundidad, textura sutil de "agua"
-   y filete inferior verde→teal que une las dos identidades cromáticas. */
+   Minimalista refinado: encabezado claro sobre tarjeta blanca, título en
+   tinta oscura y filete inferior fino azul→teal que une las dos identidades
+   cromáticas sin recurrir a un bloque de color saturado. */
 .lvca-banner {
     position: relative;
     overflow: hidden;
-    background: linear-gradient(120deg, #0A3D7A 0%, #0D47A1 45%, #1565C0 100%);
-    color: white;
-    padding: 22px 28px;
-    border-radius: 14px;
-    box-shadow: 0 8px 24px rgba(13, 71, 161, 0.18);
-    margin-bottom: 18px;
+    background: var(--lvca-bg-card);
+    color: var(--lvca-text);
+    padding: 20px 24px;
+    border: 1px solid var(--lvca-border-soft);
+    border-radius: var(--lvca-radius-md);
+    box-shadow: var(--lvca-shadow-xs);
+    margin-bottom: 22px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 20px;
     flex-wrap: wrap;
 }
-.lvca-banner::before {
-    content: "";
-    position: absolute;
-    top: -60px; right: -40px;
-    width: 280px; height: 280px;
-    background: radial-gradient(circle, rgba(255,255,255,0.07) 0%, transparent 70%);
-    pointer-events: none;
-}
 .lvca-banner::after {
     content: "";
     position: absolute;
     left: 0; right: 0; bottom: 0;
     height: 3px;
-    background: linear-gradient(90deg, #0D47A1, #0a9396);
+    background: linear-gradient(90deg, var(--lvca-brand-azul-dark), var(--lvca-acento-teal));
 }
 .lvca-banner .lvca-banner-body { flex: 1; min-width: 260px; position: relative; }
 .lvca-banner h1 {
     margin: 0;
     font-size: 1.45rem !important;
     font-weight: 700 !important;
-    color: #ffffff !important;
+    color: var(--lvca-text) !important;
     letter-spacing: -0.02em;
     line-height: 1.2;
 }
 .lvca-banner .lvca-banner-sub {
-    margin: 4px 0 0 0;
+    margin: 5px 0 0 0;
     font-size: 0.82rem;
-    color: rgba(255,255,255,0.85);
+    color: var(--lvca-text-muted);
     font-weight: 400;
 }
 .lvca-banner .lvca-banner-ambito {
     display: flex; align-items: center; gap: 8px;
-    background: rgba(255,255,255,0.14);
-    border: 1px solid rgba(255,255,255,0.25);
-    backdrop-filter: blur(4px);
+    background: #eef4fb;
+    border: 1px solid #dbe7f5;
     padding: 6px 14px;
     border-radius: 999px;
     font-size: 0.8rem;
-    color: #ffffff;
-    font-weight: 500;
+    color: var(--lvca-brand-azul-dark);
+    font-weight: 600;
     white-space: nowrap;
     position: relative;
 }
@@ -1756,20 +1746,13 @@ def stat_counters(items: list[dict], titulo: str = "") -> None:
         """
         <style>
         .lvca-stats-band {
-            background: linear-gradient(135deg, #0C3568 0%, #0D47A1 55%, #1565C0 100%);
+            background: #0D47A1;
             border-radius: var(--lvca-radius-lg, 16px);
-            padding: 22px 26px;
-            margin: 4px 0 8px 0;
-            box-shadow: var(--lvca-shadow-md, 0 4px 12px rgba(15,23,42,0.08));
+            padding: 24px 28px;
+            margin: 4px 0 10px 0;
+            box-shadow: var(--lvca-shadow-xs, 0 1px 2px rgba(15,23,42,0.05));
             position: relative;
             overflow: hidden;
-        }
-        .lvca-stats-band::after {
-            content: "";
-            position: absolute; inset: 0;
-            background: radial-gradient(circle at 90% -20%,
-                rgba(255,255,255,0.10) 0%, transparent 55%);
-            pointer-events: none;
         }
         .lvca-stats-title {
             color: rgba(255,255,255,0.78);
@@ -1863,10 +1846,10 @@ _TOP_NAV_CSS = """<style>
     left: 0 !important;
     right: 0 !important;
     z-index: 999 !important;
-    background: linear-gradient(180deg, #0C3568 0%, #092B57 100%) !important;
+    background: #0C3568 !important;
     border-bottom: 1px solid rgba(255,255,255,0.08);
     padding: 10px 1.5rem 6px 1.5rem;
-    box-shadow: 0 2px 12px rgba(8, 42, 87, 0.30);
+    box-shadow: 0 1px 6px rgba(8, 42, 87, 0.20);
 }
 
 /* Ocultar el stHeader de Streamlit (la delgada barra nativa arriba)
@@ -1890,7 +1873,7 @@ _TOP_NAV_CSS = """<style>
 .lvca-brand-logo {
     width: 28px; height: 28px;
     border-radius: 8px;
-    background: linear-gradient(135deg, #1565C0 0%, #0D47A1 100%);
+    background: #1565C0;
     color: #ffffff;
     display: inline-flex; align-items: center; justify-content: center;
     flex-shrink: 0;

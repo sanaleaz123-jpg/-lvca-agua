@@ -112,7 +112,7 @@ def _pantalla_login() -> None:
         [data-testid='stMainBlockContainer'] {
             padding-top: 32px !important;
             padding-bottom: 60px !important;
-            background: linear-gradient(180deg, #EFF6FF 0%, #F8FAFC 60%);
+            background: #F1F5F9;
             max-width: 100% !important;
         }
         /* Anti-flash: ocultar la card mientras el form nativo hidrata.
@@ -137,8 +137,8 @@ def _pantalla_login() -> None:
         .st-key-lvca_login_card {
             background: #ffffff !important;
             border-radius: 16px !important;
-            box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12),
-                        0 4px 8px rgba(15, 23, 42, 0.05) !important;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08),
+                        0 2px 6px rgba(15, 23, 42, 0.04) !important;
             overflow: hidden !important;
             padding: 0 !important;
             border: 1px solid #eef2f6 !important;
@@ -167,11 +167,11 @@ def _pantalla_login() -> None:
         .st-key-lvca_login_card button[kind="primaryFormSubmit"],
         .st-key-lvca_login_card [data-testid="stFormSubmitButton"] button,
         .st-key-lvca_login_card .stFormSubmitButton button {
-            background: linear-gradient(135deg,#0D47A1 0%,#1565C0 100%) !important;
+            background: #0D47A1 !important;
             background-color: #0D47A1 !important;
             color: #ffffff !important;
             border: none !important;
-            box-shadow: 0 2px 6px rgba(13,71,161,0.2) !important;
+            box-shadow: 0 1px 3px rgba(13,71,161,0.15) !important;
             font-weight: 600 !important;
             letter-spacing: 0.02em !important;
         }
@@ -179,8 +179,8 @@ def _pantalla_login() -> None:
         .st-key-lvca_login_card button[kind="primaryFormSubmit"]:hover,
         .st-key-lvca_login_card [data-testid="stFormSubmitButton"] button:hover,
         .st-key-lvca_login_card .stFormSubmitButton button:hover {
-            background: linear-gradient(135deg,#0D47A1 0%,#1976D2 100%) !important;
-            box-shadow: 0 4px 12px rgba(13,71,161,0.3) !important;
+            background: #0A3D7A !important;
+            box-shadow: 0 3px 8px rgba(13,71,161,0.2) !important;
             transform: translateY(-1px) !important;
         }
         /* Contenedores de logos: fondo blanco, sombra sutil, alto uniforme
@@ -219,11 +219,8 @@ def _pantalla_login() -> None:
             st.markdown(
                 """
                 <div style="position:relative; overflow:hidden;
-                     background:linear-gradient(120deg,#0A3D7A 0%,#0D47A1 45%,#1565C0 100%);
+                     background:#0D47A1;
                      color:white; padding:28px 28px 22px 28px; text-align:center;">
-                    <div style="position:absolute; top:-60px; right:-40px;
-                         width:240px; height:240px; pointer-events:none;
-                         background:radial-gradient(circle, rgba(255,255,255,0.08) 0%, transparent 70%);"></div>
                     <h1 style="margin:0; font-size:1.45rem; font-weight:700;
                          color:#ffffff; letter-spacing:-0.02em; line-height:1.25;">
                         Laboratorio de Vigilancia<br>de Calidad de Agua

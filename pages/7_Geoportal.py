@@ -1481,7 +1481,7 @@ def _construir_mapa(
     .leaflet-control-layers {
         border: 1px solid #e2e8f0 !important;
         border-radius: 12px !important;
-        box-shadow: 0 8px 24px rgba(15,23,42,0.10), 0 2px 6px rgba(15,23,42,0.06) !important;
+        box-shadow: 0 4px 12px rgba(15,23,42,0.07), 0 1px 3px rgba(15,23,42,0.04) !important;
         overflow: hidden;
         background: #ffffff !important;
     }
@@ -1519,7 +1519,7 @@ def _construir_mapa(
     .leaflet-bar {
         border: none !important;
         border-radius: 10px !important;
-        box-shadow: 0 4px 12px rgba(15,23,42,0.10) !important;
+        box-shadow: 0 2px 8px rgba(15,23,42,0.07) !important;
         overflow: hidden;
     }
     .leaflet-bar a, .leaflet-bar a:hover {
@@ -1861,8 +1861,8 @@ def _construir_mapa(
          border-radius:12px; font-size:12px; line-height:1.6;
          min-width:170px;
          border:1px solid #e2e8f0;
-         box-shadow: 0 8px 24px rgba(15,23,42,0.10),
-                     0 2px 6px rgba(15,23,42,0.06);
+         box-shadow: 0 4px 12px rgba(15,23,42,0.07),
+                     0 1px 3px rgba(15,23,42,0.04);
          font-family:'Inter','Segoe UI',sans-serif;">
       <div onclick="
         var b=document.getElementById('lvca-legend-body');
@@ -2920,8 +2920,8 @@ def _render_panel_punto(punto_sel: dict) -> None:
     """
     Ficha del punto seleccionado — versión integrada (mockup
     "Integrated Eco-Aura"). Tarjeta blanca con bordes redondeados,
-    misma sombra y radius que las KPI cards / mapa. Header con gradiente
-    sutil + estado pill, body con grid 2×3 de datos clave y UTM al pie
+    misma sombra y radius que las KPI cards / mapa. Header con fondo
+    sutil sólido + estado pill, body con grid 2×3 de datos clave y UTM al pie
     en ribbon punteado. Estilos en `.lvca-panel-punto` (ui_styles.py).
     """
     eca_info = punto_sel.get("ecas") or {}

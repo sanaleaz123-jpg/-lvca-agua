@@ -113,13 +113,13 @@ def _render_module_grid() -> None:
             flex-direction: column !important;
             align-items: center !important;
             justify-content: center !important;
-            gap: 14px !important;
-            padding: 26px 16px 22px 16px !important;
+            gap: 16px !important;
+            padding: 30px 18px 26px 18px !important;
             background: #ffffff !important;
             border: 1px solid #eef2f6 !important;
             border-radius: var(--lvca-radius-md, 12px) !important;
             text-align: center !important;
-            min-height: 150px !important;
+            min-height: 158px !important;
             box-shadow: var(--lvca-shadow-xs, 0 1px 2px rgba(15,23,42,0.05)) !important;
             transition: transform 0.18s cubic-bezier(0.4,0,0.2,1),
                         box-shadow 0.18s cubic-bezier(0.4,0,0.2,1),
@@ -131,8 +131,8 @@ def _render_module_grid() -> None:
             white-space: normal !important;
         }
         .st-key-lvca_module_grid [data-testid="stPageLink"] a:hover {
-            transform: translateY(-2px) !important;
-            box-shadow: var(--lvca-shadow-md, 0 4px 12px rgba(15,23,42,0.08)) !important;
+            transform: translateY(-1px) !important;
+            box-shadow: var(--lvca-shadow-sm, 0 1px 3px rgba(15,23,42,0.06)) !important;
             border-color: #0D47A1 !important;
             color: #0D47A1 !important;
         }
@@ -305,7 +305,7 @@ def _render_excedencia_card(e: dict) -> str:
 
 def _render_tabla_excedencias(excedencias: list[dict]) -> None:
     from components.ui_styles import inline_note
-    st.subheader("Excedencias activas (últimos 30 días)")
+    section_header("Excedencias activas (últimos 30 días)", "alert")
 
     if not excedencias:
         inline_note(
@@ -349,7 +349,7 @@ def _render_tabla_excedencias(excedencias: list[dict]) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_grafico_excedencias(excedencias: list[dict]) -> None:
-    st.subheader("Parámetros con más excedencias ECA")
+    section_header("Parámetros con más excedencias ECA", "chart")
 
     if not excedencias:
         st.info("No hay datos para graficar.")
@@ -394,7 +394,7 @@ def _render_grafico_excedencias(excedencias: list[dict]) -> None:
 
 def _render_excedencias_por_punto(excedencias: list[dict]) -> None:
     """Gráfico de barras horizontal: puntos con más excedencias."""
-    st.subheader("Puntos con más excedencias")
+    section_header("Puntos con más excedencias", "chart")
 
     if not excedencias:
         st.info("No hay datos.")
@@ -487,7 +487,7 @@ def _render_donut_estado(puntos: list[dict]) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_mapa(puntos: list[dict]) -> None:
-    st.subheader("Mapa de puntos de muestreo")
+    section_header("Mapa de puntos de muestreo", "map_pin")
 
     if not puntos:
         st.info("No hay puntos de muestreo registrados.")
