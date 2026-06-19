@@ -1049,14 +1049,18 @@ hr {
 .lvca-inline-note.success{ border-left-color: #2e7d32; background:#f0faf2; }
 .lvca-inline-note .lvca-inline-icon { flex: 0 0 auto; margin-top: 1px; opacity: 0.85; }
 
-/* ── KPI cards "bold" (estilo mockup Integrated Eco-Aura) ────────────────
-   Tarjetas con fondo sólido en color semántico, valor grande contrastado,
-   ícono Material Symbol esquina superior derecha y bullet-list opcional
-   debajo. Pensadas para el geoportal y dashboards de resumen ejecutivo. */
+/* ── KPI cards "bold" (refinadas) ───────────────────────────────────────
+   Tarjeta BLANCA con el número como protagonista en el color semántico,
+   acento vertical izquierdo, ícono en chip tintado y bullets/foot/sparkline
+   de soporte. Coherentes con las KPI lite de Inicio. El color de cada
+   variante se inyecta vía las custom props --kpi-c (color) y --kpi-bg
+   (tinte del chip). Pensadas para el geoportal y dashboards ejecutivos. */
 .lvca-kpi-bold {
-    border-radius: 14px;
-    padding: 18px 20px 16px 20px;
-    min-height: 140px;
+    background: #ffffff;
+    border: 1px solid #eef2f6;
+    border-radius: var(--lvca-radius-lg);
+    padding: 20px 20px 18px 24px;
+    min-height: 150px;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
@@ -1065,87 +1069,86 @@ hr {
                 box-shadow 0.18s cubic-bezier(0.4,0,0.2,1);
     position: relative;
     overflow: hidden;
+    color: var(--lvca-text);
+}
+.lvca-kpi-bold::after {
+    content: "";
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 5px;
+    background: var(--kpi-c, var(--lvca-brand-azul-dark));
 }
 .lvca-kpi-bold:hover {
-    transform: translateY(-1px);
+    transform: translateY(-2px);
     box-shadow: var(--lvca-shadow-sm);
 }
 .lvca-kpi-bold .lvca-kpi-head {
-    display: flex; align-items: flex-start;
+    display: flex; align-items: center;
     justify-content: space-between; gap: 10px;
 }
 .lvca-kpi-bold .lvca-kpi-title {
-    font-size: 0.92rem;
-    font-weight: 600;
-    letter-spacing: -0.01em;
-    line-height: 1.25;
+    font-size: 0.74rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--lvca-text-muted);
+    line-height: 1.3;
     flex: 1;
 }
 .lvca-kpi-bold .lvca-kpi-icon {
-    width: 38px; height: 38px;
-    border-radius: 10px;
+    width: 40px; height: 40px;
+    border-radius: 999px;
     display: inline-flex; align-items: center; justify-content: center;
     flex-shrink: 0;
-    background: rgba(255,255,255,0.18);
+    background: var(--kpi-bg, #e8f0fb);
+    color: var(--kpi-c, var(--lvca-brand-azul-dark));
 }
 .lvca-kpi-bold .lvca-kpi-icon .material-symbols-rounded {
-    font-size: 24px; line-height: 1;
+    font-size: 22px; line-height: 1;
 }
 .lvca-kpi-bold .lvca-kpi-value {
-    font-size: 2.6rem;
-    font-weight: 700;
+    font-size: 2.8rem;
+    font-weight: 800;
     line-height: 1;
-    letter-spacing: -0.03em;
-    margin: 6px 0 4px 0;
+    letter-spacing: -0.035em;
+    margin: 10px 0 4px 0;
     font-variant-numeric: tabular-nums;
+    color: var(--kpi-c, var(--lvca-brand-azul-dark));
 }
 .lvca-kpi-bold .lvca-kpi-bullets {
     list-style: none;
-    padding: 0; margin: 6px 0 0 0;
+    padding: 0; margin: 8px 0 0 0;
     font-size: 0.78rem;
     line-height: 1.6;
     font-weight: 500;
+    color: var(--lvca-text-muted);
 }
 .lvca-kpi-bold .lvca-kpi-bullets li::before {
-    content: "• ";
-    margin-right: 4px;
-    opacity: 0.9;
+    content: "•";
+    margin-right: 6px;
+    color: var(--kpi-c, var(--lvca-brand-azul-dark));
+    font-weight: 700;
 }
 .lvca-kpi-bold .lvca-kpi-foot {
-    font-size: 0.7rem;
-    opacity: 0.85;
-    margin-top: 6px;
+    font-size: 0.72rem;
+    color: var(--lvca-text-faint);
+    margin-top: 8px;
     font-weight: 500;
 }
 
-/* Variantes por color semántico — fondo sólido (minimalista, sin gradiente) */
-.lvca-kpi-bold.azul {
-    background: var(--lvca-brand-azul-dark);
-    color: #ffffff;
-}
-.lvca-kpi-bold.amarillo {
-    background: var(--lvca-acento-amarillo-dark);
-    color: #ffffff;
-}
-.lvca-kpi-bold.rojo {
-    background: var(--lvca-acento-rojo-dark);
-    color: #ffffff;
-}
-.lvca-kpi-bold.verde {
-    background: var(--lvca-acento-verde-dark);
-    color: #ffffff;
-}
-.lvca-kpi-bold.gris {
-    background: #64748b;
-    color: #ffffff;
-}
+/* Variantes por color semántico — definen el color del número/acento/chip */
+.lvca-kpi-bold.azul     { --kpi-c: var(--lvca-brand-azul-dark);    --kpi-bg: #e8f0fb; }
+.lvca-kpi-bold.amarillo { --kpi-c: var(--lvca-acento-amarillo-dark); --kpi-bg: #fef3c7; }
+.lvca-kpi-bold.rojo     { --kpi-c: var(--lvca-acento-rojo-dark);    --kpi-bg: #fee2e2; }
+.lvca-kpi-bold.verde    { --kpi-c: var(--lvca-acento-verde-dark);   --kpi-bg: #dcfce7; }
+.lvca-kpi-bold.gris     { --kpi-c: #64748b;                         --kpi-bg: #f1f5f9; }
 
-/* Sparkline contenedor — SVG pintado en blanco semitransparente */
+/* Sparkline contenedor — trazo en el color semántico (se fija en el caller) */
 .lvca-kpi-bold .lvca-kpi-spark {
-    margin-top: 8px;
+    margin-top: 10px;
     height: 32px;
     width: 100%;
-    opacity: 0.85;
+    opacity: 0.95;
 }
 .lvca-kpi-bold .lvca-kpi-spark svg {
     width: 100%; height: 100%;
@@ -1349,14 +1352,14 @@ hr {
 /* KPI cards más compactas */
 .lvca-geo-vista-integrada ~ div .lvca-kpi-bold,
 .lvca-geo-kpis .lvca-kpi-bold {
-    min-height: 118px !important;
-    padding: 13px 16px 12px 16px !important;
-    border-radius: 11px !important;
+    min-height: 124px !important;
+    padding: 14px 16px 13px 20px !important;
+    border-radius: 12px !important;
 }
 .lvca-geo-vista-integrada ~ div .lvca-kpi-bold .lvca-kpi-value,
 .lvca-geo-kpis .lvca-kpi-bold .lvca-kpi-value {
-    font-size: 1.95rem !important;
-    margin: 2px 0 4px 0 !important;
+    font-size: 2.35rem !important;
+    margin: 6px 0 4px 0 !important;
 }
 /* Bullets en una sola línea con ellipsis: evita el amontonamiento cuando
    el bullet es "CÓDIGO — Nombre largo". El texto completo queda en title. */
@@ -1367,12 +1370,12 @@ hr {
 }
 .lvca-geo-vista-integrada ~ div .lvca-kpi-bold .lvca-kpi-title,
 .lvca-geo-kpis .lvca-kpi-bold .lvca-kpi-title {
-    font-size: 0.82rem !important;
+    font-size: 0.7rem !important;
 }
 .lvca-geo-vista-integrada ~ div .lvca-kpi-bold .lvca-kpi-icon,
 .lvca-geo-kpis .lvca-kpi-bold .lvca-kpi-icon {
-    width: 32px !important; height: 32px !important;
-    border-radius: 8px !important;
+    width: 34px !important; height: 34px !important;
+    border-radius: 999px !important;
 }
 .lvca-geo-vista-integrada ~ div .lvca-kpi-bold .lvca-kpi-icon .material-symbols-rounded,
 .lvca-geo-kpis .lvca-kpi-bold .lvca-kpi-icon .material-symbols-rounded {
@@ -2254,14 +2257,16 @@ def kpi_bold_card(
 
     spark_html = ""
     if sparkline:
-        # En variante "amarillo" usamos un trazo oscuro para contraste.
-        if color == "amarillo":
-            spark_svg = sparkline_svg(
-                sparkline, stroke="#1a1a1a",
-                fill="rgba(0,0,0,0.10)",
-            )
-        else:
-            spark_svg = sparkline_svg(sparkline)
+        # Tarjeta blanca: el trazo del sparkline va en el color semántico
+        # de la variante, con un relleno tenue del mismo tono.
+        _spark = {
+            "azul":     ("#0D47A1", "rgba(13,71,161,0.10)"),
+            "verde":    ("#047857", "rgba(4,120,87,0.10)"),
+            "rojo":     ("#B91C1C", "rgba(185,28,28,0.10)"),
+            "amarillo": ("#B45309", "rgba(180,83,9,0.10)"),
+            "gris":     ("#64748b", "rgba(100,116,139,0.10)"),
+        }.get(color, ("#0D47A1", "rgba(13,71,161,0.10)"))
+        spark_svg = sparkline_svg(sparkline, stroke=_spark[0], fill=_spark[1])
         spark_html = f'<div class="lvca-kpi-spark">{spark_svg}</div>'
 
     return (
