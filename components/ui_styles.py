@@ -644,17 +644,17 @@ hr {
 .lvca-section-header {
     display: flex;
     align-items: center;
-    gap: 8px;
-    color: #1e293b;
-    font-size: 0.92rem;
-    font-weight: 600;
-    margin: 2rem 0 0.8rem 0;
-    padding-bottom: 7px;
-    border-bottom: 1px solid #dbe3ec;
+    gap: 9px;
+    color: #0f172a;
+    font-size: 1rem;
+    font-weight: 700;
+    margin: 2.6rem 0 1rem 0;
+    padding-bottom: 9px;
+    border-bottom: 2px solid #e2e8f0;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.05em;
 }
-.lvca-section-header svg { color: #94a3b8; }
+.lvca-section-header svg { color: var(--lvca-acento-teal); }
 
 /* ── Badges ────────────────────────────────────────────────────────────── */
 .lvca-badge {
@@ -1414,38 +1414,40 @@ hr {
     overflow: hidden;
     background: var(--lvca-bg-card);
     color: var(--lvca-text);
-    padding: 20px 24px;
+    padding: 28px 30px 28px 34px;
     border: 1px solid var(--lvca-border-soft);
-    border-radius: var(--lvca-radius-md);
+    border-radius: var(--lvca-radius-lg);
     box-shadow: var(--lvca-shadow-xs);
-    margin-bottom: 22px;
+    margin-bottom: 30px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 20px;
     flex-wrap: wrap;
 }
+/* Barra de acento vertical azul→teal: presencia institucional sin recurrir
+   a un bloque de color saturado de fondo. */
 .lvca-banner::after {
     content: "";
     position: absolute;
-    left: 0; right: 0; bottom: 0;
-    height: 3px;
-    background: linear-gradient(90deg, var(--lvca-brand-azul-dark), var(--lvca-acento-teal));
+    left: 0; top: 0; bottom: 0;
+    width: 6px;
+    background: linear-gradient(180deg, var(--lvca-brand-azul-dark), var(--lvca-acento-teal));
 }
 .lvca-banner .lvca-banner-body { flex: 1; min-width: 260px; position: relative; }
 .lvca-banner h1 {
     margin: 0;
-    font-size: 1.45rem !important;
-    font-weight: 700 !important;
+    font-size: 2rem !important;
+    font-weight: 800 !important;
     color: var(--lvca-text) !important;
-    letter-spacing: -0.02em;
-    line-height: 1.2;
+    letter-spacing: -0.03em;
+    line-height: 1.12;
 }
 .lvca-banner .lvca-banner-sub {
-    margin: 5px 0 0 0;
-    font-size: 0.82rem;
+    margin: 8px 0 0 0;
+    font-size: 0.9rem;
     color: var(--lvca-text-muted);
-    font-weight: 400;
+    font-weight: 500;
 }
 .lvca-banner .lvca-banner-ambito {
     display: flex; align-items: center; gap: 8px;
@@ -1466,58 +1468,59 @@ hr {
 .lvca-kpi-lite {
     background: #ffffff;
     border: 1px solid #eef2f6;
-    border-radius: var(--lvca-radius-md);
-    padding: 16px 18px;
+    border-radius: var(--lvca-radius-lg);
+    padding: 22px 22px 20px 24px;
     box-shadow: var(--lvca-shadow-xs);
     transition: all var(--lvca-t) var(--lvca-ease);
     position: relative;
     overflow: hidden;
     height: 100%;
 }
+/* Acento vertical izquierdo: color semántico protagonista en el borde. */
 .lvca-kpi-lite::after {
     content: "";
     position: absolute;
-    left: 0; right: 0; bottom: 0;
-    height: 3px;
+    left: 0; top: 0; bottom: 0;
+    width: 5px;
     background: var(--kpi-accent, var(--lvca-brand-azul));
 }
 .lvca-kpi-lite:hover {
-    box-shadow: var(--lvca-shadow-md);
-    transform: translateY(-1px);
+    box-shadow: var(--lvca-shadow-sm);
+    transform: translateY(-2px);
 }
 .lvca-kpi-lite .lvca-kpi-lite-head {
     display: flex; align-items: center; gap: 10px;
 }
 .lvca-kpi-lite .lvca-kpi-lite-icon {
-    width: 36px; height: 36px;
+    width: 40px; height: 40px;
     border-radius: 999px;
     display: inline-flex; align-items: center; justify-content: center;
     flex-shrink: 0;
     background: var(--kpi-accent-bg, #e0f2fe);
     color: var(--kpi-accent, var(--lvca-brand-azul));
 }
-.lvca-kpi-lite .lvca-kpi-lite-icon .material-symbols-rounded { font-size: 20px; }
+.lvca-kpi-lite .lvca-kpi-lite-icon .material-symbols-rounded { font-size: 22px; }
 .lvca-kpi-lite .lvca-kpi-lite-label {
-    font-size: 0.72rem;
-    font-weight: 600;
-    color: #94a3b8;
+    font-size: 0.74rem;
+    font-weight: 700;
+    color: #64748b;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.06em;
     line-height: 1.3;
 }
 .lvca-kpi-lite .lvca-kpi-lite-value {
-    font-size: 1.9rem;
-    font-weight: 700;
+    font-size: 2.8rem;
+    font-weight: 800;
     color: #0f172a;
-    letter-spacing: -0.02em;
-    margin-top: 8px;
+    letter-spacing: -0.035em;
+    margin-top: 12px;
     line-height: 1;
     font-variant-numeric: tabular-nums;
 }
 .lvca-kpi-lite .lvca-kpi-lite-foot {
-    font-size: 0.74rem;
+    font-size: 0.76rem;
     color: #64748b;
-    margin-top: 6px;
+    margin-top: 8px;
 }
 .lvca-kpi-lite.verde    { --kpi-accent: var(--lvca-acento-verde);    --kpi-accent-bg: #dcfce7; }
 .lvca-kpi-lite.amarillo { --kpi-accent: var(--lvca-acento-amarillo); --kpi-accent-bg: #fef3c7; }
@@ -1792,13 +1795,13 @@ def stat_counters(items: list[dict], titulo: str = "") -> None:
             .lvca-stat { animation: none; opacity: 1; }
         }
         .lvca-stat-ico {
-            font-size: 26px !important; line-height: 1;
-            color: #7FD4FF; margin-bottom: 8px;
+            font-size: 28px !important; line-height: 1;
+            color: #7FD4FF; margin-bottom: 10px;
         }
         .lvca-stat-num {
             color: #ffffff; font-weight: 800;
-            font-size: 2rem; line-height: 1.05;
-            letter-spacing: -0.02em;
+            font-size: 2.5rem; line-height: 1.02;
+            letter-spacing: -0.03em;
             font-variant-numeric: tabular-nums;
         }
         .lvca-stat-suffix {
