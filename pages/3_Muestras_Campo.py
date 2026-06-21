@@ -1040,7 +1040,11 @@ def _render_insitu(campana_id: str) -> None:
         pt_code = pt.get("codigo", "")
         n_muestras = len(ms)
         codigos = ", ".join(m["codigo"] for m in ms)
-        if n_muestras >= 3:
+        es_col_grupo = any(
+            m.get("modo_muestreo") == "columna" or m.get("grupo_profundidad")
+            for m in ms
+        )
+        if es_col_grupo and n_muestras >= 2:
             label = f"{pt_code} — {pt_name} ({n_muestras} muestras: {codigos})"
         else:
             label = f"{ms[0]['codigo']} — {pt_name}"
@@ -1127,7 +1131,7 @@ def _render_insitu(campana_id: str) -> None:
 
     # ── Determinar muestras a llenar in situ ────────────────────────────
     # Si es columna (3+ muestras del mismo punto), tabla unificada. Si no, single.
-    if es_columna and len(muestras_punto) >= 3:
+    if es_columna and len(muestras_punto) >= 2:
         _render_insitu_columna(muestras_punto, limites, equipo_nombre, n_serie)
     else:
         _render_insitu_single(muestra_id, existentes, limites, equipo_nombre, n_serie)
@@ -1337,7 +1341,7 @@ def _render_insitu_columna(
 
     st.divider()
 
-    if st.button("Guardar mediciones in situ (3 profundidades)", type="primary", icon=":material/save:", key="btn_insitu_col"):
+    if st.button(f"Guardar mediciones in situ ({n_prof} profundidad(es))", type="primary", icon=":material/save:", key="btn_insitu_col"):
         total_ok = 0
         total_err: list[str] = []
         for j, (m, _, tp) in enumerate(datos_por_prof):

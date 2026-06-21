@@ -272,7 +272,7 @@ def get_datos_cadena(campana_id: str) -> dict:
         m["insitu"] = insitu_map.get(m["id"], {})
 
     # Inferir profundidad_tipo si no viene de la BD (migración 005 pendiente)
-    # Agrupar por punto: si hay 3 muestras del mismo punto, asignar S/M/F
+    # Agrupar por punto: para columnas de agua (1/2/3 niveles), asignar S/M/F en orden
     _prof_labels = {0: "S", 1: "M", 2: "F"}
     _prof_nombres = {"S": "Superficie", "M": "Medio", "F": "Fondo"}
     muestras_por_punto: dict[str, list[dict]] = {}
@@ -280,14 +280,17 @@ def get_datos_cadena(campana_id: str) -> dict:
         pt_id = (m.get("puntos_muestreo") or {}).get("codigo", "")
         muestras_por_punto.setdefault(pt_id, []).append(m)
     for pt_id, ms in muestras_por_punto.items():
-        if len(ms) >= 3:
-            for i, m in enumerate(ms):
-                if not m.get("profundidad_tipo") and i < 3:
-                    m["profundidad_tipo"] = _prof_labels[i]
-                # Agregar label legible para observaciones
-                tp = m.get("profundidad_tipo")
-                if tp and tp in _prof_nombres:
-                    m["_prof_label"] = _prof_nombres[tp]
+        es_col = any(
+            m.get("modo_muestreo") == "columna" or m.get("grupo_profundidad")
+            for m in ms
+        )
+        for i, m in enumerate(ms):
+            if es_col and not m.get("profundidad_tipo") and i < len(_prof_labels):
+                m["profundidad_tipo"] = _prof_labels[i]
+            # Agregar label legible para observaciones
+            tp = m.get("profundidad_tipo")
+            if tp and tp in _prof_nombres:
+                m["_prof_label"] = _prof_nombres[tp]
 
     # Lugar de monitoreo (del primer punto)
     lugar = ""
