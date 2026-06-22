@@ -183,19 +183,37 @@ def _render_resultado(imp, analista_id: Optional[str]) -> None:
     for cid, info in grupos.items():
         camp_opts[info["label"]] = cid
 
+    # Límites del método para reportar (L.C.M. = límite de cuantificación).
+    param = get_param_microcistina() or {}
+    lcm = param.get("lcm")                       # µg/L
+    lcm_mg = (float(lcm) / 1000.0) if lcm is not None else None
+
     st.markdown(f"##### Asignar las {len(imp.muestras)} muestras de la placa")
+    if lcm_mg is not None:
+        st.caption(
+            f"Valor final del informe: resultados por debajo del L.C.M. "
+            f"({lcm_mg:.5f} mg/L) se reportan como **< {lcm_mg:.5f} mg/L** "
+            "(se muestra entre paréntesis el valor calculado)."
+        )
     h1, h2, h3 = st.columns([1.7, 1.3, 1.6])
-    h1.caption("Muestra de la placa (valor)")
+    h1.caption("Muestra de la placa (valor final)")
     h2.caption("Campaña")
     h3.caption("Estación / muestra")
 
     asignaciones: dict[int, str] = {}
     for idx, m in enumerate(imp.muestras):
-        conc = "fuera de rango" if m.conc_ugL is None else f"{m.conc_ugL / 1000:.6f} mg/L"
+        extra = ""
+        if m.conc_ugL is None:
+            valor = "fuera de rango (requiere dilución)"
+        elif lcm is not None and m.conc_ugL < float(lcm):
+            valor = f"< {lcm_mg:.5f} mg/L"
+            extra = f" · calc {m.conc_ugL / 1000:.6f}"
+        else:
+            valor = f"{m.conc_ugL / 1000:.6f} mg/L"
         c1, c2, c3 = st.columns([1.7, 1.3, 1.6])
         c1.markdown(
-            f"**{m.label}** — {conc}<br>"
-            f"<small>OD {m.od_1:g}/{m.od_2:g} · %CV {m.cv_pct:.1f}</small>",
+            f"**{m.label}** — {valor}<br>"
+            f"<small>OD {m.od_1:g}/{m.od_2:g} · %CV {m.cv_pct:.1f}{extra}</small>",
             unsafe_allow_html=True,
         )
         camp_sel = c2.selectbox("Campaña", list(camp_opts.keys()),
