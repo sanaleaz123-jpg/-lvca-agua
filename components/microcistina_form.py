@@ -183,17 +183,23 @@ def _render_resultado(imp, analista_id: Optional[str]) -> None:
     for cid, info in grupos.items():
         camp_opts[info["label"]] = cid
 
-    # Límites del método para reportar (L.C.M. = límite de cuantificación).
+    # Límites del método (se guardan en µg/L; para el informe se usan en mg/L).
     param = get_param_microcistina() or {}
     lcm = param.get("lcm")                       # µg/L
+    lmd = param.get("lmd")                        # µg/L
     lcm_mg = (float(lcm) / 1000.0) if lcm is not None else None
+    lmd_mg = (float(lmd) / 1000.0) if lmd is not None else None
+
+    def _fmt_mg(x):
+        return f"{x:.6f}".rstrip("0").rstrip(".") if x is not None else "—"
 
     st.markdown(f"##### Asignar las {len(imp.muestras)} muestras de la placa")
     if lcm_mg is not None:
         st.caption(
-            f"Valor final del informe: resultados por debajo del L.C.M. "
-            f"({lcm_mg:.5f} mg/L) se reportan como **< {lcm_mg:.5f} mg/L** "
-            "(se muestra entre paréntesis el valor calculado)."
+            f"Límites del método: L.D.M. = {_fmt_mg(lmd_mg)} mg/L · "
+            f"L.C.M. = {_fmt_mg(lcm_mg)} mg/L. Valor final del informe: "
+            f"resultados por debajo del L.C.M. se reportan como "
+            f"**< {_fmt_mg(lcm_mg)} mg/L** (se muestra entre paréntesis el valor calculado)."
         )
     h1, h2, h3 = st.columns([1.7, 1.3, 1.6])
     h1.caption("Muestra de la placa (valor final)")
