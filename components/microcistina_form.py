@@ -47,7 +47,29 @@ def render_panel_microcistina(
         "y tú asignas cada muestra a su campaña/estación. Una placa puede abarcar "
         "varias campañas."
     )
+    _render_leyenda()
     _render_import(analista_id)
+
+
+def _render_leyenda() -> None:
+    """Leyenda de las siglas usadas en el ensayo."""
+    with st.expander("¿Qué significan las siglas?", icon=":material/help:"):
+        st.markdown(
+            "- **OD**: densidad óptica (absorbancia a 450 nm). *A mayor OD, menor microcistina* (relación inversa).\n"
+            "- **ST0–ST5**: estándares de calibración (0, 0.05, 0.15, 0.4, 1.5 y 5.0 µg/L).\n"
+            "- **Control / QCS**: Estándar de Control de Calidad (valor esperado 0.75 ± 0.185 µg/L).\n"
+            "- **LRB**: blanco de reactivo de laboratorio (*Laboratory Reagent Blank*).\n"
+            "- **%CV**: coeficiente de variación de los duplicados (criterio: muestras < 15 %, estándares < 10 %).\n"
+            "- **L.D.M.**: Límite de Detección del Método = 0.000016 mg/L (0.016 µg/L).\n"
+            "- **L.C.M.**: Límite de Cuantificación del Método = 0.00005 mg/L (0.05 µg/L). "
+            "Valores por debajo se reportan como *< 0.00005 mg/L*.\n"
+            "- **Curva 4PL**: ajuste logístico de 4 parámetros — **A** (Amax), **B** (pendiente), "
+            "**C** (IC50), **D** (mínimo); **R²** = bondad de ajuste.\n"
+            "- **B/B0 %**: señal de cada estándar respecto al estándar 0 (Amax).\n"
+            "- **ECA**: Estándar de Calidad Ambiental (D.S. 004-2017-MINAM). Microcistina Cat. A2 = 1 µg/L "
+            "(igual que el límite de la OMS).\n"
+            "- **Unidades**: 1 mg/L = 1000 µg/L (ppb)."
+        )
 
 
 def _render_import(analista_id: Optional[str]) -> None:

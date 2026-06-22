@@ -533,6 +533,37 @@ def _cuerpo_muestra(muestra_id: str) -> None:
         _render_single_body(muestra_id)
 
 
+def _render_mc_readonly(fila: dict | None, datos: dict, prefijo: str = "") -> None:
+    """Muestra el resultado de Microcistina LR (registrado vía ELISA) en solo
+    lectura, con su valor en mg/L (µg/L) y el veredicto ECA de la plataforma."""
+    if not fila:
+        return
+    val_ug = fila.get("valor_numerico")
+    cualif = fila.get("cualificador")
+    if val_ug is None and not cualif:
+        return  # aún no registrado
+    if cualif == "<LCM":
+        txt = "< 0.00005 mg/L (< 0.05 µg/L)"
+    elif val_ug is None:
+        txt = "muy concentrada — diluir y reanalizar (> 0.005 mg/L)"
+    else:
+        ug_str = f"{float(val_ug):.4f}".rstrip("0").rstrip(".")
+        txt = f"{float(val_ug) / 1000:.6f} mg/L ({ug_str} µg/L)"
+    chip = ""
+    try:
+        ver = evaluar_resultado_ctx(datos, fila["parametro_id"],
+                                    valor_lab=val_ug, cualificador=cualif)
+        chip = _chip_veredicto_eca(ver)
+    except Exception:
+        chip = ""
+    etq = f" {prefijo}" if prefijo else ""
+    st.markdown(
+        f":material/biotech: **Microcistina LR (ELISA){etq}:** {txt} &nbsp; {chip} "
+        "<small>· registrado en la pestaña Microcistina (ELISA)</small>",
+        unsafe_allow_html=True,
+    )
+
+
 def _render_single_body(muestra_id: str) -> None:
     """
     Panel de captura de una muestra (barra informativa, métricas, tabs por
@@ -568,9 +599,9 @@ def _render_single_body(muestra_id: str) -> None:
 
     # ── Preparar datos ───────────────────────────────────────────────────────
     filas = _preparar_filas(datos)
-    # Microcistina (P091) se ingresa en su propia subsección ELISA (curva 4PL +
-    # control), no como fila manual de un solo valor: se excluye de las filas
-    # por categoría para no duplicar el ingreso.
+    # Microcistina (P091) se ingresa en la subsección ELISA (curva 4PL + control).
+    # Aquí NO se re-ingresa: se muestra en solo lectura con el valor ya registrado.
+    _mc_fila = next((f for f in filas if f.get("codigo") == "P091"), None)
     filas = [f for f in filas if f.get("codigo") != "P091"]
     key_prefix = muestra_id[:8]
 
@@ -646,6 +677,9 @@ def _render_single_body(muestra_id: str) -> None:
             "**No aplica** — parámetro sin ECA en el DS 004-2017-MINAM para la "
             "categoría del punto (ej. fosfatos, o P-total en Cat 3)."
         )
+
+    # Microcistina (ELISA): resultado en solo lectura (se registra en su pestaña).
+    _render_mc_readonly(_mc_fila, datos)
 
     # ── Ingreso por categoría (tabs) ─────────────────────────────────────────
     st.subheader("Ingreso de resultados por categoría")
@@ -1022,10 +1056,12 @@ def _render_ingreso_columna(grupo: list[dict]) -> None:
                 st.error(f"Error al cargar el nivel {m.get('codigo')}: {exc}")
                 st.stop()
             filas = _preparar_filas(d)
-            # Microcistina (P091) se ingresa por su subsección ELISA, no como
-            # fila manual: se excluye de las filas por categoría.
+            # Microcistina (P091): se registra en la subsección ELISA; aquí se
+            # muestra en solo lectura, no se re-ingresa.
+            mc = next((f for f in filas if f.get("codigo") == "P091"), None)
             filas = [f for f in filas if f.get("codigo") != "P091"]
             niveles.append({
+                "mc":        mc,
                 "meta":      m,
                 "datos":     d,
                 "filas":     filas,
@@ -1076,6 +1112,13 @@ def _render_ingreso_columna(grupo: list[dict]) -> None:
         "Edita los valores de cada nivel. Los cualificadores y observaciones se "
         "gestionan por nivel desde el selector superior."
     )
+    # Microcistina (ELISA) por nivel — solo lectura.
+    if any(n.get("mc") for n in niveles):
+        for n in niveles:
+            nm = n["meta"]
+            prof = _PROF_NOMBRES.get(nm.get("profundidad_tipo"), nm.get("profundidad_tipo") or "")
+            _render_mc_readonly(n.get("mc"), n["datos"], prefijo=f"· {prof}" if prof else "")
+
     st.subheader("Ingreso de resultados por nivel de profundidad")
 
     # ── Tabs por categoría ───────────────────────────────────────────────────
