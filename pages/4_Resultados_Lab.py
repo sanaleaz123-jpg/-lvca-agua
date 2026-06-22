@@ -1016,6 +1016,9 @@ def _render_ingreso_columna(grupo: list[dict]) -> None:
                 st.error(f"Error al cargar el nivel {m.get('codigo')}: {exc}")
                 st.stop()
             filas = _preparar_filas(d)
+            # Microcistina (P091) se ingresa por su subsección ELISA, no como
+            # fila manual: se excluye de las filas por categoría.
+            filas = [f for f in filas if f.get("codigo") != "P091"]
             niveles.append({
                 "meta":      m,
                 "datos":     d,
@@ -1076,7 +1079,10 @@ def _render_ingreso_columna(grupo: list[dict]) -> None:
     cats0.setdefault("Hidrobiologico", [])
     cats_ord = [c for c in CATEGORIAS_ORDEN if c in cats0]
     cats_ord += [c for c in cats0 if c not in CATEGORIAS_ORDEN]
-    tabs = st.tabs([f"{c} ({len(cats0[c])})" for c in cats_ord])
+    tabs = st.tabs(
+        [f"{c} ({len(cats0[c])})" for c in cats_ord]
+        + [":material/labs: Microcistina (ELISA)"]
+    )
 
     analista_actual = _get_usuario_interno_id(sesion.uid)
     # valores_por_nivel[j] = {pid: {valor}}  (alineado con niveles[j])
@@ -1108,6 +1114,13 @@ def _render_ingreso_columna(grupo: list[dict]) -> None:
             else:
                 if cats0[cat]:
                     _render_categoria_columna(cats0[cat], niveles, valores_por_nivel)
+
+    # Pestaña Microcistina (ELISA) — ensayo por campaña (curva 4PL + control).
+    with tabs[-1]:
+        render_panel_microcistina(
+            campana_id=muestra0.get("campana_id"),
+            analista_id=analista_actual,
+        )
 
     # ── Guardar todos los niveles ────────────────────────────────────────────
     st.divider()
