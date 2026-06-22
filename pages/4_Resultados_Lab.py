@@ -465,6 +465,22 @@ def main() -> None:
     top_nav()
     page_header("Resultados de Laboratorio", "Ingreso y validación con semáforo ECA &middot; D.S. N° 004-2017-MINAM")
 
+    # Dos modos: ingreso clásico por muestra, y el ensayo ELISA de microcistina
+    # que es a nivel de placa y puede abarcar varias campañas a la vez.
+    tab_muestra, tab_mc = st.tabs([
+        ":material/science: Ingreso por muestra",
+        ":material/labs: Microcistina (ELISA)",
+    ])
+
+    with tab_muestra:
+        _flujo_por_muestra()
+
+    with tab_mc:
+        render_panel_microcistina(analista_id=_get_usuario_interno_id(sesion.uid))
+
+
+def _flujo_por_muestra() -> None:
+    """Cascada de selección (campaña → punto → muestra) + cuerpo de captura."""
     # ── Selección en cascada ─────────────────────────────────────────────────
     with st.expander("Seleccionar muestra", icon=":material/list:", expanded=True):
         campana_id, punto_id, muestra_id = _panel_seleccion()
@@ -646,10 +662,7 @@ def _render_single_body(muestra_id: str) -> None:
     cats_ordenadas = [c for c in CATEGORIAS_ORDEN if c in cats]
     cats_ordenadas += [c for c in cats if c not in CATEGORIAS_ORDEN]
 
-    tabs = st.tabs(
-        [f"{cat} ({len(cats[cat])})" for cat in cats_ordenadas]
-        + [":material/labs: Microcistina (ELISA)"]
-    )
+    tabs = st.tabs([f"{cat} ({len(cats[cat])})" for cat in cats_ordenadas])
 
     analista_id_actual = _get_usuario_interno_id(sesion.uid)
 
@@ -678,13 +691,6 @@ def _render_single_body(muestra_id: str) -> None:
             else:
                 cat_vals = _render_categoria(cats[cat], key_prefix, saved_params, datos=datos)
                 all_valores.update(cat_vals)
-
-    # Pestaña Microcistina (ELISA) — ensayo por campaña (curva 4PL + control).
-    with tabs[-1]:
-        render_panel_microcistina(
-            campana_id=muestra.get("campana_id"),
-            analista_id=analista_id_actual,
-        )
 
     # ── Botón de guardado ─────────────────────────────────────────────────────
     st.divider()
@@ -1079,10 +1085,7 @@ def _render_ingreso_columna(grupo: list[dict]) -> None:
     cats0.setdefault("Hidrobiologico", [])
     cats_ord = [c for c in CATEGORIAS_ORDEN if c in cats0]
     cats_ord += [c for c in cats0 if c not in CATEGORIAS_ORDEN]
-    tabs = st.tabs(
-        [f"{c} ({len(cats0[c])})" for c in cats_ord]
-        + [":material/labs: Microcistina (ELISA)"]
-    )
+    tabs = st.tabs([f"{c} ({len(cats0[c])})" for c in cats_ord])
 
     analista_actual = _get_usuario_interno_id(sesion.uid)
     # valores_por_nivel[j] = {pid: {valor}}  (alineado con niveles[j])
@@ -1114,13 +1117,6 @@ def _render_ingreso_columna(grupo: list[dict]) -> None:
             else:
                 if cats0[cat]:
                     _render_categoria_columna(cats0[cat], niveles, valores_por_nivel)
-
-    # Pestaña Microcistina (ELISA) — ensayo por campaña (curva 4PL + control).
-    with tabs[-1]:
-        render_panel_microcistina(
-            campana_id=muestra0.get("campana_id"),
-            analista_id=analista_actual,
-        )
 
     # ── Guardar todos los niveles ────────────────────────────────────────────
     st.divider()
