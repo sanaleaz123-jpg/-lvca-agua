@@ -330,7 +330,6 @@ def _fill_parametros(table, insitu: dict | None = None, params_seleccionados: li
     fisico_codigos = _find_cat("quimic")
     fisico = [(c, columnas.get(c, c)) for c in fisico_codigos]
     hidro_codigos = _find_cat("biologic")
-    hidro = [(c, columnas.get(c, c)) for c in hidro_codigos]
 
     # Set de códigos seleccionados (None = todos marcados)
     sel = set(params_seleccionados) if params_seleccionados is not None else None
@@ -338,6 +337,13 @@ def _fill_parametros(table, insitu: dict | None = None, params_seleccionados: li
     def _is_selected(codigo: str) -> bool:
         """Retorna True si el parámetro debe marcarse con X."""
         return sel is None or codigo in sel
+
+    # Hidrobiológicos: el laboratorio solo maneja Fitoplancton (recuento por
+    # filos). En la ficha se consolidan los filos (Bacillariophyta, Charophyta,
+    # Chlorophyta, ...) en un único parámetro "Fitoplancton". Se marca con X si
+    # la muestra incluye cualquier parámetro de la categoría hidrobiológica.
+    hidro_marcado = (sel is None) or any(c in sel for c in hidro_codigos)
+    hidro = [("Fitoplancton (cel/mL)", hidro_marcado)]
 
     # ── R16–R21: 6 filas con 3 columnas ─────────────────────────────────
     n_rows_main = 6
@@ -396,11 +402,11 @@ def _fill_parametros(table, insitu: dict | None = None, params_seleccionados: li
 
     for i in range(3):
         cells = uc(23 + i)
-        # Columna 1: Hidrobiológico
+        # Columna 1: Hidrobiológico (consolidado en "Fitoplancton")
         if i < len(hidro):
-            cod_h, nom_h = hidro[i]
+            nom_h, marcado_h = hidro[i]
             _set_cell(cells[0], nom_h)
-            _set_cell_centered(cells[1], "X" if _is_selected(cod_h) else "")
+            _set_cell_centered(cells[1], "X" if marcado_h else "")
         else:
             _set_cell(cells[0], "")
             _set_cell_centered(cells[1], "")
