@@ -211,7 +211,7 @@ def get_datos_muestra(muestra_id: str) -> dict:
     m = (
         db.table("muestras")
         .select(
-            "id, codigo, fecha_muestreo, estado, "
+            "id, codigo, fecha_muestreo, estado, campana_id, "
             "puntos_muestreo(id, codigo, nombre, eca_id, dentro_zona_mezcla, "
             "  ecas(id, codigo, nombre))"
         )

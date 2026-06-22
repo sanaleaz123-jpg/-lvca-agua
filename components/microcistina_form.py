@@ -30,16 +30,26 @@ from services.microcistina_service import (
 from services.resultado_service import get_campanas, validar_resultados
 
 
-def render_panel_microcistina(analista_id: Optional[str] = None) -> None:
-    """Subsección de ingreso del ensayo ELISA de microcistina (por campaña)."""
-    campanas = get_campanas()
-    if not campanas:
-        st.info("No hay campañas registradas.")
-        return
+def render_panel_microcistina(
+    campana_id: Optional[str] = None,
+    analista_id: Optional[str] = None,
+) -> None:
+    """
+    Subsección de ingreso del ensayo ELISA de microcistina (por campaña).
 
-    opciones = {f"{c['codigo']} — {c['nombre']}": c["id"] for c in campanas}
-    sel = st.selectbox("Campaña", list(opciones.keys()), key="mc_campana")
-    campana_id = opciones[sel]
+    Si ``campana_id`` se entrega (p. ej. la campaña de la muestra seleccionada
+    en Resultados de Laboratorio) se usa directamente; si no, se muestra un
+    selector de campaña.
+    """
+    if not campana_id:
+        campanas = get_campanas()
+        if not campanas:
+            st.info("No hay campañas registradas.")
+            return
+        opciones = {f"{c['codigo']} — {c['nombre']}": c["id"] for c in campanas}
+        sel = st.selectbox("Campaña", list(opciones.keys()), key="mc_campana")
+        campana_id = opciones[sel]
+
     cid = campana_id[:8]  # sufijo de keys por campaña
 
     muestras = get_muestras_microcistina(campana_id)

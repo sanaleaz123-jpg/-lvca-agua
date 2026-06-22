@@ -465,22 +465,6 @@ def main() -> None:
     top_nav()
     page_header("Resultados de Laboratorio", "Ingreso y validación con semáforo ECA &middot; D.S. N° 004-2017-MINAM")
 
-    tab_muestra, tab_mc = st.tabs([
-        ":material/science: Ingreso por muestra",
-        ":material/labs: Microcistina (ELISA)",
-    ])
-
-    with tab_muestra:
-        _tab_por_muestra()
-
-    with tab_mc:
-        sesion = st.session_state.get("sesion")
-        analista_id = _get_usuario_interno_id(sesion.uid) if sesion else None
-        render_panel_microcistina(analista_id=analista_id)
-
-
-def _tab_por_muestra() -> None:
-    """Flujo de ingreso por muestra (selección en cascada + cuerpo de captura)."""
     # ── Selección en cascada ─────────────────────────────────────────────────
     with st.expander("Seleccionar muestra", icon=":material/list:", expanded=True):
         campana_id, punto_id, muestra_id = _panel_seleccion()
@@ -568,6 +552,10 @@ def _render_single_body(muestra_id: str) -> None:
 
     # ── Preparar datos ───────────────────────────────────────────────────────
     filas = _preparar_filas(datos)
+    # Microcistina (P091) se ingresa en su propia subsección ELISA (curva 4PL +
+    # control), no como fila manual de un solo valor: se excluye de las filas
+    # por categoría para no duplicar el ingreso.
+    filas = [f for f in filas if f.get("codigo") != "P091"]
     key_prefix = muestra_id[:8]
 
     # Estado de guardado persistente (session_state)
@@ -658,7 +646,10 @@ def _render_single_body(muestra_id: str) -> None:
     cats_ordenadas = [c for c in CATEGORIAS_ORDEN if c in cats]
     cats_ordenadas += [c for c in cats if c not in CATEGORIAS_ORDEN]
 
-    tabs = st.tabs([f"{cat} ({len(cats[cat])})" for cat in cats_ordenadas])
+    tabs = st.tabs(
+        [f"{cat} ({len(cats[cat])})" for cat in cats_ordenadas]
+        + [":material/labs: Microcistina (ELISA)"]
+    )
 
     analista_id_actual = _get_usuario_interno_id(sesion.uid)
 
@@ -687,6 +678,13 @@ def _render_single_body(muestra_id: str) -> None:
             else:
                 cat_vals = _render_categoria(cats[cat], key_prefix, saved_params, datos=datos)
                 all_valores.update(cat_vals)
+
+    # Pestaña Microcistina (ELISA) — ensayo por campaña (curva 4PL + control).
+    with tabs[-1]:
+        render_panel_microcistina(
+            campana_id=muestra.get("campana_id"),
+            analista_id=analista_id_actual,
+        )
 
     # ── Botón de guardado ─────────────────────────────────────────────────────
     st.divider()
