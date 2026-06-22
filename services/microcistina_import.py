@@ -204,9 +204,21 @@ def parse_excel_solver(
         else:
             cv_pct = _num(ws, r + 1, 6) or 0.0        # F
             conc_mgL = _num(ws, r + 1, 9)             # I (mg/L)
-            conc_ugL = conc_mgL * 1000.0 if conc_mgL is not None else None
-            en_rango = conc_ugL is not None
-            motivo = "" if en_rango else "Fuera del rango de la curva en el Excel."
+            if conc_mgL is not None:
+                conc_ugL = conc_mgL * 1000.0
+                en_rango = True
+                motivo = ""
+            else:
+                # El Excel no pudo calcular (#NUM). Se resuelve con el motor
+                # propio según la OD: OD alta → no detectado (< L.C.M.);
+                # OD baja → muy concentrada. (Evita marcar como "muy
+                # concentrada" muestras de OD alta = poca toxina.)
+                res = procesar_muestra(od1, od2, curva, factor=factor)
+                conc_ugL = res.conc_ugL
+                en_rango = res.en_rango
+                motivo = res.motivo
+                if not cv_pct:
+                    cv_pct = res.cv_pct
         muestras.append(MuestraImportada(
             label=str(label).strip(),
             od_1=od1, od_2=od2, cv_pct=cv_pct,
