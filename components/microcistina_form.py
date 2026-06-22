@@ -24,8 +24,8 @@ from services.microcistina_import import parse_excel_solver
 from services.microcistina_service import (
     calcular_corrida,
     get_corrida,
+    get_muestras_agrupadas_por_campana,
     get_muestras_microcistina,
-    get_muestras_para_asignar,
     get_param_microcistina,
     guardar_corrida,
     guardar_corrida_importada,
@@ -66,25 +66,43 @@ def _render_import(analista_id: Optional[str]) -> None:
         for a in imp.avisos:
             st.warning(a)
 
-        muestras_asig = get_muestras_para_asignar()
-        opciones = {"— (no asignar)": None}
-        for mm in muestras_asig:
-            opciones[mm["label"]] = mm["id"]
+        grupos = get_muestras_agrupadas_por_campana()
+        camp_opts = {"— (elegir campaña)": None}
+        for cid, info in grupos.items():
+            camp_opts[info["label"]] = cid
 
-        st.markdown("##### Asignar cada muestra del Excel")
+        st.markdown(f"##### Asignar las {len(imp.muestras)} muestras de la placa")
+        h1, h2, h3 = st.columns([1.7, 1.3, 1.6])
+        h1.caption("Muestra de la placa (valor)")
+        h2.caption("Campaña")
+        h3.caption("Estación / muestra")
+
         asignaciones: dict[int, str] = {}
         for idx, m in enumerate(imp.muestras):
             if m.conc_ugL is None:
                 conc = "fuera de rango"
             else:
                 conc = f"{m.conc_ugL / 1000:.6f} mg/L"
-            cc1, cc2 = st.columns([1, 2])
-            cc1.markdown(f"**{m.label}** — {conc} · %CV {m.cv_pct:.1f}")
-            sel = cc2.selectbox(
-                "Asignar a", list(opciones.keys()),
-                key=f"mc_map_{idx}", label_visibility="collapsed",
+            c1, c2, c3 = st.columns([1.7, 1.3, 1.6])
+            c1.markdown(
+                f"**{m.label}** — {conc}<br>"
+                f"<small>OD {m.od_1:g}/{m.od_2:g} · %CV {m.cv_pct:.1f}</small>",
+                unsafe_allow_html=True,
             )
-            asignaciones[idx] = opciones[sel]
+            camp_sel = c2.selectbox("Campaña", list(camp_opts.keys()),
+                                    key=f"mc_camp_{idx}", label_visibility="collapsed")
+            cid = camp_opts[camp_sel]
+            if cid:
+                mopts = {"— (estación)": None}
+                for mm in grupos[cid]["muestras"]:
+                    mopts[mm["label"]] = mm["id"]
+                mues_sel = c3.selectbox("Estación", list(mopts.keys()),
+                                        key=f"mc_mues_{idx}", label_visibility="collapsed")
+                asignaciones[idx] = mopts[mues_sel]
+            else:
+                c3.selectbox("Estación", ["— (elige campaña primero)"],
+                             key=f"mc_mues_{idx}", disabled=True, label_visibility="collapsed")
+                asignaciones[idx] = None
 
         elegidas = [v for v in asignaciones.values() if v]
         n_asig = len(elegidas)

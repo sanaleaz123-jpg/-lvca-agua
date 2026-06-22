@@ -156,6 +156,52 @@ def get_muestras_para_asignar() -> list[dict]:
     return out
 
 
+_PROF_NOMBRES = {"S": "Superficie", "M": "Medio", "F": "Fondo"}
+
+
+@cached(ttl=120)
+def get_muestras_agrupadas_por_campana() -> dict:
+    """
+    Muestras de todas las campañas agrupadas para el mapeo en cascada del import.
+
+    Devuelve: {campana_id: {"label": "<cod> — <nombre>",
+                            "muestras": [{"id", "label": "<punto> — <nivel> (<fecha>)"}]}}
+    Ordenado por campaña (fecha desc) y por código de punto.
+    """
+    db = get_db()
+    res = (
+        db.table("muestras")
+        .select(
+            "id, codigo, fecha_muestreo, profundidad_tipo, campana_id, "
+            "campanas(codigo, nombre, fecha_inicio), puntos_muestreo(codigo, nombre)"
+        )
+        .order("fecha_muestreo", desc=True)
+        .execute()
+    )
+    grupos: dict = {}
+    for m in (res.data or []):
+        cid = m.get("campana_id")
+        if not cid:
+            continue
+        camp = m.get("campanas") or {}
+        p = m.get("puntos_muestreo") or {}
+        if cid not in grupos:
+            grupos[cid] = {
+                "label": f"{camp.get('codigo', '?')} — {camp.get('nombre', '')}",
+                "_orden": camp.get("fecha_inicio") or "",
+                "muestras": [],
+            }
+        prof = m.get("profundidad_tipo")
+        nivel = f" — {_PROF_NOMBRES.get(prof, prof)}" if prof else ""
+        fecha = (m.get("fecha_muestreo") or "")[:10]
+        etq = f"{p.get('codigo', '?')}{nivel} ({fecha})"
+        grupos[cid]["muestras"].append({"id": m["id"], "label": etq})
+    for info in grupos.values():
+        info["muestras"].sort(key=lambda x: x["label"])
+    # Reordenar campañas por fecha de inicio desc
+    return dict(sorted(grupos.items(), key=lambda kv: kv[1]["_orden"], reverse=True))
+
+
 @cached(ttl=120)
 def get_corrida(campana_id: str) -> Optional[dict]:
     """Placa ELISA ligada a la campaña (vía resultados.corrida_id), o None."""
