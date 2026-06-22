@@ -263,6 +263,61 @@ def parse_grid_text(text: str) -> list[list[float]]:
     return filas
 
 
+def _grid_desde_hoja(ws) -> Optional[list[list[float]]]:
+    """Busca en la hoja un bloque de 8 filas × 12 columnas de absorbancias.
+
+    Tolera etiquetas de fila (A–H) y una fila de encabezado (1..12); toma las
+    primeras 12 columnas numéricas de cada fila. Devuelve None si no encuentra
+    8 filas válidas.
+    """
+    filas: list[list[float]] = []
+    for row in ws.iter_rows(values_only=True):
+        nums: list[float] = []
+        for v in row:
+            if isinstance(v, bool):
+                continue
+            if isinstance(v, (int, float)):
+                nums.append(float(v))
+            elif v is not None:
+                try:
+                    nums.append(float(str(v).strip().replace(",", ".")))
+                except ValueError:
+                    pass
+        if len(nums) >= 12:
+            cand = nums[:12]
+            if cand == [float(i) for i in range(1, 13)]:
+                continue  # fila de encabezado de columnas
+            filas.append(cand)
+            if len(filas) == 8:
+                break
+    return filas if len(filas) == 8 else None
+
+
+def parse_placa_excel(
+    origen: Union[bytes, BytesIO, str],
+    factor: float = FACTOR_DILUCION_DEFAULT,
+) -> CorridaImportada:
+    """
+    Lee un Excel que contiene SOLO la placa de absorbancias (8×12) — tal como
+    sale del lector — y calcula la corrida con la distribución fija del LVCA.
+    Busca el bloque 8×12 en cualquier hoja del libro.
+    """
+    if isinstance(origen, bytes):
+        origen = BytesIO(origen)
+    wb = openpyxl.load_workbook(origen, data_only=True)
+    grid = None
+    for nombre in wb.sheetnames:
+        grid = _grid_desde_hoja(wb[nombre])
+        if grid is not None:
+            break
+    if grid is None:
+        raise ValueError(
+            "No se encontró una placa de 8 filas × 12 columnas de absorbancias "
+            "en el archivo. Verifica que el Excel contenga la placa completa."
+        )
+    return parse_placa_cruda(grid, factor=factor)
+
+
 def parse_placa_cruda(
     grid: list[list[float]],
     factor: float = FACTOR_DILUCION_DEFAULT,

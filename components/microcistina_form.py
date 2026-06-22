@@ -24,6 +24,7 @@ from services.microcistina_import import (
     parse_excel_solver,
     parse_grid_text,
     parse_placa_cruda,
+    parse_placa_excel,
 )
 from services.microcistina_service import (
     calcular_corrida,
@@ -59,21 +60,31 @@ def _render_import(analista_id: Optional[str]) -> None:
                     st.error(f"No se pudo leer el archivo: {exc}")
         else:
             st.caption(
-                "Pega la placa de absorbancias tal como sale del lector: 8 filas "
-                "(A–H) × 12 columnas. La plataforma ubica estándares (ST0–ST5), "
-                "control y las 41 muestras con la distribución fija del laboratorio "
-                "y calcula todo (curva 4PL + concentraciones)."
+                "Sube el Excel con la placa de absorbancias (8 filas A–H × 12 "
+                "columnas) tal como sale del lector. La plataforma ubica los "
+                "estándares (ST0–ST5), el control y las 41 muestras con la "
+                "distribución fija del laboratorio y calcula todo (curva 4PL + "
+                "concentraciones), igual que el Solver del Excel."
             )
-            txt = st.text_area(
-                "Placa OD (8 filas × 12 columnas)", height=210, key="mc_grid",
-                placeholder=("A  0.959 1.002 0.919 0.866 0.938 0.901 ...\n"
-                             "B  0.861 0.806 0.85 0.92 ...\n... hasta la fila H"),
-            )
-            if txt.strip():
+            up = st.file_uploader("Excel de la placa (.xlsx)", type=["xlsx"],
+                                  key="mc_placa_xlsx")
+            if up:
                 try:
-                    imp = parse_placa_cruda(parse_grid_text(txt))
+                    imp = parse_placa_excel(up.getvalue())
                 except Exception as exc:
                     st.error(f"No se pudo leer la placa: {exc}")
+            else:
+                with st.expander("…o pegar la placa como texto"):
+                    txt = st.text_area(
+                        "Placa OD (8 filas × 12 columnas)", height=200, key="mc_grid",
+                        placeholder=("A  0.959 1.002 0.919 0.866 ...\n"
+                                     "B  0.861 0.806 0.85 0.92 ...\n... hasta la fila H"),
+                    )
+                    if txt.strip():
+                        try:
+                            imp = parse_placa_cruda(parse_grid_text(txt))
+                        except Exception as exc:
+                            st.error(f"No se pudo leer la placa: {exc}")
         if imp is None:
             return
         _render_mapeo(imp, analista_id)
