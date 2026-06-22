@@ -45,6 +45,7 @@ _PAGINAS_NAV = [
     ("Campañas",            "pages/2_Campanas.py",          "tecnico_campo", "campo"),
     ("Muestras de campo",   "pages/3_Muestras_Campo.py",    "tecnico_campo", "campo"),
     ("Resultados de lab",   "pages/4_Resultados_Lab.py",    "analista_lab",  "datos"),
+    ("Microcistina (ELISA)", "pages/11_Microcistina_ELISA.py", "analista_lab", "datos"),
     ("Base de Datos",       "pages/10_Base_Datos.py",       "visualizador",  "datos"),
     ("Informes",            "pages/8_Informes.py",          "visualizador",  "datos"),
     ("Geoportal",           "pages/7_Geoportal.py",         "visitante",     "visualizacion"),

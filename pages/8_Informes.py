@@ -37,6 +37,11 @@ from services.reporte_hidrobiologico_service import (
     generar_docx_hidrobiologico_campana,
     tiene_analisis_hidrobiologico,
 )
+from services.microcistina_service import tiene_resultados_microcistina
+from services.reporte_microcistina_service import (
+    generar_docx_microcistina_campana,
+    DEFAULTS as MC_DEFAULTS,
+)
 from services.resultado_service import get_campanas
 from services.punto_service import get_puntos
 from services.cumplimiento_service import EstadoECA
@@ -289,6 +294,66 @@ def _render_informe_campana() -> None:
             "fitoplancton (Sedgewick-Rafter) cargado en *Resultados de "
             "laboratorio → Hidrobiológico*."
         )
+
+    # ── Reporte de Ensayo — Microcistina ─────────────────────────────────
+    st.divider()
+    section_header("Reporte de Ensayo — Microcistina", "science")
+
+    if not tiene_resultados_microcistina(campana_id):
+        st.caption(
+            ":material/info: El *Reporte de Ensayo de microcistina* se habilita "
+            "cuando la campaña tenga una corrida ELISA calculada en la página "
+            "*Microcistina (ELISA)*."
+        )
+    else:
+        with st.form("form_reporte_mc"):
+            st.caption(
+                "Datos del encabezado (editables). El código de reporte, los "
+                "resultados, el control de calidad y las fechas se toman de la "
+                "corrida ELISA y de la base de datos."
+            )
+            fc1, fc2 = st.columns(2)
+            with fc1:
+                mc_solicitado = st.text_input("Solicitado por", value=MC_DEFAULTS["solicitado_por"])
+                mc_proyecto = st.text_input("Proyecto", value=campana.get("nombre", ""))
+                mc_procedencia = st.text_input("Procedencia", value="", placeholder="(se deriva de los puntos)")
+                mc_tipo = st.text_input("Tipo de muestra", value=MC_DEFAULTS["tipo_muestra"])
+            with fc2:
+                mc_muestreado = st.text_input("Muestreado por", value=MC_DEFAULTS["muestreado_por"])
+                mc_condicion = st.text_input("Condición de conservación", value=MC_DEFAULTS["condicion"])
+                mc_frecep = st.date_input("Fecha de recepción", value=None, format="DD/MM/YYYY")
+                mc_femis = st.date_input("Fecha de emisión", value=None, format="DD/MM/YYYY")
+            mc_generar = st.form_submit_button(
+                "Generar reporte Word", use_container_width=True,
+                icon=":material/description:",
+            )
+        if mc_generar:
+            overrides = {
+                "solicitado_por": mc_solicitado,
+                "proyecto": mc_proyecto,
+                "procedencia": mc_procedencia,
+                "tipo_muestra": mc_tipo,
+                "muestreado_por": mc_muestreado,
+                "condicion": mc_condicion,
+                "fecha_recepcion": mc_frecep.isoformat() if mc_frecep else None,
+                "fecha_emision": mc_femis.isoformat() if mc_femis else None,
+            }
+            overrides = {k: v for k, v in overrides.items() if v}
+            try:
+                docx_bytes = generar_docx_microcistina_campana(campana_id, overrides)
+                st.download_button(
+                    label="Descargar Reporte de Ensayo (.docx)",
+                    data=docx_bytes,
+                    file_name=f"Reporte_Microcistina_{campana['codigo']}.docx",
+                    mime=(
+                        "application/vnd.openxmlformats-officedocument."
+                        "wordprocessingml.document"
+                    ),
+                    use_container_width=True,
+                    icon=":material/download:",
+                )
+            except Exception as exc:
+                st.error(f"Error generando el reporte de microcistina: {exc}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
