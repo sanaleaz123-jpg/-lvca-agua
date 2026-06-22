@@ -39,6 +39,7 @@ from services.elisa_microcistina import (
 )
 
 CODIGO_MICROCISTINA = "P091"
+CLAVE_MICROCISTINA = "p091"  # clave en la selección de parámetros de la campaña
 
 
 def _invalidar_cache() -> None:
@@ -196,6 +197,22 @@ def get_muestras_agrupadas_por_campana() -> dict:
         fecha = (m.get("fecha_muestreo") or "")[:10]
         etq = f"{p.get('codigo', '?')}{nivel} ({fecha})"
         grupos[cid]["muestras"].append({"id": m["id"], "label": etq})
+    # Solo campañas que eligieron analizar microcistina (P091). La selección de
+    # parámetros de laboratorio se hace en "Campañas"; una selección vacía
+    # significa "todos los parámetros" (incluye microcistina).
+    try:
+        from services.campana_service import get_parametros_lab_campana
+        filtrados: dict = {}
+        for cid, info in grupos.items():
+            sel = get_parametros_lab_campana(cid) or {}
+            claves = sel.get("parametros_lab") or []
+            if (not claves) or (CLAVE_MICROCISTINA in claves):
+                filtrados[cid] = info
+        grupos = filtrados
+    except Exception:
+        # Si no se puede determinar la selección, no filtrar (mejor mostrar todo).
+        pass
+
     for info in grupos.values():
         info["muestras"].sort(key=lambda x: x["label"])
     # Reordenar campañas por fecha de inicio desc
