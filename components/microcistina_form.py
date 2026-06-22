@@ -90,6 +90,66 @@ def _render_import(analista_id: Optional[str]) -> None:
         _render_mapeo(imp, analista_id)
 
 
+def _od_de_conc(conc: float, c) -> float:
+    """OD esperada para una concentración según la curva 4PL ajustada."""
+    if conc <= 0:
+        return c.A
+    return (c.A - c.D) / (1.0 + (conc / c.C) ** c.B) + c.D
+
+
+def _render_curva(imp) -> None:
+    """Curva de calibración: tabla de estándares + parámetros + gráfico.
+
+    Se llena automáticamente con las absorbancias de la placa subida.
+    """
+    c = imp.curva
+    if not imp.std_od:
+        return
+    od0 = ((imp.std_od[0][0] + imp.std_od[0][1]) / 2.0) or 1.0
+    filas = []
+    for i, (o1, o2) in enumerate(imp.std_od):
+        conc = STD_CONC_UGL[i]
+        mean = (o1 + o2) / 2.0
+        cv = (abs(o1 - o2) / 1.4142135624 / mean * 100.0) if mean else 0.0
+        filas.append({
+            "Estándar": f"ST{i}", "µg/L": conc, "OD 1": o1, "OD 2": o2,
+            "OD prom": round(mean, 4), "%CV": round(cv, 2),
+            "B/B0 %": round(mean / od0 * 100.0, 1),
+            "OD ajustada": round(_od_de_conc(conc, c), 4),
+        })
+
+    st.markdown("##### Curva de calibración")
+    cc1, cc2 = st.columns([1.1, 1])
+    with cc1:
+        st.dataframe(pd.DataFrame(filas), hide_index=True, use_container_width=True)
+        st.caption(
+            f"4PL  Y = (A−D)/(1+(X/C)^B)+D · A={c.A:.4f}  B={c.B:.4f}  "
+            f"C={c.C:.4f}  D={c.D:.4f} · R²={c.r2:.5f}"
+        )
+        if not c.es_valida():
+            st.warning("La curva no cumple algún criterio guía (A>0.7, D<0.15, R²≥0.98).")
+    with cc2:
+        try:
+            import plotly.graph_objects as go
+            xs = [i * 0.05 for i in range(0, 101)]
+            fig = go.Figure()
+            fig.add_scatter(x=xs, y=[_od_de_conc(x, c) for x in xs],
+                            mode="lines", name="Curva 4PL")
+            fig.add_scatter(
+                x=list(STD_CONC_UGL),
+                y=[(o1 + o2) / 2 for o1, o2 in imp.std_od],
+                mode="markers", name="Estándares",
+                marker=dict(size=9, color="#c0392b"),
+            )
+            fig.update_layout(
+                height=300, margin=dict(l=10, r=10, t=10, b=10), showlegend=False,
+                xaxis_title="Microcistina (µg/L)", yaxis_title="OD (450 nm)",
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        except Exception:
+            pass
+
+
 def _render_mapeo(imp, analista_id: Optional[str]) -> None:
     """Resumen de la corrida + mapeo de cada muestra de la placa + registro."""
     c = imp.curva
@@ -107,6 +167,9 @@ def _render_mapeo(imp, analista_id: Optional[str]) -> None:
     )
     for a in imp.avisos:
         st.warning(a)
+
+    # ── Curva de calibración (se llena automáticamente al subir la placa) ──
+    _render_curva(imp)
 
     grupos = get_muestras_agrupadas_por_campana()
     camp_opts = {"— (elegir campaña)": None}
