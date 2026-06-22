@@ -49,6 +49,7 @@ from services.fitoplancton_service import (
     evaluar_alerta_oms_cianobacterias,
 )
 from components.fitoplancton_form import render_subseccion_fitoplancton
+from components.microcistina_form import render_panel_microcistina
 
 # Códigos de los parámetros agregados de fitoplancton — se renderizan con
 # semáforo OMS en lugar del veredicto ECA estándar (no hay ECA en la norma).
@@ -464,6 +465,22 @@ def main() -> None:
     top_nav()
     page_header("Resultados de Laboratorio", "Ingreso y validación con semáforo ECA &middot; D.S. N° 004-2017-MINAM")
 
+    tab_muestra, tab_mc = st.tabs([
+        ":material/science: Ingreso por muestra",
+        ":material/labs: Microcistina (ELISA)",
+    ])
+
+    with tab_muestra:
+        _tab_por_muestra()
+
+    with tab_mc:
+        sesion = st.session_state.get("sesion")
+        analista_id = _get_usuario_interno_id(sesion.uid) if sesion else None
+        render_panel_microcistina(analista_id=analista_id)
+
+
+def _tab_por_muestra() -> None:
+    """Flujo de ingreso por muestra (selección en cascada + cuerpo de captura)."""
     # ── Selección en cascada ─────────────────────────────────────────────────
     with st.expander("Seleccionar muestra", icon=":material/list:", expanded=True):
         campana_id, punto_id, muestra_id = _panel_seleccion()
@@ -492,7 +509,8 @@ def main() -> None:
                 ir_a("informes", campana_id=campana_id)
 
     if not muestra_id:
-        st.stop()
+        st.info("Selecciona una muestra para ingresar resultados.")
+        return
 
     # El cuerpo de captura corre como fragment: cada input/checkbox del panel
     # re-renderiza SOLO esta zona — los selectores, la navegación y el resto

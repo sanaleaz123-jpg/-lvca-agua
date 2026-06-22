@@ -1,27 +1,24 @@
 """
-pages/11_Microcistina_ELISA.py
-Ensayo ELISA de Microcistina LR (kit SAES/ABRAXIS, EPA 546).
+components/microcistina_form.py
+Panel reutilizable del ensayo ELISA de Microcistina LR (kit SAES/ABRAXIS,
+EPA 546). Se monta como subsección dentro de *Resultados de Laboratorio*.
 
-Reemplaza el "SOLVER" en Excel: el analista ingresa las absorbancias (OD) por
-duplicado de los 6 estándares, el control (QCS) y cada muestra; la plataforma
-ajusta la curva 4PL, calcula concentraciones y %CV, guarda los resultados y
-habilita la generación del Reporte de Ensayo (en *Informes*).
+El ensayo es a nivel de campaña (una placa cubre todas las muestras): el
+analista ingresa las absorbancias (OD) por duplicado de los 6 estándares, el
+control (QCS) y cada muestra; la plataforma ajusta la curva 4PL, calcula
+concentraciones y %CV, guarda los resultados y habilita el Reporte de Ensayo.
 
-Acceso mínimo: analista_lab
+Función pública:
+    render_panel_microcistina(analista_id)
 """
 
 from __future__ import annotations
 
+from typing import Optional
+
 import pandas as pd
 import streamlit as st
 
-from components.auth_guard import require_rol
-from components.ui_styles import (
-    aplicar_estilos,
-    page_header,
-    section_header,
-    top_nav,
-)
 from services.elisa_microcistina import STD_CONC_UGL, FACTOR_DILUCION_DEFAULT
 from services.microcistina_service import (
     calcular_corrida,
@@ -30,29 +27,11 @@ from services.microcistina_service import (
     get_param_microcistina,
     guardar_corrida,
 )
-from services.resultado_service import (
-    get_campanas,
-    _get_usuario_interno_id,
-    validar_resultados,
-)
+from services.resultado_service import get_campanas, validar_resultados
 
 
-def _num(label, key, value=0.0, step=0.001):
-    return st.number_input(
-        label, key=key, value=float(value or 0.0),
-        min_value=0.0, step=step, format="%.4f",
-    )
-
-
-@require_rol("analista_lab")
-def main() -> None:
-    aplicar_estilos()
-    top_nav()
-    page_header(
-        "Microcistina (ELISA)",
-        "Absorbancias, curva de calibración 4PL y control de calidad · EPA 546 / kit SAES",
-    )
-
+def render_panel_microcistina(analista_id: Optional[str] = None) -> None:
+    """Subsección de ingreso del ensayo ELISA de microcistina (por campaña)."""
     campanas = get_campanas()
     if not campanas:
         st.info("No hay campañas registradas.")
@@ -76,7 +55,7 @@ def main() -> None:
     param = get_param_microcistina() or {}
 
     # ── Curva de calibración ─────────────────────────────────────────────
-    section_header("Curva de calibración (estándares)", "show_chart")
+    st.markdown("##### Curva de calibración (estándares)")
     st.caption("Absorbancia (OD) por duplicado de cada estándar.")
     std_od: list[tuple[float, float]] = []
     for i, conc in enumerate(STD_CONC_UGL):
@@ -91,11 +70,15 @@ def main() -> None:
         std_od.append((o1, o2))
 
     # ── Control y metadatos ──────────────────────────────────────────────
-    section_header("Control de calidad y metadatos", "verified")
+    st.markdown("##### Control de calidad y metadatos")
     m1, m2, m3 = st.columns(3)
     with m1:
-        ctrl_1 = _num("Control OD 1", f"ctrl_{cid}_1", corrida.get("control_od_1"))
-        ctrl_2 = _num("Control OD 2", f"ctrl_{cid}_2", corrida.get("control_od_2"))
+        ctrl_1 = st.number_input("Control OD 1", key=f"ctrl_{cid}_1",
+                                 value=float(corrida.get("control_od_1") or 0.0),
+                                 min_value=0.0, step=0.001, format="%.4f")
+        ctrl_2 = st.number_input("Control OD 2", key=f"ctrl_{cid}_2",
+                                 value=float(corrida.get("control_od_2") or 0.0),
+                                 min_value=0.0, step=0.001, format="%.4f")
     with m2:
         kit_lote = st.text_input("Lote del kit", key=f"lote_{cid}",
                                  value=corrida.get("kit_lote") or "")
@@ -118,7 +101,7 @@ def main() -> None:
                                  min_value=0.0, step=1.0, format="%.0f")
 
     # ── Muestras ─────────────────────────────────────────────────────────
-    section_header("Muestras", "science")
+    st.markdown("##### Muestras")
     st.caption("Absorbancia (OD) por duplicado de cada muestra.")
     muestras_od: dict[str, tuple[float, float]] = {}
     for m in muestras:
@@ -137,7 +120,7 @@ def main() -> None:
 
     # ── Vista previa del cálculo ─────────────────────────────────────────
     st.divider()
-    section_header("Vista previa del cálculo", "calculate")
+    st.markdown("##### Vista previa del cálculo")
     curva_lista = all(a > 0 and b > 0 for a, b in std_od)
     if not curva_lista:
         st.info("Ingresa las absorbancias de los 6 estándares (OD 1 y OD 2) para ajustar la curva.")
@@ -207,14 +190,11 @@ def main() -> None:
 
     # ── Guardar / Validar ────────────────────────────────────────────────
     st.divider()
-    sesion = st.session_state.get("sesion")
-    uid_interno = _get_usuario_interno_id(sesion.uid) if sesion else None
-
     g1, g2 = st.columns(2)
     with g1:
         if st.button("Guardar corrida y resultados", type="primary",
                      use_container_width=True, icon=":material/save:",
-                     disabled=not muestras_od):
+                     key=f"mc_guardar_{cid}", disabled=not muestras_od):
             try:
                 guardar_corrida(
                     campana_id,
@@ -227,7 +207,7 @@ def main() -> None:
                     qcs_nominal=qcs_nominal,
                     qcs_tolerancia=qcs_tol,
                     cv_max=cv_max,
-                    analista_id=uid_interno,
+                    analista_id=analista_id,
                 )
                 st.success(f"Guardado: {len(muestras_od)} muestra(s) y la curva de calibración.")
                 st.rerun()
@@ -236,17 +216,14 @@ def main() -> None:
 
     with g2:
         if st.button("Validar resultados (firma)", use_container_width=True,
-                     icon=":material/verified_user:",
+                     icon=":material/verified_user:", key=f"mc_validar_{cid}",
                      help="Marca los resultados como validados; fija la fecha de emisión del reporte."):
-            param_id = (get_param_microcistina() or {}).get("id")
+            param_id = param.get("id")
             if not param_id:
                 st.error("No se encontró el parámetro Microcistina (P091).")
             else:
                 n = 0
                 for mid in muestras_od:
-                    n += validar_resultados(mid, [param_id], validador_id=uid_interno)
+                    n += validar_resultados(mid, [param_id], validador_id=analista_id)
                 st.success(f"{n} resultado(s) validado(s).")
                 st.rerun()
-
-
-main()
