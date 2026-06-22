@@ -180,6 +180,53 @@ def _render_curva(imp) -> None:
             pass
 
 
+def _render_validez(imp) -> None:
+    """Panel de control de calidad de la corrida con semáforo Cumple/Revisar."""
+    c = imp.curva
+    R2_MIN, A_MIN, D_MAX = 0.98, 0.7, 0.15
+    QCS_NOM, QCS_TOL, CV_MUESTRA, CV_STD = 0.750, 0.185, 15.0, 10.0
+    low, high = QCS_NOM - QCS_TOL, QCS_NOM + QCS_TOL
+    ctrl = imp.control.conc_ugL
+
+    std_cvs = [(abs(o1 - o2) / 1.4142135624 / ((o1 + o2) / 2) * 100.0)
+               for o1, o2 in imp.std_od if (o1 + o2)]
+    std_max = max(std_cvs) if std_cvs else 0.0
+    altos = [m.label for m in imp.muestras if m.cv_pct > CV_MUESTRA]
+
+    # (indicador, valor, ok, criterio, crítico)
+    checks = [
+        ("Ajuste de curva (R²)", f"{c.r2:.5f}", c.r2 >= R2_MIN, f"≥ {R2_MIN}", True),
+        ("Señal máxima (A)", f"{c.A:.3f}", c.A > A_MIN, f"> {A_MIN}", False),
+        ("Mínimo de curva (D)", f"{c.D:.3f}", c.D < D_MAX, f"< {D_MAX}", False),
+        ("Control (µg/L)", f"{ctrl:.3f}" if ctrl is not None else "—",
+         ctrl is not None and low <= ctrl <= high, f"{low:.3f}–{high:.3f}", True),
+        ("%CV del control", f"{imp.control.cv_pct:.2f}%",
+         imp.control.cv_pct <= CV_MUESTRA, f"≤ {CV_MUESTRA:.0f}%", True),
+        ("%CV estándares (máx)", f"{std_max:.2f}%", std_max <= CV_STD, f"≤ {CV_STD:.0f}%", False),
+        (f"Muestras con %CV > {CV_MUESTRA:.0f}%", str(len(altos)), len(altos) == 0, "0", False),
+    ]
+
+    st.markdown("##### Validez de la corrida")
+    df = pd.DataFrame([{
+        "Indicador": ind, "Valor": val, "Criterio": crit,
+        "Estado": "✅ Cumple" if ok else "⚠ Revisar",
+    } for ind, val, ok, crit, _ in checks])
+    st.dataframe(df, hide_index=True, use_container_width=True)
+
+    criticos_ok = all(ok for (_ind, _val, ok, _crit, crit_flag) in checks if crit_flag)
+    advert = [ind for (ind, _v, ok, _c, _crit) in checks if not ok]
+    if not criticos_ok:
+        st.error("⚠ Revisar la corrida: no cumple un criterio crítico "
+                 "(control fuera de rango, R² bajo o %CV del control alto).")
+    elif advert:
+        msg = "Corrida válida, con observaciones: " + "; ".join(advert) + "."
+        if altos:
+            msg += f" Muestras a reanalizar (%CV>{CV_MUESTRA:.0f}%): {', '.join(altos)}."
+        st.warning(msg)
+    else:
+        st.success("✅ Corrida válida: cumple todos los criterios de control de calidad.")
+
+
 def _render_resultado(imp, analista_id: Optional[str]) -> None:
     """Resumen de la corrida + curva + mapeo de muestras + datos + registro."""
     c = imp.curva
@@ -196,6 +243,9 @@ def _render_resultado(imp, analista_id: Optional[str]) -> None:
     )
     for a in imp.avisos:
         st.warning(a)
+
+    # Panel de validez de la corrida (control de calidad).
+    _render_validez(imp)
 
     # Curva de calibración (se llena automáticamente con la placa subida).
     _render_curva(imp)
