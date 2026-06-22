@@ -206,20 +206,32 @@ def _render_resultado(imp, analista_id: Optional[str]) -> None:
     h2.caption("Campaña")
     h3.caption("Estación / muestra")
 
+    eca_ug = 1.0   # DS 004-2017 Cat A2 / OMS: Microcistina LR = 1 µg/L
+    lcm_ug = float(lcm) if lcm is not None else None
+
     asignaciones: dict[int, str] = {}
     for idx, m in enumerate(imp.muestras):
         extra = ""
         if m.conc_ugL is None:
-            valor = "⚠ muy concentrada (> 5 µg/L) — diluir y reanalizar"
-        elif lcm is not None and m.conc_ugL < float(lcm):
+            # Muy concentrada (> estándar más alto, 5 µg/L).
+            valor = "⚠ muy concentrada — diluir y reanalizar (> 0.005 mg/L)"
+            valor_ug = "> 5 µg/L"
+            eca = "🔴 Excede"
+        elif lcm_ug is not None and m.conc_ugL < lcm_ug:
             valor = f"< {lcm_mg:.5f} mg/L"
-            extra = f" · calc {m.conc_ugL / 1000:.6f}"
+            valor_ug = f"< {lcm_ug:g} µg/L"
+            extra = f" · calc {m.conc_ugL / 1000:.6f} mg/L"
+            eca = "🟢 Cumple"
         else:
-            valor = f"{m.conc_ugL / 1000:.6f} mg/L"
+            ug = m.conc_ugL
+            valor = f"{ug / 1000:.6f} mg/L"
+            valor_ug = f"{ug:.4f}".rstrip("0").rstrip(".") + " µg/L"
+            eca = "🔴 Excede" if ug > eca_ug else "🟢 Cumple"
         c1, c2, c3 = st.columns([1.7, 1.3, 1.6])
         c1.markdown(
-            f"**{m.label}** — {valor}<br>"
-            f"<small>OD {m.od_1:g}/{m.od_2:g} · %CV {m.cv_pct:.1f}{extra}</small>",
+            f"**{m.label}** — {valor} ({valor_ug})<br>"
+            f"<small>OD {m.od_1:g}/{m.od_2:g} · %CV {m.cv_pct:.1f}{extra}</small><br>"
+            f"<small>ECA A2 / OMS (1 µg/L): {eca}</small>",
             unsafe_allow_html=True,
         )
         camp_sel = c2.selectbox("Campaña", list(camp_opts.keys()),
