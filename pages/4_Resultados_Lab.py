@@ -35,6 +35,7 @@ from services.resultado_service import (
     get_campanas,
     get_puntos_de_campana,
     get_muestras,
+    get_grupo_columna,
     get_datos_muestra,
     guardar_resultados_lote,
     eliminar_resultados_muestra,
@@ -57,6 +58,10 @@ COD_CYANO_BIOVOLUMEN: str = "FITO_CYANOBACTERIA_BIOVOL"
 # ─── Constantes de visualización ─────────────────────────────────────────────
 
 CATEGORIAS_ORDEN = ["Campo", "Fisicoquimico", "Hidrobiologico"]
+
+# Niveles de columna de agua (muestreo en profundidad)
+_PROF_NOMBRES = {"S": "Superficie", "M": "Medio", "F": "Fondo"}
+_ORDEN_PROF = {"S": 0, "M": 1, "F": 2}
 
 _BG_VERDE = ECA_CHIP_STYLES["cumple"]["bg"]
 _BG_ROJO = ECA_CHIP_STYLES["excede"]["bg"]
@@ -251,10 +256,28 @@ def _panel_seleccion() -> tuple[str | None, str | None, str | None]:
         st.info("No hay muestras para este punto en la campaña seleccionada.")
         return campana_id, punto_id, None
 
-    opciones_m = {
-        f"{m['codigo']} – {m.get('fecha_muestreo','')[:10]} [{m.get('estado','')}]": m["id"]
-        for m in muestras
-    }
+    # Agrupar muestras de columna de agua (S/M/F) en una sola opción; el valor
+    # apunta al nivel Superficie (representante) y el cuerpo expande el grupo.
+    grupos_col: dict[str, list[dict]] = {}
+    individuales: list[dict] = []
+    for m in muestras:
+        g = m.get("grupo_profundidad")
+        if g and m.get("modo_muestreo") == "columna":
+            grupos_col.setdefault(g, []).append(m)
+        else:
+            individuales.append(m)
+
+    opciones_m: dict[str, str] = {}
+    for g, ms in grupos_col.items():
+        ms.sort(key=lambda x: _ORDEN_PROF.get(x.get("profundidad_tipo"), 9))
+        niveles = " / ".join(_PROF_NOMBRES.get(x.get("profundidad_tipo"), "?") for x in ms)
+        codigos = ", ".join(x["codigo"] for x in ms)
+        fecha = (ms[0].get("fecha_muestreo") or "")[:10]
+        etq = f"Columna {niveles} — {codigos} ({fecha})"
+        opciones_m[etq] = ms[0]["id"]
+    for m in individuales:
+        etq = f"{m['codigo']} – {m.get('fecha_muestreo','')[:10]} [{m.get('estado','')}]"
+        opciones_m[etq] = m["id"]
     preseleccionar("sel_muestra", opciones_m, ctx.get("muestra_id"))
     etiqueta_m = st.selectbox(
         "Muestra",
@@ -480,11 +503,24 @@ def main() -> None:
 @st.fragment
 def _cuerpo_muestra(muestra_id: str) -> None:
     """
+    Enrutador del panel de captura. Si la muestra pertenece a un muestreo en
+    columna de agua (2+ niveles S/M/F), renderiza la tabla unificada por nivel;
+    en caso contrario, el panel simple de una muestra. Aislado en un fragment
+    para que los reruns de sus widgets no recarguen la página.
+    """
+    grupo = get_grupo_columna(muestra_id)
+    if len(grupo) >= 2:
+        _render_columna(grupo)
+    else:
+        _render_single_body(muestra_id)
+
+
+def _render_single_body(muestra_id: str) -> None:
+    """
     Panel de captura de una muestra (barra informativa, métricas, tabs por
-    categoría, guardado, validación, carga masiva y excedencias). Aislado en
-    un fragment para que los reruns de sus widgets no recarguen la página.
-    Los guardados llaman st.rerun() (scope app por defecto) para refrescar
-    también selectores y métricas externas.
+    categoría, guardado, validación, carga masiva y excedencias). Los guardados
+    llaman st.rerun() (scope app por defecto) para refrescar también selectores
+    y métricas externas.
     """
     sesion = st.session_state.get("sesion")
     if not sesion:
@@ -908,6 +944,291 @@ def _cuerpo_muestra(muestra_id: str) -> None:
             st.caption(
                 "Notifica estas excedencias a los responsables vía el módulo de Notificaciones."
             )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Columna de agua — tabla unificada por nivel (S / M / F)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _render_columna(grupo: list[dict]) -> None:
+    """
+    Vista para un muestreo en columna de agua. Por defecto muestra la tabla
+    unificada con una columna de valor por nivel (Superficie / Medio / Fondo);
+    el usuario puede cambiar a un nivel concreto para la gestión avanzada
+    (cualificadores, observaciones, validación, carga masiva, fitoplancton,
+    eliminar) reutilizando el panel simple de esa muestra.
+    """
+    labels = ["Vista unificada (todos los niveles)"]
+    nivel_por_label: dict[str, str] = {}
+    for m in grupo:
+        tp = m.get("profundidad_tipo")
+        lbl = f"{_PROF_NOMBRES.get(tp, tp or '?')} — {m['codigo']}"
+        labels.append(lbl)
+        nivel_por_label[lbl] = m["id"]
+
+    sel = st.radio(
+        "Modo de ingreso",
+        labels,
+        horizontal=True,
+        key=f"res_col_modo_{grupo[0]['id'][:8]}",
+        help=(
+            "Vista unificada: ingresa los valores de todos los niveles lado a "
+            "lado. Selecciona un nivel para gestión avanzada (cualificadores, "
+            "observaciones, validación, carga masiva, fitoplancton, eliminar)."
+        ),
+    )
+    if sel == labels[0]:
+        _render_ingreso_columna(grupo)
+    else:
+        _render_single_body(nivel_por_label[sel])
+
+
+def _render_ingreso_columna(grupo: list[dict]) -> None:
+    """Tabla unificada de ingreso con una columna de valor por nivel."""
+    sesion = st.session_state.get("sesion")
+    if not sesion:
+        st.error("Sesión expirada. Inicia sesión nuevamente.")
+        st.stop()
+
+    # ── Cargar datos de cada nivel ───────────────────────────────────────────
+    with st.spinner("Cargando parámetros y resultados de los niveles..."):
+        niveles: list[dict] = []
+        for m in grupo:
+            try:
+                d = get_datos_muestra(m["id"])
+            except Exception as exc:
+                st.error(f"Error al cargar el nivel {m.get('codigo')}: {exc}")
+                st.stop()
+            filas = _preparar_filas(d)
+            niveles.append({
+                "meta":      m,
+                "datos":     d,
+                "filas":     filas,
+                "filas_idx": {f["parametro_id"]: f for f in filas},
+            })
+
+    primera = niveles[0]
+    muestra0 = primera["datos"]["muestra"]
+    punto = muestra0.get("puntos_muestreo") or {}
+    eca = punto.get("ecas") or {}
+
+    # ── Barra informativa ────────────────────────────────────────────────────
+    codigos = ", ".join(n["meta"]["codigo"] for n in niveles)
+    col_a, col_b, col_c = st.columns(3)
+    col_a.info(f"**Columna:** {len(niveles)} niveles — {codigos}")
+    col_b.info(f"**Punto:** {punto.get('codigo','—')} — {punto.get('nombre','—')}")
+    col_c.info(
+        f"**ECA:** {eca.get('codigo','Sin ECA')} — {eca.get('nombre','')}"
+        if eca.get("codigo") else "**ECA:** No asignado"
+    )
+
+    # ── Métricas agregadas ───────────────────────────────────────────────────
+    total = len(primera["filas"])
+    con_valor = sum(
+        1 for n in niveles for f in n["filas"] if f["valor_numerico"] is not None
+    )
+    exceden = sum(
+        1 for n in niveles for f in n["filas"]
+        if f["valor_numerico"] is not None and (
+            (f["lim_max"] is not None and f["valor_numerico"] > f["lim_max"])
+            or (f["lim_min"] is not None and f["valor_numerico"] < f["lim_min"])
+        )
+    )
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Parámetros × niveles", f"{total} × {len(niveles)}")
+    m2.metric("Valores ingresados", con_valor)
+    m3.metric("Exceden ECA", exceden)
+
+    # Mensajes persistentes de guardado por nivel
+    for n in niveles:
+        mk = f"lab_msg_{n['meta']['id']}"
+        if mk in st.session_state:
+            st.success(st.session_state[mk])
+            del st.session_state[mk]
+
+    st.divider()
+    st.caption(
+        "Edita los valores de cada nivel. Los cualificadores y observaciones se "
+        "gestionan por nivel desde el selector superior."
+    )
+    st.subheader("Ingreso de resultados por nivel de profundidad")
+
+    # ── Tabs por categoría ───────────────────────────────────────────────────
+    cats0: dict[str, list[dict]] = defaultdict(list)
+    for f in primera["filas"]:
+        cats0[f["categoria"]].append(f)
+    cats0.setdefault("Hidrobiologico", [])
+    cats_ord = [c for c in CATEGORIAS_ORDEN if c in cats0]
+    cats_ord += [c for c in cats0 if c not in CATEGORIAS_ORDEN]
+    tabs = st.tabs([f"{c} ({len(cats0[c])})" for c in cats_ord])
+
+    analista_actual = _get_usuario_interno_id(sesion.uid)
+    # valores_por_nivel[j] = {pid: {valor}}  (alineado con niveles[j])
+    valores_por_nivel: list[dict[str, dict]] = [{} for _ in niveles]
+
+    for tab_widget, cat in zip(tabs, cats_ord):
+        with tab_widget:
+            if cat == "Hidrobiologico":
+                sub_param, sub_fito = st.tabs([
+                    f":material/science: Parámetros ({len(cats0[cat])})",
+                    ":material/biotech: Fitoplancton (Sedgewick-Rafter)",
+                ])
+                with sub_param:
+                    if cats0[cat]:
+                        _render_categoria_columna(cats0[cat], niveles, valores_por_nivel)
+                    else:
+                        st.caption(
+                            "Sin parámetros hidrobiológicos del DS 004-2017-MINAM "
+                            "en esta muestra."
+                        )
+                with sub_fito:
+                    fito_tabs = st.tabs([
+                        _PROF_NOMBRES.get(n["meta"].get("profundidad_tipo"), "?")
+                        for n in niveles
+                    ])
+                    for ft, n in zip(fito_tabs, niveles):
+                        with ft:
+                            render_subseccion_fitoplancton(n["meta"]["id"], analista_actual)
+            else:
+                if cats0[cat]:
+                    _render_categoria_columna(cats0[cat], niveles, valores_por_nivel)
+
+    # ── Guardar todos los niveles ────────────────────────────────────────────
+    st.divider()
+    col_btn, _sp = st.columns([2, 5])
+    with col_btn:
+        guardar = st.button(
+            f"Guardar resultados ({len(niveles)} niveles)",
+            icon=":material/save:", type="primary", use_container_width=True,
+            key="btn_guardar_columna",
+        )
+
+    if guardar:
+        analista_id = _get_usuario_interno_id(sesion.uid)
+        total_ok, total_err, total_bloq = 0, [], 0
+        guardados_por_nivel: dict[str, set] = {}
+        for j, n in enumerate(niveles):
+            cambios = []
+            for pid, data in valores_por_nivel[j].items():
+                valor = data.get("valor")
+                # Preservar cualificador/observaciones existentes del nivel
+                fila = n["filas_idx"].get(pid, {})
+                cualif = fila.get("cualificador")
+                obs = fila.get("observaciones") or ""
+                cualif_solo = cualif in ("Ausencia", "Presencia", "ND", "<LMD", "<LCM")
+                if valor is None and not obs and not cualif_solo:
+                    continue
+                cambios.append({
+                    "parametro_id":   pid,
+                    "valor_numerico": float(valor) if valor is not None else None,
+                    "valor_texto":    cualif if cualif in ("Ausencia", "Presencia") else None,
+                    "observaciones":  obs or None,
+                    "cualificador":   cualif,
+                })
+            if not cambios:
+                continue
+            ok, errs, blocs = guardar_resultados_lote(
+                muestra_id=n["meta"]["id"], filas=cambios, analista_id=analista_id,
+            )
+            total_ok += ok
+            total_err.extend(errs)
+            total_bloq += len(blocs)
+            guardados_por_nivel[n["meta"]["id"]] = {c["parametro_id"] for c in cambios}
+
+        if total_bloq:
+            st.warning(
+                f"{total_bloq} resultado(s) están validados y no se sobreescribieron.",
+                icon=":material/lock:",
+            )
+        if total_err:
+            st.error(f"Se guardaron {total_ok} resultado(s). Errores:")
+            for e in total_err:
+                st.caption(f"• {e}")
+        elif total_ok > 0:
+            for mid, pids in guardados_por_nivel.items():
+                st.session_state[f"lab_guardado_{mid}"] = pids
+            success_check_overlay(
+                f"{total_ok} resultado(s) guardado(s) en {len(guardados_por_nivel)} nivel(es)"
+            )
+            get_datos_muestra.clear()
+            st.rerun()
+        else:
+            st.warning("No hay valores para guardar. Ingresa al menos un resultado.")
+
+
+def _render_categoria_columna(
+    filas_cat: list[dict],
+    niveles: list[dict],
+    valores_por_nivel: list[dict[str, dict]],
+) -> None:
+    """
+    Renderiza una categoría con una columna de valor por nivel (S/M/F) y el
+    veredicto ECA por nivel. Acumula los valores ingresados en
+    `valores_por_nivel` (alineado con `niveles`).
+    """
+    n_niv = len(niveles)
+    col_widths = [2.4] + [1.6] * n_niv + [0.7, 1.0]
+
+    # Encabezado
+    hcols = st.columns(col_widths)
+    hcols[0].markdown("**Parámetro**")
+    for j, n in enumerate(niveles):
+        tp = n["meta"].get("profundidad_tipo")
+        pv = n["meta"].get("profundidad_valor")
+        lbl = _PROF_NOMBRES.get(tp, tp or "?")
+        hcols[1 + j].markdown(f"**{lbl}**" + (f" ({pv} m)" if pv else ""))
+    hcols[1 + n_niv].markdown("**Unidad**")
+    hcols[2 + n_niv].markdown("**Lím. ECA**")
+
+    for fila in filas_cat:
+        pid = fila["parametro_id"]
+        lim_max = fila["lim_max"]
+        lim_min = fila["lim_min"]
+        codigo = fila.get("codigo")
+
+        cols = st.columns(col_widths)
+        cols[0].markdown(f"**{fila['parametro']}**")
+
+        for j, n in enumerate(niveles):
+            f_niv = n["filas_idx"].get(pid, {})
+            existing_val = f_niv.get("valor_numerico")
+            is_validado = bool(f_niv.get("validado"))
+            cualif_n = f_niv.get("cualificador") or None
+            _ev = float(existing_val) if existing_val is not None else None
+            val = cols[1 + j].number_input(
+                f"{fila['parametro']} ({n['meta']['codigo']})",
+                value=_ev, step=0.01, format="%.4g",
+                label_visibility="collapsed", disabled=is_validado,
+                key=f"lab_col_v_{n['meta']['id'][:8]}_{pid}",
+            )
+            # Veredicto por nivel (NH3 usa el pH/T in situ propio del nivel)
+            if codigo == COD_CYANO_CEL_ML:
+                cols[1 + j].markdown(
+                    _chip_oms_cianobacterias_cel(val), unsafe_allow_html=True,
+                )
+            elif codigo == COD_CYANO_BIOVOLUMEN:
+                cols[1 + j].markdown(
+                    _chip_oms_cianobacterias_biovol(val), unsafe_allow_html=True,
+                )
+            else:
+                ver = evaluar_resultado_ctx(
+                    n["datos"], pid, valor_lab=val, cualificador=cualif_n,
+                )
+                chip = _chip_veredicto_eca(ver)
+                if chip:
+                    cols[1 + j].markdown(chip, unsafe_allow_html=True)
+
+            valores_por_nivel[j][pid] = {"valor": val}
+
+        cols[1 + n_niv].caption(fila["unidad"])
+        if lim_max is not None and lim_min is not None:
+            cols[2 + n_niv].caption(f"{lim_min} – {lim_max}")
+        elif lim_max is not None:
+            cols[2 + n_niv].caption(f"≤ {lim_max}")
+        elif lim_min is not None:
+            cols[2 + n_niv].caption(f"≥ {lim_min}")
+        else:
+            cols[2 + n_niv].caption("—")
 
 
 main()

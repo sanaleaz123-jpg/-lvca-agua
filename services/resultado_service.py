@@ -119,17 +119,75 @@ def get_puntos_de_campana(campana_id: str) -> list[dict]:
 
 @cached(ttl=120)
 def get_muestras(campana_id: str, punto_id: str) -> list[dict]:
-    """Muestras de una campaña y punto concretos."""
+    """Muestras de una campaña y punto concretos.
+
+    Incluye los campos de columna de agua (modo_muestreo, profundidad_tipo,
+    grupo_profundidad, profundidad_valor) para que la página de resultados pueda
+    agrupar los niveles S/M/F de un mismo muestreo en una tabla unificada.
+    """
     db = get_db()
+    try:
+        res = (
+            db.table("muestras")
+            .select(
+                "id, codigo, fecha_muestreo, estado, "
+                "modo_muestreo, profundidad_tipo, grupo_profundidad, profundidad_valor"
+            )
+            .eq("campana_id", campana_id)
+            .eq("punto_muestreo_id", punto_id)
+            .order("fecha_muestreo", desc=True)
+            .execute()
+        )
+    except Exception:
+        # Fallback pre-migración 005 (sin columnas de profundidad)
+        res = (
+            db.table("muestras")
+            .select("id, codigo, fecha_muestreo, estado")
+            .eq("campana_id", campana_id)
+            .eq("punto_muestreo_id", punto_id)
+            .order("fecha_muestreo", desc=True)
+            .execute()
+        )
+    return res.data or []
+
+
+# Orden canónico de niveles de columna de agua
+_ORDEN_PROF = {"S": 0, "M": 1, "F": 2}
+
+
+@cached(ttl=120)
+def get_grupo_columna(muestra_id: str) -> list[dict]:
+    """
+    Si la muestra pertenece a un muestreo en columna de agua, retorna TODAS las
+    muestras del grupo (S/M/F) ordenadas Superficie → Medio → Fondo. Si no es
+    columna (o la migración 005 no está aplicada), retorna lista vacía.
+
+    Cada elemento: {id, codigo, profundidad_tipo, profundidad_valor}.
+    """
+    db = get_db()
+    try:
+        row = (
+            db.table("muestras")
+            .select("grupo_profundidad, modo_muestreo")
+            .eq("id", muestra_id)
+            .limit(1)
+            .execute()
+        )
+    except Exception:
+        return []
+    data = (row.data or [{}])[0]
+    grupo = data.get("grupo_profundidad")
+    if not grupo or data.get("modo_muestreo") != "columna":
+        return []
     res = (
         db.table("muestras")
-        .select("id, codigo, fecha_muestreo, estado")
-        .eq("campana_id", campana_id)
-        .eq("punto_muestreo_id", punto_id)
-        .order("fecha_muestreo", desc=True)
+        .select("id, codigo, profundidad_tipo, profundidad_valor")
+        .eq("grupo_profundidad", grupo)
         .execute()
     )
-    return res.data or []
+    muestras = res.data or []
+    muestras.sort(key=lambda m: _ORDEN_PROF.get(m.get("profundidad_tipo"), 9))
+    return muestras
 
 
 # ─────────────────────────────────────────────────────────────────────────────
