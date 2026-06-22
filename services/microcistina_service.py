@@ -412,6 +412,11 @@ def guardar_corrida_importada(
         qcs_tolerancia=qcs_tolerancia, cv_max=cv_max, observaciones=observaciones,
         campana_id=None,
     )
+    # Usar las concentraciones del control tal como las calculó el Excel.
+    if imp.control_conc_1 is not None:
+        row["control_conc_1"] = imp.control_conc_1
+    if imp.control_conc_2 is not None:
+        row["control_conc_2"] = imp.control_conc_2
     corrida_id = _persistir_corrida(db, row, None)
 
     fecha = fecha_ensayo or datetime.utcnow().date().isoformat()
