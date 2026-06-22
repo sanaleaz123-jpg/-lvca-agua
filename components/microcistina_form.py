@@ -210,7 +210,7 @@ def _render_resultado(imp, analista_id: Optional[str]) -> None:
     for idx, m in enumerate(imp.muestras):
         extra = ""
         if m.conc_ugL is None:
-            valor = "fuera de rango (requiere dilución)"
+            valor = "⚠ muy concentrada (> 5 µg/L) — diluir y reanalizar"
         elif lcm is not None and m.conc_ugL < float(lcm):
             valor = f"< {lcm_mg:.5f} mg/L"
             extra = f" · calc {m.conc_ugL / 1000:.6f}"

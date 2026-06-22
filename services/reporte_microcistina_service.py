@@ -223,7 +223,8 @@ def _assemble(campana_id: str, overrides: dict) -> dict:
         if cualif == "<LCM" and lcm_mg is not None:
             resultado = f"< {_fmt_num(lcm_mg)}"
         elif val_ug is None:
-            resultado = "Fuera de rango"
+            # Muy concentrada: por encima del estándar más alto (5 µg/L = 0.005 mg/L).
+            resultado = "> 0.005"
         else:
             resultado = _fmt_num(val_ug / 1000.0)
         hora = m.get("hora_recoleccion") or ""

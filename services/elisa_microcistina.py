@@ -192,9 +192,10 @@ def procesar_muestra(
         # (≈ 0, no cuantificable); si ≤ D → por encima (diluir y reanalizar).
         od_min = min(od_1, od_2)
         if od_min >= curva.A:
-            motivo = "OD por encima de Amax — concentración por debajo del rango (no cuantificable)."
+            motivo = "OD por encima de Amax — por debajo del límite (no detectado)."
             return ResultadoMuestra(od_1, od_2, cv, conc_ugL=0.0, en_rango=False, motivo=motivo)
-        motivo = "OD por debajo del mínimo de la curva — fuera de rango, requiere dilución y reanálisis."
+        motivo = ("Concentración por encima del estándar más alto "
+                  f"({STD_CONC_UGL[-1]:g} µg/L): diluir y reanalizar.")
         return ResultadoMuestra(od_1, od_2, cv, conc_ugL=None, en_rango=False, motivo=motivo)
 
     conc = (c1 + c2) / 2.0 * factor
