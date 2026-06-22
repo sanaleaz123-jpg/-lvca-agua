@@ -20,7 +20,11 @@ import pandas as pd
 import streamlit as st
 
 from services.elisa_microcistina import STD_CONC_UGL, FACTOR_DILUCION_DEFAULT
-from services.microcistina_import import parse_excel_solver
+from services.microcistina_import import (
+    parse_excel_solver,
+    parse_grid_text,
+    parse_placa_cruda,
+)
 from services.microcistina_service import (
     calcular_corrida,
     get_corrida,
@@ -34,97 +38,124 @@ from services.resultado_service import get_campanas, validar_resultados
 
 
 def _render_import(analista_id: Optional[str]) -> None:
-    """Importa una placa desde el Excel del Solver y mapea cada muestra."""
-    with st.expander("Importar corrida desde Excel (Solver SAES)", icon=":material/upload_file:"):
-        st.caption(
-            "Sube el libro del Solver. La plataforma recalcula con su motor "
-            "(idéntico al Solver) y te deja asignar cada muestra de la placa a "
-            "su punto/campaña. Una placa puede abarcar varias campañas."
+    """Importa una corrida (placa OD cruda o Excel del Solver) y mapea muestras."""
+    with st.expander("Importar corrida (placa OD o Excel del Solver)", icon=":material/upload_file:"):
+        modo = st.radio(
+            "Origen de los datos",
+            ["Placa OD cruda (8×12)", "Excel del Solver"],
+            horizontal=True, key="mc_modo_import",
         )
-        up = st.file_uploader("Archivo .xlsx del Solver", type=["xlsx"], key="mc_xlsx")
-        if not up:
-            return
-        try:
-            imp = parse_excel_solver(up.getvalue())
-        except Exception as exc:
-            st.error(f"No se pudo leer el archivo: {exc}")
-            return
-
-        c = imp.curva
-        k1, k2, k3, k4, k5 = st.columns(5)
-        k1.metric("A (Amax)", f"{c.A:.4f}")
-        k2.metric("B", f"{c.B:.4f}")
-        k3.metric("C (IC50)", f"{c.C:.4f}")
-        k4.metric("D", f"{c.D:.4f}")
-        k5.metric("R²", f"{c.r2:.5f}")
-        ctrl_txt = f"{imp.control.conc_ugL:.3f} µg/L" if imp.control.conc_ugL is not None else "—"
-        st.caption(
-            f"Lote: {imp.kit_lote or '—'} · ORDEN: {imp.orden or '—'} · "
-            f"Control: {ctrl_txt} (%CV {imp.control.cv_pct:.2f}) · "
-            f"{len(imp.muestras)} muestra(s) en la placa."
-        )
-        for a in imp.avisos:
-            st.warning(a)
-
-        grupos = get_muestras_agrupadas_por_campana()
-        camp_opts = {"— (elegir campaña)": None}
-        for cid, info in grupos.items():
-            camp_opts[info["label"]] = cid
-
-        st.markdown(f"##### Asignar las {len(imp.muestras)} muestras de la placa")
-        h1, h2, h3 = st.columns([1.7, 1.3, 1.6])
-        h1.caption("Muestra de la placa (valor)")
-        h2.caption("Campaña")
-        h3.caption("Estación / muestra")
-
-        asignaciones: dict[int, str] = {}
-        for idx, m in enumerate(imp.muestras):
-            if m.conc_ugL is None:
-                conc = "fuera de rango"
-            else:
-                conc = f"{m.conc_ugL / 1000:.6f} mg/L"
-            c1, c2, c3 = st.columns([1.7, 1.3, 1.6])
-            c1.markdown(
-                f"**{m.label}** — {conc}<br>"
-                f"<small>OD {m.od_1:g}/{m.od_2:g} · %CV {m.cv_pct:.1f}</small>",
-                unsafe_allow_html=True,
+        imp = None
+        if modo == "Excel del Solver":
+            st.caption(
+                "Sube el libro del Solver; la plataforma toma los valores ya "
+                "calculados y te deja asignar cada muestra a su punto/campaña."
             )
-            camp_sel = c2.selectbox("Campaña", list(camp_opts.keys()),
-                                    key=f"mc_camp_{idx}", label_visibility="collapsed")
-            cid = camp_opts[camp_sel]
-            if cid:
-                mopts = {"— (estación)": None}
-                for mm in grupos[cid]["muestras"]:
-                    mopts[mm["label"]] = mm["id"]
-                mues_sel = c3.selectbox("Estación", list(mopts.keys()),
-                                        key=f"mc_mues_{idx}", label_visibility="collapsed")
-                asignaciones[idx] = mopts[mues_sel]
-            else:
-                c3.selectbox("Estación", ["— (elige campaña primero)"],
-                             key=f"mc_mues_{idx}", disabled=True, label_visibility="collapsed")
-                asignaciones[idx] = None
+            up = st.file_uploader("Archivo .xlsx del Solver", type=["xlsx"], key="mc_xlsx")
+            if up:
+                try:
+                    imp = parse_excel_solver(up.getvalue())
+                except Exception as exc:
+                    st.error(f"No se pudo leer el archivo: {exc}")
+        else:
+            st.caption(
+                "Pega la placa de absorbancias tal como sale del lector: 8 filas "
+                "(A–H) × 12 columnas. La plataforma ubica estándares (ST0–ST5), "
+                "control y las 41 muestras con la distribución fija del laboratorio "
+                "y calcula todo (curva 4PL + concentraciones)."
+            )
+            txt = st.text_area(
+                "Placa OD (8 filas × 12 columnas)", height=210, key="mc_grid",
+                placeholder=("A  0.959 1.002 0.919 0.866 0.938 0.901 ...\n"
+                             "B  0.861 0.806 0.85 0.92 ...\n... hasta la fila H"),
+            )
+            if txt.strip():
+                try:
+                    imp = parse_placa_cruda(parse_grid_text(txt))
+                except Exception as exc:
+                    st.error(f"No se pudo leer la placa: {exc}")
+        if imp is None:
+            return
+        _render_mapeo(imp, analista_id)
 
-        elegidas = [v for v in asignaciones.values() if v]
-        n_asig = len(elegidas)
-        dup = n_asig != len(set(elegidas))
-        if dup:
-            st.error("Hay muestras del Excel asignadas a la misma muestra de la plataforma.")
 
-        fecha_imp = st.date_input("Fecha de ensayo", value=None,
-                                  key="mc_imp_fecha", format="DD/MM/YYYY")
-        if st.button(f"Registrar {n_asig} muestra(s) importada(s)", type="primary",
-                     key="mc_imp_reg", disabled=(n_asig == 0 or dup)):
-            try:
-                guardar_corrida_importada(
-                    imp,
-                    {k: v for k, v in asignaciones.items() if v},
-                    fecha_ensayo=fecha_imp.isoformat() if fecha_imp else None,
-                    analista_id=analista_id,
-                )
-                st.success(f"Registradas {n_asig} muestra(s) y la corrida importada.")
-                st.rerun()
-            except Exception as exc:
-                st.error(f"Error al registrar: {exc}")
+def _render_mapeo(imp, analista_id: Optional[str]) -> None:
+    """Resumen de la corrida + mapeo de cada muestra de la placa + registro."""
+    c = imp.curva
+    k1, k2, k3, k4, k5 = st.columns(5)
+    k1.metric("A (Amax)", f"{c.A:.4f}")
+    k2.metric("B", f"{c.B:.4f}")
+    k3.metric("C (IC50)", f"{c.C:.4f}")
+    k4.metric("D", f"{c.D:.4f}")
+    k5.metric("R²", f"{c.r2:.5f}")
+    ctrl_txt = f"{imp.control.conc_ugL:.3f} µg/L" if imp.control.conc_ugL is not None else "—"
+    st.caption(
+        f"Lote: {imp.kit_lote or '—'} · ORDEN: {imp.orden or '—'} · "
+        f"Control: {ctrl_txt} (%CV {imp.control.cv_pct:.2f}) · "
+        f"{len(imp.muestras)} muestra(s) en la placa."
+    )
+    for a in imp.avisos:
+        st.warning(a)
+
+    grupos = get_muestras_agrupadas_por_campana()
+    camp_opts = {"— (elegir campaña)": None}
+    for cid, info in grupos.items():
+        camp_opts[info["label"]] = cid
+
+    st.markdown(f"##### Asignar las {len(imp.muestras)} muestras de la placa")
+    h1, h2, h3 = st.columns([1.7, 1.3, 1.6])
+    h1.caption("Muestra de la placa (valor)")
+    h2.caption("Campaña")
+    h3.caption("Estación / muestra")
+
+    asignaciones: dict[int, str] = {}
+    for idx, m in enumerate(imp.muestras):
+        if m.conc_ugL is None:
+            conc = "fuera de rango"
+        else:
+            conc = f"{m.conc_ugL / 1000:.6f} mg/L"
+        c1, c2, c3 = st.columns([1.7, 1.3, 1.6])
+        c1.markdown(
+            f"**{m.label}** — {conc}<br>"
+            f"<small>OD {m.od_1:g}/{m.od_2:g} · %CV {m.cv_pct:.1f}</small>",
+            unsafe_allow_html=True,
+        )
+        camp_sel = c2.selectbox("Campaña", list(camp_opts.keys()),
+                                key=f"mc_camp_{idx}", label_visibility="collapsed")
+        cid = camp_opts[camp_sel]
+        if cid:
+            mopts = {"— (estación)": None}
+            for mm in grupos[cid]["muestras"]:
+                mopts[mm["label"]] = mm["id"]
+            mues_sel = c3.selectbox("Estación", list(mopts.keys()),
+                                    key=f"mc_mues_{idx}", label_visibility="collapsed")
+            asignaciones[idx] = mopts[mues_sel]
+        else:
+            c3.selectbox("Estación", ["— (elige campaña primero)"],
+                         key=f"mc_mues_{idx}", disabled=True, label_visibility="collapsed")
+            asignaciones[idx] = None
+
+    elegidas = [v for v in asignaciones.values() if v]
+    n_asig = len(elegidas)
+    dup = n_asig != len(set(elegidas))
+    if dup:
+        st.error("Hay muestras de la placa asignadas a la misma muestra de la plataforma.")
+
+    fecha_imp = st.date_input("Fecha de ensayo", value=None,
+                              key="mc_imp_fecha", format="DD/MM/YYYY")
+    if st.button(f"Registrar {n_asig} muestra(s) importada(s)", type="primary",
+                 key="mc_imp_reg", disabled=(n_asig == 0 or dup)):
+        try:
+            guardar_corrida_importada(
+                imp,
+                {k: v for k, v in asignaciones.items() if v},
+                fecha_ensayo=fecha_imp.isoformat() if fecha_imp else None,
+                analista_id=analista_id,
+            )
+            st.success(f"Registradas {n_asig} muestra(s) y la corrida importada.")
+            st.rerun()
+        except Exception as exc:
+            st.error(f"Error al registrar: {exc}")
 
 
 def render_panel_microcistina(

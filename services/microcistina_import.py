@@ -34,11 +34,40 @@ from services.elisa_microcistina import (
     fit_4pl,
     procesar_muestra,
     procesar_control,
+    concentracion_ugL,
     CurvaParams,
     ResultadoMuestra,
 )
 
 HOJA = "MCT SAES"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Distribución FIJA de la placa del LVCA (8 filas A–H × 12 columnas, duplicados
+# en pares de columnas). Confirmada con el laboratorio:
+#   Par 1 (col 1-2):  A..F = ST0..ST5, G = Control (CT), H = S1
+#   Pares 2..6:       muestras "serpenteando" de abajo (H) hacia arriba (A)
+#     col 3-4  → S2..S9     col 5-6  → S10..S17    col 7-8  → S18..S25
+#     col 9-10 → S26..S33   col 11-12→ S34..S41
+# Total: 6 estándares + control + 41 muestras.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _mapa_placa() -> dict:
+    """
+    Devuelve el mapeo de la distribución fija:
+        {"std": [(row,col1,col2), ...x6], "control": (row,col1,col2),
+         "samples": {n: (row,col1,col2)}}
+    Filas A–H = 0..7; columnas 1..12 = 0..11.
+    """
+    std = [(i, 0, 1) for i in range(6)]          # ST0..ST5 en filas A–F, col 1-2
+    control = (6, 0, 1)                           # CT en fila G, col 1-2
+    samples = {1: (7, 0, 1)}                       # S1 en fila H, col 1-2
+    for p in range(1, 6):                          # pares de columnas 3-4 .. 11-12
+        c1, c2 = 2 * p, 2 * p + 1
+        base = 2 + 8 * (p - 1)                     # 2, 10, 18, 26, 34
+        for row in range(8):                       # A..H
+            samples[base + (7 - row)] = (row, c1, c2)
+    return {"std": std, "control": control, "samples": samples}
 
 
 @dataclass
@@ -198,4 +227,86 @@ def parse_excel_solver(
         factor=factor,
         recalculado=recalculado,
         avisos=avisos,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Placa OD cruda (8×12) pegada/subida tal cual sale del lector
+# ─────────────────────────────────────────────────────────────────────────────
+
+import re
+
+
+def parse_grid_text(text: str) -> list[list[float]]:
+    """
+    Convierte el texto pegado de la placa en una matriz 8×12 de floats.
+    Tolera etiquetas de fila (A–H), separadores por tab/espacio/coma/';' y
+    coma decimal. Ignora una fila de encabezado de columnas (1..12) si aparece.
+    """
+    filas: list[list[float]] = []
+    for linea in text.strip().splitlines():
+        linea = linea.strip()
+        if not linea:
+            continue
+        nums = re.findall(r"-?\d+(?:[.,]\d+)?", linea)
+        vals = [float(n.replace(",", ".")) for n in nums]
+        # Saltar fila de encabezado "1 2 3 ... 12"
+        if vals == [float(i) for i in range(1, 13)]:
+            continue
+        if vals:
+            filas.append(vals[:12] if len(vals) >= 12 else vals)
+    if len(filas) != 8 or any(len(f) != 12 for f in filas):
+        raise ValueError(
+            "Se esperaban 8 filas (A–H) × 12 columnas de absorbancias. "
+            f"Se leyeron {len(filas)} fila(s) con longitudes {[len(f) for f in filas]}."
+        )
+    return filas
+
+
+def parse_placa_cruda(
+    grid: list[list[float]],
+    factor: float = FACTOR_DILUCION_DEFAULT,
+) -> CorridaImportada:
+    """
+    Calcula la corrida a partir de la placa de OD cruda (8×12) usando la
+    distribución fija del LVCA y el motor propio (curva 4PL + concentración).
+    """
+    if len(grid) != 8 or any(len(r) != 12 for r in grid):
+        raise ValueError("La placa debe ser 8 filas × 12 columnas.")
+    g = [[float(v) for v in row] for row in grid]
+    mapa = _mapa_placa()
+    avisos: list[str] = []
+
+    # Estándares y curva
+    std_od = [(g[r][c1], g[r][c2]) for (r, c1, c2) in mapa["std"]]
+    curva = fit_4pl(list(STD_CONC_UGL), [(a + b) / 2 for a, b in std_od])
+    if not curva.es_valida():
+        avisos.append(
+            f"La curva no cumple los criterios guía (A={curva.A:.3f}, "
+            f"D={curva.D:.3f}, R²={curva.r2:.4f})."
+        )
+
+    # Control
+    cr, cc1, cc2 = mapa["control"]
+    ctrl_od1, ctrl_od2 = g[cr][cc1], g[cr][cc2]
+    control = procesar_control(ctrl_od1, ctrl_od2, curva)
+    control_conc_1 = concentracion_ugL(ctrl_od1, curva)
+    control_conc_2 = concentracion_ugL(ctrl_od2, curva)
+
+    # Muestras (S1..S41) en orden
+    muestras: list[MuestraImportada] = []
+    for n in sorted(mapa["samples"].keys()):
+        r, c1, c2 = mapa["samples"][n]
+        od1, od2 = g[r][c1], g[r][c2]
+        res = procesar_muestra(od1, od2, curva, factor=factor)
+        muestras.append(MuestraImportada(
+            label=f"S{n}", od_1=od1, od_2=od2, cv_pct=res.cv_pct,
+            conc_ugL=res.conc_ugL, en_rango=res.en_rango, motivo=res.motivo,
+        ))
+
+    return CorridaImportada(
+        curva=curva, control=control,
+        control_conc_1=control_conc_1, control_conc_2=control_conc_2,
+        muestras=muestras, std_od=std_od, control_od=(ctrl_od1, ctrl_od2),
+        kit_lote=None, orden=2, factor=factor, recalculado=True, avisos=avisos,
     )
