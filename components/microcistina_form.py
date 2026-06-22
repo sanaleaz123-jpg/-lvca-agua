@@ -20,6 +20,7 @@ from typing import Optional
 import pandas as pd
 import streamlit as st
 
+from components.ui_styles import chip_eca_html
 from services.elisa_microcistina import STD_CONC_UGL
 from services.microcistina_import import (
     parse_excel_solver,
@@ -213,25 +214,29 @@ def _render_resultado(imp, analista_id: Optional[str]) -> None:
     for idx, m in enumerate(imp.muestras):
         extra = ""
         if m.conc_ugL is None:
-            # Muy concentrada (> estándar más alto, 5 µg/L).
+            # Muy concentrada (> estándar más alto, 5 µg/L) → excede el ECA.
             valor = "⚠ muy concentrada — diluir y reanalizar (> 0.005 mg/L)"
             valor_ug = "> 5 µg/L"
-            eca = "🔴 Excede"
+            chip = chip_eca_html("excede", motivo="Por encima del rango; supera el ECA (1 µg/L)")
         elif lcm_ug is not None and m.conc_ugL < lcm_ug:
             valor = f"< {lcm_mg:.5f} mg/L"
             valor_ug = f"< {lcm_ug:g} µg/L"
             extra = f" · calc {m.conc_ugL / 1000:.6f} mg/L"
-            eca = "🟢 Cumple"
+            chip = chip_eca_html("cumple")
         else:
             ug = m.conc_ugL
             valor = f"{ug / 1000:.6f} mg/L"
             valor_ug = f"{ug:.4f}".rstrip("0").rstrip(".") + " µg/L"
-            eca = "🔴 Excede" if ug > eca_ug else "🟢 Cumple"
+            if ug > eca_ug:
+                pct = (ug / eca_ug - 1.0) * 100.0
+                chip = chip_eca_html("excede", label=f"Excede +{pct:.0f}%")
+            else:
+                chip = chip_eca_html("cumple")
         c1, c2, c3 = st.columns([1.7, 1.3, 1.6])
         c1.markdown(
             f"**{m.label}** — {valor} ({valor_ug})<br>"
             f"<small>OD {m.od_1:g}/{m.od_2:g} · %CV {m.cv_pct:.1f}{extra}</small><br>"
-            f"<small>ECA A2 / OMS (1 µg/L): {eca}</small>",
+            f"<small>ECA A2 / OMS 1 µg/L:</small> {chip}",
             unsafe_allow_html=True,
         )
         camp_sel = c2.selectbox("Campaña", list(camp_opts.keys()),
