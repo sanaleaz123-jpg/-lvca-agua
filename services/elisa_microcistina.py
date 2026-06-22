@@ -183,23 +183,26 @@ def procesar_muestra(
     Procesa el par de réplicas de una muestra: concentración media (con factor)
     y %CV. Si alguna réplica cae fuera de la curva la concentración es None.
     """
-    c1 = concentracion_ugL(od_1, curva)
-    c2 = concentracion_ugL(od_2, curva)
     cv = cv_pct(od_1, od_2)
 
-    if c1 is None or c2 is None:
-        # Réplica(s) fuera de rango: si ambas OD ≥ A → por debajo de la curva
-        # (≈ 0, no cuantificable); si ≤ D → por encima (diluir y reanalizar).
-        od_min = min(od_1, od_2)
-        if od_min >= curva.A:
-            motivo = "OD por encima de Amax — por debajo del límite (no detectado)."
-            return ResultadoMuestra(od_1, od_2, cv, conc_ugL=0.0, en_rango=False, motivo=motivo)
+    # Relación inversa: OD baja → mucha toxina; OD alta → poca toxina.
+    #   OD ≤ D (mínimo de la curva): por encima del estándar más alto → muy
+    #     concentrada, diluir y reanalizar (basta que UNA réplica lo sea).
+    if od_1 <= curva.D or od_2 <= curva.D:
         motivo = ("Concentración por encima del estándar más alto "
                   f"({STD_CONC_UGL[-1]:g} µg/L): diluir y reanalizar.")
         return ResultadoMuestra(od_1, od_2, cv, conc_ugL=None, en_rango=False, motivo=motivo)
 
-    conc = (c1 + c2) / 2.0 * factor
-    return ResultadoMuestra(od_1, od_2, cv, conc_ugL=conc, en_rango=True)
+    # Tras descartar lo anterior, una OD ≥ Amax da concentración no cuantificable
+    # por arriba (señal alta = poca toxina): esa réplica cuenta como ~0.
+    c1 = concentracion_ugL(od_1, curva)
+    c2 = concentracion_ugL(od_2, curva)
+    v1 = c1 if c1 is not None else 0.0
+    v2 = c2 if c2 is not None else 0.0
+    conc = (v1 + v2) / 2.0 * factor
+    en_rango = c1 is not None and c2 is not None
+    motivo = "" if en_rango else "Señal por encima de Amax — concentración por debajo del límite."
+    return ResultadoMuestra(od_1, od_2, cv, conc_ugL=conc, en_rango=en_rango, motivo=motivo)
 
 
 def procesar_control(
