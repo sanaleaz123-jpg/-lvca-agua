@@ -28,6 +28,7 @@ from docx import Document
 
 from database.client import get_db
 from services.microcistina_service import (
+    get_codigo_reporte,
     get_corrida,
     get_muestras_microcistina,
     get_param_microcistina,
@@ -251,7 +252,7 @@ def _assemble(campana_id: str, overrides: dict) -> dict:
         "filas": filas,
         "cv_max": cv_max,
         "meta": {
-            "codigo_reporte": corrida.get("codigo_reporte") or "",
+            "codigo_reporte": get_codigo_reporte(campana_id, fecha_emision) or "",
             "razon_social": overrides.get("razon_social") or DEFAULTS["razon_social"],
             "domicilio": overrides.get("domicilio") or DEFAULTS["domicilio"],
             "solicitado_por": overrides.get("solicitado_por") or DEFAULTS["solicitado_por"],

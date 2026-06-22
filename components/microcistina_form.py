@@ -20,14 +20,93 @@ import pandas as pd
 import streamlit as st
 
 from services.elisa_microcistina import STD_CONC_UGL, FACTOR_DILUCION_DEFAULT
+from services.microcistina_import import parse_excel_solver
 from services.microcistina_service import (
     calcular_corrida,
     get_corrida,
     get_muestras_microcistina,
+    get_muestras_para_asignar,
     get_param_microcistina,
     guardar_corrida,
+    guardar_corrida_importada,
 )
 from services.resultado_service import get_campanas, validar_resultados
+
+
+def _render_import(analista_id: Optional[str]) -> None:
+    """Importa una placa desde el Excel del Solver y mapea cada muestra."""
+    with st.expander("Importar corrida desde Excel (Solver SAES)", icon=":material/upload_file:"):
+        st.caption(
+            "Sube el libro del Solver. La plataforma recalcula con su motor "
+            "(idéntico al Solver) y te deja asignar cada muestra de la placa a "
+            "su punto/campaña. Una placa puede abarcar varias campañas."
+        )
+        up = st.file_uploader("Archivo .xlsx del Solver", type=["xlsx"], key="mc_xlsx")
+        if not up:
+            return
+        try:
+            imp = parse_excel_solver(up.getvalue())
+        except Exception as exc:
+            st.error(f"No se pudo leer el archivo: {exc}")
+            return
+
+        c = imp.curva
+        k1, k2, k3, k4, k5 = st.columns(5)
+        k1.metric("A (Amax)", f"{c.A:.4f}")
+        k2.metric("B", f"{c.B:.4f}")
+        k3.metric("C (IC50)", f"{c.C:.4f}")
+        k4.metric("D", f"{c.D:.4f}")
+        k5.metric("R²", f"{c.r2:.5f}")
+        ctrl_txt = f"{imp.control.conc_ugL:.3f} µg/L" if imp.control.conc_ugL is not None else "—"
+        st.caption(
+            f"Lote: {imp.kit_lote or '—'} · ORDEN: {imp.orden or '—'} · "
+            f"Control: {ctrl_txt} (%CV {imp.control.cv_pct:.2f}) · "
+            f"{len(imp.muestras)} muestra(s) en la placa."
+        )
+        for a in imp.avisos:
+            st.warning(a)
+
+        muestras_asig = get_muestras_para_asignar()
+        opciones = {"— (no asignar)": None}
+        for mm in muestras_asig:
+            opciones[mm["label"]] = mm["id"]
+
+        st.markdown("##### Asignar cada muestra del Excel")
+        asignaciones: dict[int, str] = {}
+        for idx, m in enumerate(imp.muestras):
+            if m.conc_ugL is None:
+                conc = "fuera de rango"
+            else:
+                conc = f"{m.conc_ugL / 1000:.6f} mg/L"
+            cc1, cc2 = st.columns([1, 2])
+            cc1.markdown(f"**{m.label}** — {conc} · %CV {m.cv_pct:.1f}")
+            sel = cc2.selectbox(
+                "Asignar a", list(opciones.keys()),
+                key=f"mc_map_{idx}", label_visibility="collapsed",
+            )
+            asignaciones[idx] = opciones[sel]
+
+        elegidas = [v for v in asignaciones.values() if v]
+        n_asig = len(elegidas)
+        dup = n_asig != len(set(elegidas))
+        if dup:
+            st.error("Hay muestras del Excel asignadas a la misma muestra de la plataforma.")
+
+        fecha_imp = st.date_input("Fecha de ensayo", value=None,
+                                  key="mc_imp_fecha", format="DD/MM/YYYY")
+        if st.button(f"Registrar {n_asig} muestra(s) importada(s)", type="primary",
+                     key="mc_imp_reg", disabled=(n_asig == 0 or dup)):
+            try:
+                guardar_corrida_importada(
+                    imp,
+                    {k: v for k, v in asignaciones.items() if v},
+                    fecha_ensayo=fecha_imp.isoformat() if fecha_imp else None,
+                    analista_id=analista_id,
+                )
+                st.success(f"Registradas {n_asig} muestra(s) y la corrida importada.")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Error al registrar: {exc}")
 
 
 def render_panel_microcistina(
@@ -41,6 +120,12 @@ def render_panel_microcistina(
     en Resultados de Laboratorio) se usa directamente; si no, se muestra un
     selector de campaña.
     """
+    # Importación de placa desde Excel (puede abarcar varias campañas).
+    _render_import(analista_id)
+
+    st.divider()
+    st.markdown("#### Ingreso / revisión manual por campaña")
+
     if not campana_id:
         campanas = get_campanas()
         if not campanas:

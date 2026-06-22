@@ -2,18 +2,21 @@
 services/microcistina_service.py
 Persistencia y orquestación del ensayo ELISA de Microcistina LR (P091).
 
-Une el motor de cálculo puro (services/elisa_microcistina.py) con la base de
-datos: guarda la corrida (curva 4PL + control de calidad) por campaña y vuelca
-el resultado de cada muestra en ``resultados_laboratorio`` (concentración en
-µg/L, OD por duplicado, %CV y cualificador).
+Modelo: una CORRIDA es una placa ELISA (kit usado una sola vez) que puede
+abarcar muestras de VARIAS campañas. Cada resultado de muestra
+(``resultados_laboratorio``) queda vinculado a su corrida vía ``corrida_id``;
+de ahí el reporte por campaña obtiene la curva y el control de calidad.
 
 Funciones públicas:
-    get_param_microcistina()                 → fila del parámetro P091 (id, lmd, lcm, unidad)
-    get_muestras_microcistina(campana_id)    → muestras de la campaña + OD ya guardadas
-    get_corrida(campana_id)                  → corrida ELISA guardada (o None)
-    calcular_corrida(...)                     → cálculo en memoria (preview, sin guardar)
-    guardar_corrida(...)                      → calcula y persiste corrida + resultados
-    tiene_resultados_microcistina(campana_id) → bool (gate del reporte)
+    get_param_microcistina()                  → fila del parámetro P091
+    get_muestras_microcistina(campana_id)     → muestras de la campaña + OD guardadas
+    get_muestras_para_asignar()               → muestras de todas las campañas (mapeo import)
+    get_corrida(campana_id)                    → placa ELISA ligada a la campaña (o None)
+    tiene_resultados_microcistina(campana_id)  → bool (gate del reporte)
+    calcular_corrida(...)                       → cálculo en memoria (preview)
+    guardar_corrida(campana_id, ...)           → guarda placa de una campaña (ingreso manual)
+    guardar_corrida_importada(imp, asignaciones, ...) → guarda placa importada de Excel
+    get_codigo_reporte(campana_id, ...)        → correlativo de reporte por campaña
 """
 
 from __future__ import annotations
@@ -29,6 +32,7 @@ from services.elisa_microcistina import (
     FACTOR_DILUCION_DEFAULT,
     CurvaParams,
     ResultadoMuestra,
+    concentracion_ugL,
     fit_4pl,
     procesar_muestra,
     procesar_control,
@@ -70,12 +74,7 @@ def get_param_microcistina() -> Optional[dict]:
 def get_muestras_microcistina(campana_id: str) -> list[dict]:
     """
     Muestras de la campaña (una por punto/nivel) con su punto y, si existe, la
-    lectura ELISA ya guardada. Ordenadas por código de punto.
-
-    Cada elemento:
-        {id, codigo, fecha_muestreo, hora_recoleccion,
-         punto: {id, codigo, nombre},
-         od_1, od_2, valor_numerico, cv_pct, cualificador}
+    lectura ELISA ya guardada (od_1/od_2, valor, %CV, cualificador).
     """
     db = get_db()
     param = get_param_microcistina()
@@ -94,7 +93,6 @@ def get_muestras_microcistina(campana_id: str) -> list[dict]:
     muestras = m_res.data or []
     muestra_ids = [m["id"] for m in muestras]
 
-    # Resultados P091 ya guardados (od, valor, cv, cualificador)
     por_muestra: dict[str, dict] = {}
     if muestra_ids and param_id:
         try:
@@ -130,39 +128,91 @@ def get_muestras_microcistina(campana_id: str) -> list[dict]:
 
 
 @cached(ttl=120)
-def get_corrida(campana_id: str) -> Optional[dict]:
-    """Corrida ELISA guardada para la campaña (o None)."""
+def get_muestras_para_asignar() -> list[dict]:
+    """
+    Todas las muestras (de cualquier campaña) para el mapeo al importar una
+    placa que abarca varias campañas. Cada elemento: {id, label}.
+    """
     db = get_db()
+    res = (
+        db.table("muestras")
+        .select(
+            "id, codigo, fecha_muestreo, "
+            "campanas(codigo, nombre), puntos_muestreo(codigo, nombre)"
+        )
+        .order("fecha_muestreo", desc=True)
+        .execute()
+    )
+    out = []
+    for m in (res.data or []):
+        camp = m.get("campanas") or {}
+        p = m.get("puntos_muestreo") or {}
+        fecha = (m.get("fecha_muestreo") or "")[:10]
+        label = (
+            f"{camp.get('codigo', '?')} · {p.get('codigo', '?')} · "
+            f"{m.get('codigo', '')} ({fecha})"
+        )
+        out.append({"id": m["id"], "label": label})
+    return out
+
+
+@cached(ttl=120)
+def get_corrida(campana_id: str) -> Optional[dict]:
+    """Placa ELISA ligada a la campaña (vía resultados.corrida_id), o None."""
+    db = get_db()
+    param = get_param_microcistina()
+    param_id = (param or {}).get("id")
+    if not param_id:
+        return None
+
+    m_res = db.table("muestras").select("id").eq("campana_id", campana_id).execute()
+    mids = [m["id"] for m in (m_res.data or [])]
+    if not mids:
+        return None
+
     try:
-        res = (
-            db.table("elisa_microcistina_corridas")
-            .select("*")
-            .eq("campana_id", campana_id)
+        rr = (
+            db.table("resultados_laboratorio")
+            .select("corrida_id")
+            .in_("muestra_id", mids)
+            .eq("parametro_id", param_id)
+            .not_.is_("corrida_id", "null")
             .limit(1)
             .execute()
         )
     except Exception:
         return None
-    data = res.data or []
+    rows = rr.data or []
+    if not rows:
+        return None
+    corrida_id = rows[0]["corrida_id"]
+
+    try:
+        cr = (
+            db.table("elisa_microcistina_corridas")
+            .select("*").eq("id", corrida_id).limit(1).execute()
+        )
+    except Exception:
+        return None
+    data = cr.data or []
     return data[0] if data else None
 
 
 def tiene_resultados_microcistina(campana_id: str) -> bool:
-    """True si la campaña tiene una corrida ELISA con curva ajustada."""
+    """True si la campaña tiene una placa ELISA con curva ajustada."""
     corrida = get_corrida(campana_id)
     return bool(corrida and corrida.get("param_a") is not None)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Cálculo (en memoria) de una corrida completa
+# Cálculo en memoria (preview)
 # ─────────────────────────────────────────────────────────────────────────────
 
 @dataclass
 class CorridaCalculada:
     curva: CurvaParams
     control: ResultadoMuestra
-    # muestra_id → ResultadoMuestra
-    resultados: dict[str, ResultadoMuestra]
+    resultados: dict[str, ResultadoMuestra]   # muestra_id → resultado
 
 
 def calcular_corrida(
@@ -171,144 +221,217 @@ def calcular_corrida(
     muestras_od: dict[str, tuple[float, float]],
     factor: float = FACTOR_DILUCION_DEFAULT,
 ) -> CorridaCalculada:
-    """
-    Ajusta la curva 4PL y procesa control y muestras SIN tocar la BD.
-    Útil para previsualizar en la UI antes de guardar.
-
-    ``std_od`` son las 6 parejas (od1, od2) en orden Std0..Std5.
-    ``muestras_od`` mapea muestra_id → (od1, od2).
-    """
+    """Ajusta la curva 4PL y procesa control y muestras SIN tocar la BD."""
     if len(std_od) != len(STD_CONC_UGL):
         raise ValueError(
-            f"Se requieren {len(STD_CONC_UGL)} estándares (Std0..Std5); "
-            f"se recibieron {len(std_od)}."
+            f"Se requieren {len(STD_CONC_UGL)} estándares; se recibieron {len(std_od)}."
         )
     od_prom = [(a + b) / 2.0 for a, b in std_od]
     curva = fit_4pl(list(STD_CONC_UGL), od_prom)
-
     control = procesar_control(control_od[0], control_od[1], curva)
-
-    resultados: dict[str, ResultadoMuestra] = {}
-    for mid, (o1, o2) in muestras_od.items():
-        resultados[mid] = procesar_muestra(o1, o2, curva, factor=factor)
-
+    resultados = {
+        mid: procesar_muestra(o1, o2, curva, factor=factor)
+        for mid, (o1, o2) in muestras_od.items()
+    }
     return CorridaCalculada(curva=curva, control=control, resultados=resultados)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Guardado: corrida + resultados de laboratorio
+# Persistencia de la corrida (placa)
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _corrida_row(
+    *, curva: CurvaParams, control: ResultadoMuestra, control_od: tuple[float, float],
+    std_od: list[tuple[float, float]], factor: float, kit_lote: Optional[str],
+    fecha_ensayo: Optional[str], qcs_nominal: float, qcs_tolerancia: float,
+    cv_max: float, observaciones: Optional[str], campana_id: Optional[str] = None,
+) -> dict:
+    return {
+        "campana_id": campana_id,
+        "fecha_ensayo": fecha_ensayo,
+        "kit_lote": kit_lote,
+        "factor_dilucion": factor,
+        "std_od": [[a, b] for a, b in std_od],
+        "param_a": curva.A, "param_b": curva.B, "param_c": curva.C, "param_d": curva.D,
+        "r2": curva.r2, "sse": curva.sse,
+        "control_od_1": control_od[0], "control_od_2": control_od[1],
+        "control_conc_1": concentracion_ugL(control_od[0], curva),
+        "control_conc_2": concentracion_ugL(control_od[1], curva),
+        "control_conc_prom": control.conc_ugL,
+        "control_cv": control.cv_pct,
+        "qcs_nominal": qcs_nominal, "qcs_tolerancia": qcs_tolerancia, "cv_max": cv_max,
+        "observaciones": observaciones,
+        "updated_at": datetime.utcnow().isoformat(),
+    }
+
+
+def _persistir_corrida(db, row: dict, corrida_id: Optional[str]) -> str:
+    """Inserta o actualiza la corrida; devuelve su id."""
+    if corrida_id:
+        db.table("elisa_microcistina_corridas").update(row).eq("id", corrida_id).execute()
+        return corrida_id
+    ins = db.table("elisa_microcistina_corridas").insert(row).execute()
+    data = ins.data or []
+    return data[0]["id"] if data else None
+
+
+def _upsert_resultado(db, *, muestra_id, param_id, corrida_id, res: ResultadoMuestra,
+                      lcm, fecha, analista_id) -> None:
+    cualificador = None
+    observ = res.motivo or None
+    if res.conc_ugL is not None and lcm is not None and res.conc_ugL < float(lcm):
+        cualificador = "<LCM"
+    fila = {
+        "muestra_id": muestra_id,
+        "parametro_id": param_id,
+        "corrida_id": corrida_id,
+        "valor_numerico": res.conc_ugL,
+        "od_1": res.od_1, "od_2": res.od_2, "cv_pct": res.cv_pct,
+        "cualificador": cualificador,
+        "observaciones": observ,
+        "analista_id": analista_id,
+        "fecha_analisis": fecha,
+    }
+    db.table("resultados_laboratorio").upsert(
+        fila, on_conflict="muestra_id,parametro_id"
+    ).execute()
+
+
 def guardar_corrida(
-    campana_id: str,
-    *,
-    fecha_ensayo: Optional[str],
-    kit_lote: Optional[str],
-    factor: float,
-    std_od: list[tuple[float, float]],
-    control_od: tuple[float, float],
-    muestras_od: dict[str, tuple[float, float]],
-    qcs_nominal: float = 0.750,
-    qcs_tolerancia: float = 0.185,
-    cv_max: float = 15.0,
-    observaciones: Optional[str] = None,
-    analista_id: Optional[str] = None,
+    campana_id: str, *, fecha_ensayo: Optional[str], kit_lote: Optional[str],
+    factor: float, std_od: list[tuple[float, float]],
+    control_od: tuple[float, float], muestras_od: dict[str, tuple[float, float]],
+    qcs_nominal: float = 0.750, qcs_tolerancia: float = 0.185, cv_max: float = 15.0,
+    observaciones: Optional[str] = None, analista_id: Optional[str] = None,
 ) -> CorridaCalculada:
     """
-    Calcula la corrida (curva + control + muestras) y la persiste:
-        - upsert en elisa_microcistina_corridas (una por campaña)
-        - upsert de P091 en resultados_laboratorio por cada muestra con OD
-
-    El valor_numerico se guarda en µg/L (unidad del parámetro). El cualificador
-    se marca '<LCM' cuando la concentración cae por debajo del límite de
-    cuantificación del método.
+    Ingreso manual: guarda la placa de UNA campaña (todas sus muestras en la
+    misma placa) y vuelca los resultados. Si la campaña ya tiene placa, la
+    actualiza; si no, crea una.
     """
     db = get_db()
     param = get_param_microcistina()
     if not param:
         raise ValueError("No se encontró el parámetro Microcistina LR (P091) en la BD.")
     param_id = param["id"]
-    lcm = param.get("lcm")  # µg/L
+    lcm = param.get("lcm")
 
     calc = calcular_corrida(std_od, control_od, muestras_od, factor=factor)
-    curva = calc.curva
-    control = calc.control
 
-    # Código de reporte correlativo: se genera una sola vez por campaña y se
-    # conserva en descargas posteriores.
     existente = get_corrida(campana_id) or {}
-    codigo_reporte = existente.get("codigo_reporte") or _generar_codigo_reporte(db, fecha_ensayo)
+    row = _corrida_row(
+        curva=calc.curva, control=calc.control, control_od=control_od, std_od=std_od,
+        factor=factor, kit_lote=kit_lote, fecha_ensayo=fecha_ensayo,
+        qcs_nominal=qcs_nominal, qcs_tolerancia=qcs_tolerancia, cv_max=cv_max,
+        observaciones=observaciones, campana_id=campana_id,
+    )
+    corrida_id = _persistir_corrida(db, row, existente.get("id"))
 
-    # 1. Upsert de la corrida
-    corrida_row = {
-        "campana_id": campana_id,
-        "codigo_reporte": codigo_reporte,
-        "fecha_ensayo": fecha_ensayo,
-        "kit_lote": kit_lote,
-        "factor_dilucion": factor,
-        "std_od": [[a, b] for a, b in std_od],
-        "param_a": curva.A,
-        "param_b": curva.B,
-        "param_c": curva.C,
-        "param_d": curva.D,
-        "r2": curva.r2,
-        "sse": curva.sse,
-        "control_od_1": control_od[0],
-        "control_od_2": control_od[1],
-        "control_conc_1": _conc_replica(control_od[0], curva),
-        "control_conc_2": _conc_replica(control_od[1], curva),
-        "control_conc_prom": control.conc_ugL,
-        "control_cv": control.cv_pct,
-        "qcs_nominal": qcs_nominal,
-        "qcs_tolerancia": qcs_tolerancia,
-        "cv_max": cv_max,
-        "observaciones": observaciones,
-        "updated_at": datetime.utcnow().isoformat(),
-    }
-    db.table("elisa_microcistina_corridas").upsert(
-        corrida_row, on_conflict="campana_id"
-    ).execute()
-
-    # 2. Upsert de resultados por muestra (respeta validados existentes)
     fecha = fecha_ensayo or datetime.utcnow().date().isoformat()
     validados = _ids_validados(db, list(muestras_od.keys()), param_id)
-
     for mid, res in calc.resultados.items():
         if mid in validados:
-            continue  # no sobreescribir resultados ya validados
-        cualificador = None
-        observ = res.motivo or None
-        if res.conc_ugL is not None and lcm is not None and res.conc_ugL < float(lcm):
-            cualificador = "<LCM"
-        fila = {
-            "muestra_id": mid,
-            "parametro_id": param_id,
-            "valor_numerico": res.conc_ugL,
-            "od_1": res.od_1,
-            "od_2": res.od_2,
-            "cv_pct": res.cv_pct,
-            "cualificador": cualificador,
-            "observaciones": observ,
-            "analista_id": analista_id,
-            "fecha_analisis": fecha,
-        }
-        db.table("resultados_laboratorio").upsert(
-            fila, on_conflict="muestra_id,parametro_id"
-        ).execute()
+            continue
+        _upsert_resultado(db, muestra_id=mid, param_id=param_id, corrida_id=corrida_id,
+                          res=res, lcm=lcm, fecha=fecha, analista_id=analista_id)
 
     _invalidar_cache()
     return calc
 
 
-def _generar_codigo_reporte(db, fecha_ensayo: Optional[str]) -> str:
+def guardar_corrida_importada(
+    imp, asignaciones: dict[int, str], *,
+    fecha_ensayo: Optional[str] = None, qcs_nominal: float = 0.750,
+    qcs_tolerancia: float = 0.185, cv_max: float = 15.0,
+    observaciones: Optional[str] = None, analista_id: Optional[str] = None,
+) -> str:
     """
-    Correlativo 'LVCA - NNN-MC-AAAA'. Usa la función SQL siguiente_codigo()
-    (secuencia atómica por prefijo/año). Si falla, cae a un conteo de corridas.
+    Guarda una placa importada de Excel (services/microcistina_import). Crea una
+    corrida nueva (sin campana_id, abarca varias campañas) y vuelca cada muestra
+    asignada. ``asignaciones`` mapea índice de muestra importada → muestra_id.
+
+    Devuelve el id de la corrida creada.
     """
+    db = get_db()
+    param = get_param_microcistina()
+    if not param:
+        raise ValueError("No se encontró el parámetro Microcistina LR (P091) en la BD.")
+    param_id = param["id"]
+    lcm = param.get("lcm")
+
+    row = _corrida_row(
+        curva=imp.curva, control=imp.control, control_od=imp.control_od,
+        std_od=imp.std_od, factor=imp.factor, kit_lote=imp.kit_lote,
+        fecha_ensayo=fecha_ensayo, qcs_nominal=qcs_nominal,
+        qcs_tolerancia=qcs_tolerancia, cv_max=cv_max, observaciones=observaciones,
+        campana_id=None,
+    )
+    corrida_id = _persistir_corrida(db, row, None)
+
+    fecha = fecha_ensayo or datetime.utcnow().date().isoformat()
+    muestra_ids = [mid for mid in asignaciones.values() if mid]
+    validados = _ids_validados(db, muestra_ids, param_id)
+
+    for idx, muestra_id in asignaciones.items():
+        if not muestra_id or muestra_id in validados:
+            continue
+        if idx < 0 or idx >= len(imp.muestras):
+            continue
+        m = imp.muestras[idx]
+        res = ResultadoMuestra(
+            od_1=m.od_1, od_2=m.od_2, cv_pct=m.cv_pct,
+            conc_ugL=m.conc_ugL, en_rango=m.en_rango, motivo=m.motivo,
+        )
+        _upsert_resultado(db, muestra_id=muestra_id, param_id=param_id,
+                          corrida_id=corrida_id, res=res, lcm=lcm,
+                          fecha=fecha, analista_id=analista_id)
+
+    _invalidar_cache()
+    return corrida_id
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Código de reporte por campaña
+# ─────────────────────────────────────────────────────────────────────────────
+
+def get_codigo_reporte(
+    campana_id: str, fecha_emision: Optional[str] = None, crear: bool = True
+) -> Optional[str]:
+    """
+    Correlativo 'LVCA - NNN-MC-AAAA' por campaña. Lo lee de microcistina_reportes;
+    si no existe y ``crear`` es True, lo genera y guarda.
+    """
+    db = get_db()
+    try:
+        r = (
+            db.table("microcistina_reportes").select("*")
+            .eq("campana_id", campana_id).limit(1).execute()
+        )
+        rows = r.data or []
+    except Exception:
+        rows = []
+    if rows and rows[0].get("codigo_reporte"):
+        return rows[0]["codigo_reporte"]
+    if not crear:
+        return None
+    codigo = _generar_codigo_reporte(db, fecha_emision)
+    try:
+        db.table("microcistina_reportes").upsert(
+            {"campana_id": campana_id, "codigo_reporte": codigo,
+             "fecha_emision": fecha_emision},
+            on_conflict="campana_id",
+        ).execute()
+    except Exception:
+        pass
+    return codigo
+
+
+def _generar_codigo_reporte(db, fecha_emision: Optional[str]) -> str:
+    """Correlativo vía función SQL siguiente_codigo(); cae a conteo si falla."""
     anio = datetime.utcnow().year
-    if fecha_ensayo:
+    if fecha_emision:
         try:
-            anio = int(str(fecha_ensayo)[:4])
+            anio = int(str(fecha_emision)[:4])
         except (ValueError, TypeError):
             pass
     n = None
@@ -323,20 +446,11 @@ def _generar_codigo_reporte(db, fecha_ensayo: Optional[str]) -> str:
         n = None
     if n is None:
         try:
-            res = (
-                db.table("elisa_microcistina_corridas")
-                .select("id", count="exact")
-                .execute()
-            )
+            res = db.table("microcistina_reportes").select("campana_id", count="exact").execute()
             n = (getattr(res, "count", 0) or 0) + 1
         except Exception:
             n = 1
     return f"LVCA - {int(n):03d}-MC-{anio}"
-
-
-def _conc_replica(od: float, curva: CurvaParams) -> Optional[float]:
-    from services.elisa_microcistina import concentracion_ugL
-    return concentracion_ugL(od, curva)
 
 
 def _ids_validados(db, muestra_ids: list[str], param_id: str) -> set[str]:
