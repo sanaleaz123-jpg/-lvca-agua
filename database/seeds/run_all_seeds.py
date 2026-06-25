@@ -26,14 +26,16 @@ from database.seeds import (
     seed_ecas,
     seed_ecas_matriciales,
     seed_puntos,
+    seed_taxonomia_fitoplancton,
 )
 
 PASOS = [
-    ("1/5  Unidades de medida (151)",               seed_unidades.run),
-    ("2/5  Parametros (24+)",                       seed_parametros.run),
-    ("3/5  ECAs y valores limite (6)",              seed_ecas.run),
-    ("4/5  ECA valores matriciales (Tabla N°1)",    seed_ecas_matriciales.run),
-    ("5/5  Puntos de muestreo (12)",                seed_puntos.run),
+    ("1/6  Unidades de medida (151)",               seed_unidades.run),
+    ("2/6  Parametros (24+)",                       seed_parametros.run),
+    ("3/6  ECAs y valores limite (6)",              seed_ecas.run),
+    ("4/6  ECA valores matriciales (Tabla N°1)",    seed_ecas_matriciales.run),
+    ("5/6  Puntos de muestreo (12)",                seed_puntos.run),
+    ("6/6  Taxonomia fitoplancton (~70)",           seed_taxonomia_fitoplancton.run),
 ]
 
 # Verificacion final: tabla -> cantidad esperada
@@ -44,6 +46,7 @@ TOTALES_ESPERADOS: dict[str, int] = {
     "ecas":                       6,
     "eca_valores_matriciales":  112,  # 2 ECAs × 7 T × 8 pH (Tabla N°1)
     "puntos_muestreo":           12,
+    "taxonomia_fitoplancton":    60,  # ~70 taxones del método de conteo
 }
 
 

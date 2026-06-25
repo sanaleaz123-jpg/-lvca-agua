@@ -19,9 +19,11 @@ from services.fitoplancton_service import (
     ABREV_UNIDAD,
     CYANOBACTERIA_FILO,
     ICONOS_FILO,
+    METODO_SEDGEWICK_RAFTER,
+    METODO_UTERMOHL,
+    METODOS_CONTEO,
     OMS_FUENTE,
     OMS_FUENTE_2021,
-    TAXONOMIA_FITOPLANCTON,
     borrar_analisis_fitoplancton,
     calcular_y_agrupar_por_filo,
     evaluar_alerta_oms_2021,
@@ -35,6 +37,7 @@ from services.fitoplancton_service import (
     total_cel_ml_filo,
     total_unidades_ml_filo,
 )
+from services.taxonomia_fitoplancton_service import get_taxonomia
 
 
 def _render_historico_cianobacterias(muestra_id: str) -> None:
@@ -213,7 +216,9 @@ def _meta_key(muestra_id: str, campo: str) -> str:
     return f"fito_meta_{muestra_id[:8]}_{campo}"
 
 
-def _cargar_valores_iniciales(muestra_id: str, doc: dict | None) -> None:
+def _cargar_valores_iniciales(
+    muestra_id: str, doc: dict | None, taxonomia: dict[str, list[dict]]
+) -> None:
     """
     Hidrata session_state con los valores ya guardados (si existen) la primera
     vez que se renderiza el formulario para esta muestra. Streamlit conserva
@@ -225,6 +230,9 @@ def _cargar_valores_iniciales(muestra_id: str, doc: dict | None) -> None:
     st.session_state[flag] = True
 
     meta = (doc or {}).get("metadatos") or {}
+    st.session_state.setdefault(_meta_key(muestra_id, "metodo"),
+                                meta.get("metodo") or METODO_SEDGEWICK_RAFTER)
+    # Sedgewick-Rafter
     st.session_state.setdefault(_meta_key(muestra_id, "vol_muestra_ml"),
                                 float(meta.get("vol_muestra_ml") or 0.0))
     st.session_state.setdefault(_meta_key(muestra_id, "vol_concentrado_ml"),
@@ -233,9 +241,16 @@ def _cargar_valores_iniciales(muestra_id: str, doc: dict | None) -> None:
                                 float(meta.get("area_campo_mm2") or 1000.0))
     st.session_state.setdefault(_meta_key(muestra_id, "num_campos"),
                                 int(meta.get("num_campos") or 1))
+    # Utermöhl
+    st.session_state.setdefault(_meta_key(muestra_id, "vol_sedimentado_ml"),
+                                float(meta.get("vol_sedimentado_ml") or 0.0))
+    st.session_state.setdefault(_meta_key(muestra_id, "area_camara_mm2"),
+                                float(meta.get("area_camara_mm2") or 0.0))
+    st.session_state.setdefault(_meta_key(muestra_id, "area_contada_mm2"),
+                                float(meta.get("area_contada_mm2") or 0.0))
 
     resultados = (doc or {}).get("resultados") or {}
-    for filo, especies in TAXONOMIA_FITOPLANCTON.items():
+    for filo, especies in taxonomia.items():
         guardadas = resultados.get(filo) or {}
         for esp in especies:
             nombre = esp["nombre"]
@@ -258,12 +273,13 @@ def render_subseccion_fitoplancton(muestra_id: str, analista_id: str | None) -> 
       4. Botón Guardar → persiste JSONB en muestras.datos_fitoplancton.
     """
     doc_existente = get_analisis_fitoplancton(muestra_id)
-    _cargar_valores_iniciales(muestra_id, doc_existente)
+    taxonomia = get_taxonomia()
+    _cargar_valores_iniciales(muestra_id, doc_existente, taxonomia)
 
     st.markdown(
-        "**Fitoplancton — método Sedgewick-Rafter.** "
-        "Ingresa metadatos del recuento y conteo bruto por especie. "
-        "El sistema calcula densidad en cel/mL y cel/L."
+        "**Fitoplancton — análisis cuantitativo.** "
+        "Elige el método de conteo, ingresa sus metadatos y el conteo bruto por "
+        "especie. El sistema calcula densidad en cel/mL y cel/L."
     )
 
     if doc_existente:
@@ -282,62 +298,96 @@ def render_subseccion_fitoplancton(muestra_id: str, analista_id: str | None) -> 
     # Histórico del punto (independiente de tener análisis cargado en esta muestra).
     _render_historico_cianobacterias(muestra_id)
 
-    # ── 1. Metadatos del recuento ────────────────────────────────────────────
-    st.markdown("###### Metadatos del recuento")
-    c1, c2, c3, c4 = st.columns(4)
-    vol_muestra = c1.number_input(
-        "Volumen muestra (mL)",
-        min_value=0.0,
-        step=1.0,
-        format="%.2f",
-        key=_meta_key(muestra_id, "vol_muestra_ml"),
-        help="Volumen inicial de agua recolectada.",
-    )
-    vol_concentrado = c2.number_input(
-        "Volumen concentrado (mL)",
-        min_value=0.0,
-        step=0.1,
-        format="%.2f",
-        key=_meta_key(muestra_id, "vol_concentrado_ml"),
-        help="Volumen al que se redujo la muestra.",
-    )
-    area_campo = c3.number_input(
-        "Área del campo (mm²)",
-        min_value=0.0,
-        step=10.0,
-        format="%.2f",
-        key=_meta_key(muestra_id, "area_campo_mm2"),
-        help="Área de la cuadrícula. Usa 1000 si se leyó toda la cámara.",
-    )
-    num_campos = c4.number_input(
-        "Número de campos leídos",
-        min_value=0,
-        step=1,
-        key=_meta_key(muestra_id, "num_campos"),
-        help="Cantidad de campos revisados. Usa 1 si se leyó toda la cámara.",
+    # ── 1. Método de conteo + metadatos del recuento ─────────────────────────
+    st.markdown("###### Método de conteo")
+    metodo = st.radio(
+        "Método de análisis",
+        options=[METODO_SEDGEWICK_RAFTER, METODO_UTERMOHL],
+        format_func=lambda m: METODOS_CONTEO.get(m, m),
+        horizontal=True,
+        key=_meta_key(muestra_id, "metodo"),
+        label_visibility="collapsed",
     )
 
-    # Validación temprana Vc <= Vs (avisa antes de pulsar Calcular).
-    if vol_concentrado > 0 and vol_muestra > 0 and vol_concentrado > vol_muestra:
-        st.error(
-            f"El volumen concentrado ({vol_concentrado:g} mL) no puede ser mayor "
-            f"que el volumen original de muestra ({vol_muestra:g} mL). "
-            "Si la muestra no se concentró, usa el mismo valor en ambos.",
-            icon=":material/error:",
+    st.markdown("###### Metadatos del recuento")
+    # Defaults inicializados por cada método (no se usan los del otro método).
+    vol_muestra = vol_concentrado = area_campo = 0.0
+    num_campos = 0
+    vol_sedimentado = area_camara = area_contada = 0.0
+
+    if metodo == METODO_UTERMOHL:
+        u1, u2, u3 = st.columns(3)
+        vol_sedimentado = u1.number_input(
+            "Volumen sedimentado (mL)",
+            min_value=0.0, step=1.0, format="%.2f",
+            key=_meta_key(muestra_id, "vol_sedimentado_ml"),
+            help="Volumen de muestra sedimentada en la cámara (V_sed).",
         )
+        area_camara = u2.number_input(
+            "Área de la cámara (mm²)",
+            min_value=0.0, step=10.0, format="%.2f",
+            key=_meta_key(muestra_id, "area_camara_mm2"),
+            help="Área total del fondo de la cámara de sedimentación (A_cámara).",
+        )
+        area_contada = u3.number_input(
+            "Área contada (mm²)",
+            min_value=0.0, step=1.0, format="%.2f",
+            key=_meta_key(muestra_id, "area_contada_mm2"),
+            help="Área efectivamente contada: suma de transectos o campos (A_contada).",
+        )
+        if area_contada > 0 and area_camara > 0 and area_contada > area_camara:
+            st.error(
+                f"El área contada ({area_contada:g} mm²) no puede ser mayor que "
+                f"el área de la cámara ({area_camara:g} mm²).",
+                icon=":material/error:",
+            )
+    else:
+        c1, c2, c3, c4 = st.columns(4)
+        vol_muestra = c1.number_input(
+            "Volumen muestra (mL)",
+            min_value=0.0, step=1.0, format="%.2f",
+            key=_meta_key(muestra_id, "vol_muestra_ml"),
+            help="Volumen inicial de agua recolectada.",
+        )
+        vol_concentrado = c2.number_input(
+            "Volumen concentrado (mL)",
+            min_value=0.0, step=0.1, format="%.2f",
+            key=_meta_key(muestra_id, "vol_concentrado_ml"),
+            help="Volumen al que se redujo la muestra.",
+        )
+        area_campo = c3.number_input(
+            "Área del campo (mm²)",
+            min_value=0.0, step=10.0, format="%.2f",
+            key=_meta_key(muestra_id, "area_campo_mm2"),
+            help="Área de la cuadrícula. Usa 1000 si se leyó toda la cámara.",
+        )
+        num_campos = c4.number_input(
+            "Número de campos leídos",
+            min_value=0, step=1,
+            key=_meta_key(muestra_id, "num_campos"),
+            help="Cantidad de campos revisados. Usa 1 si se leyó toda la cámara.",
+        )
+        # Validación temprana Vc <= Vs (avisa antes de pulsar Calcular).
+        if vol_concentrado > 0 and vol_muestra > 0 and vol_concentrado > vol_muestra:
+            st.error(
+                f"El volumen concentrado ({vol_concentrado:g} mL) no puede ser mayor "
+                f"que el volumen original de muestra ({vol_muestra:g} mL). "
+                "Si la muestra no se concentró, usa el mismo valor en ambos.",
+                icon=":material/error:",
+            )
 
     st.divider()
 
     # ── 2. Conteos por filo (tabs) ───────────────────────────────────────────
     st.markdown("###### Conteo bruto por filo")
 
-    filos = list(TAXONOMIA_FITOPLANCTON.keys())
+    filos = list(taxonomia.keys())
     tabs = st.tabs([f":material/{ICONOS_FILO.get(f,'biotech')}: {f}" for f in filos])
 
     conteos_por_filo: dict[str, dict[str, int]] = {}
     for tab_widget, filo in zip(tabs, filos):
         with tab_widget:
-            especies = TAXONOMIA_FITOPLANCTON[filo]
+            especies = taxonomia[filo]
             unidades_distintas = sorted({e["unidad"] for e in especies})
             st.caption(
                 f"{len(especies)} especies — registra 0 si no hay hallazgos. "
@@ -400,6 +450,10 @@ def render_subseccion_fitoplancton(muestra_id: str, analista_id: str | None) -> 
                 vol_concentrado_ml=float(vol_concentrado),
                 area_campo_mm2=float(area_campo),
                 num_campos=int(num_campos),
+                metodo=metodo,
+                vol_sedimentado_ml=float(vol_sedimentado),
+                area_camara_mm2=float(area_camara),
+                area_contada_mm2=float(area_contada),
             )
         except ValueError as exc:
             st.error(str(exc), icon=":material/error:")
@@ -461,6 +515,10 @@ def render_subseccion_fitoplancton(muestra_id: str, analista_id: str | None) -> 
                     num_campos=int(num_campos),
                     resultados_por_filo=resultados,
                     analista_id=analista_id,
+                    metodo=metodo,
+                    vol_sedimentado_ml=float(vol_sedimentado),
+                    area_camara_mm2=float(area_camara),
+                    area_contada_mm2=float(area_contada),
                 )
                 success_check_overlay("Análisis de fitoplancton guardado")
                 st.rerun()

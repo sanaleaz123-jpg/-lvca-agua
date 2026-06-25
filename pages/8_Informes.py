@@ -33,9 +33,10 @@ from services.informe_service import (
     generar_excel_punto,
     generar_pdf_campana,
 )
-from services.reporte_hidrobiologico_service import (
-    generar_docx_hidrobiologico_campana,
-    tiene_analisis_hidrobiologico,
+from services.reporte_hidrobiologico_service import tiene_analisis_hidrobiologico
+from services.reporte_fitoplancton_service import (
+    generar_docx_fitoplancton_campana,
+    DEFAULTS as FITO_DEFAULTS,
 )
 from services.microcistina_service import tiene_resultados_microcistina
 from services.reporte_microcistina_service import (
@@ -235,7 +236,7 @@ def _render_informe_campana() -> None:
     section_header("Descargas", "download")
 
     hay_hidrobio = tiene_analisis_hidrobiologico(campana_id)
-    cols_descarga = st.columns(3 if hay_hidrobio else 2)
+    cols_descarga = st.columns(2)
 
     with cols_descarga[0]:
         try:
@@ -265,35 +266,65 @@ def _render_informe_campana() -> None:
         except Exception as exc:
             st.error(f"Error generando PDF: {exc}")
 
-    if hay_hidrobio:
-        with cols_descarga[2]:
+    # ── Reporte de Ensayo — Fitoplancton ─────────────────────────────────
+    st.divider()
+    section_header("Reporte de Ensayo — Fitoplancton", "biotech")
+
+    if not hay_hidrobio:
+        st.caption(
+            ":material/info: El *Reporte de Ensayo de fitoplancton* se habilita "
+            "cuando al menos una muestra de la campaña tenga el análisis de "
+            "fitoplancton cargado en *Resultados de laboratorio → Hidrobiológico*."
+        )
+    else:
+        with st.form("form_reporte_fito"):
+            st.caption(
+                "Datos del encabezado (editables). El código de reporte, los "
+                "puntos, los resultados (cel/mL), los parámetros comunitarios y el "
+                "control de calidad se toman de la base de datos."
+            )
+            fc1, fc2 = st.columns(2)
+            with fc1:
+                fito_solicitado = st.text_input("Solicitado por", value=FITO_DEFAULTS["solicitado_por"])
+                fito_proyecto = st.text_input("Proyecto", value=campana.get("nombre", "") or FITO_DEFAULTS["proyecto"])
+                fito_procedencia = st.text_input("Procedencia", value="", placeholder="(se deriva de los puntos)")
+                fito_muestreado = st.text_input("Muestreado por", value=FITO_DEFAULTS["muestreado_por"])
+            with fc2:
+                fito_condicion = st.text_input("Condición de conservación", value=FITO_DEFAULTS["condicion"])
+                fito_frecep = st.date_input("Fecha de recepción", value=None, format="DD/MM/YYYY")
+                fito_fensayo = st.date_input("Fecha de ensayo", value=None, format="DD/MM/YYYY")
+                fito_femis = st.date_input("Fecha de emisión", value=None, format="DD/MM/YYYY")
+            fito_generar = st.form_submit_button(
+                "Generar reporte Word", use_container_width=True,
+                icon=":material/description:",
+            )
+        if fito_generar:
+            overrides = {
+                "solicitado_por": fito_solicitado,
+                "proyecto": fito_proyecto,
+                "procedencia": fito_procedencia,
+                "muestreado_por": fito_muestreado,
+                "condicion": fito_condicion,
+                "fecha_recepcion": fito_frecep.isoformat() if fito_frecep else None,
+                "fecha_ensayo": fito_fensayo.isoformat() if fito_fensayo else None,
+                "fecha_emision": fito_femis.isoformat() if fito_femis else None,
+            }
+            overrides = {k: v for k, v in overrides.items() if v}
             try:
-                docx_bytes = generar_docx_hidrobiologico_campana(campana_id)
+                docx_bytes = generar_docx_fitoplancton_campana(campana_id, overrides)
                 st.download_button(
-                    label="Descargar datos hidrobiológicos",
+                    label="Descargar Reporte de Ensayo (.docx)",
                     data=docx_bytes,
-                    file_name=f"hidrobiologia_{campana['codigo']}.docx",
+                    file_name=f"Reporte_Fitoplancton_{campana['codigo']}.docx",
                     mime=(
                         "application/vnd.openxmlformats-officedocument."
                         "wordprocessingml.document"
                     ),
                     use_container_width=True,
-                    icon=":material/biotech:",
-                    help=(
-                        "Tabla de abundancia de fitoplancton por punto, "
-                        "con conteos por especie y resumen TOTAL / N° Cel/mL / "
-                        "N° Cel/L por phylum."
-                    ),
+                    icon=":material/download:",
                 )
             except Exception as exc:
-                st.error(f"Error generando reporte hidrobiológico: {exc}")
-    else:
-        st.caption(
-            ":material/info: La descarga *Datos hidrobiológicos* se habilita "
-            "cuando al menos una muestra de la campaña tenga el análisis de "
-            "fitoplancton (Sedgewick-Rafter) cargado en *Resultados de "
-            "laboratorio → Hidrobiológico*."
-        )
+                st.error(f"Error generando el reporte de fitoplancton: {exc}")
 
     # ── Reporte de Ensayo — Microcistina ─────────────────────────────────
     st.divider()

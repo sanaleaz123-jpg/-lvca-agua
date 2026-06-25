@@ -66,6 +66,11 @@ SMTP_PORT: int     = int(_optional("SMTP_PORT", "587"))
 SMTP_USER: str     = _optional("SMTP_USER")
 SMTP_PASSWORD: str = _optional("SMTP_PASSWORD")
 
+# ── Taxonomía / AlgaeBase ──────────────────────────────────────────────────────
+# Clave de la API de AlgaeBase (https://api.algaebase.org). Opcional: si está
+# vacía, la verificación taxonómica usa GBIF (api.gbif.org) como respaldo libre.
+ALGAEBASE_API_KEY: str = _optional("ALGAEBASE_API_KEY")
+
 # ── App ───────────────────────────────────────────────────────────────────────
 APP_ENV: str = _optional("APP_ENV", "production")
 IS_DEV: bool = APP_ENV == "development"

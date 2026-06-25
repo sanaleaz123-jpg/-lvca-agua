@@ -181,9 +181,25 @@ ABREV_UNIDAD: dict[str, str] = {
 }
 
 
+def _taxonomia_actual() -> dict[str, list[dict]]:
+    """
+    Taxonomía vigente: catálogo en BD (taxonomia_fitoplancton) si está
+    disponible, con la constante ``TAXONOMIA_FITOPLANCTON`` como fallback.
+    Import diferido para evitar el ciclo con taxonomia_fitoplancton_service.
+    """
+    try:
+        from services.taxonomia_fitoplancton_service import get_taxonomia
+        tax = get_taxonomia()
+        if tax:
+            return tax
+    except Exception:
+        pass
+    return TAXONOMIA_FITOPLANCTON
+
+
 def get_especies_filo(filo: str) -> list[dict]:
     """Devuelve la lista de especies (dicts) de un filo, vacía si no existe."""
-    return TAXONOMIA_FITOPLANCTON.get(filo, [])
+    return _taxonomia_actual().get(filo, [])
 
 
 def get_metadata_especie(filo: str, nombre_especie: str) -> dict | None:
@@ -292,12 +308,80 @@ def calcular_densidad_sedgewick_rafter(
     return resultados
 
 
+METODO_SEDGEWICK_RAFTER: str = "sedgewick_rafter"
+METODO_UTERMOHL: str = "utermohl"
+
+# Etiquetas legibles del método para la UI y el reporte.
+METODOS_CONTEO: dict[str, str] = {
+    METODO_SEDGEWICK_RAFTER: "Sedgewick-Rafter (APHA 10200 F)",
+    METODO_UTERMOHL:         "Utermöhl / cámara de sedimentación (APHA 10200 F)",
+}
+
+
+def calcular_densidad_utermohl(
+    conteos_brutos:     dict[str, int],
+    vol_sedimentado_ml: float,
+    area_camara_mm2:    float,
+    area_contada_mm2:   float,
+) -> dict[str, dict[str, float | int]]:
+    """
+    Densidad de fitoplancton (cel/mL, cel/L) por el método Utermöhl (cámara de
+    sedimentación + microscopio invertido), APHA Standard Methods 10200 F.
+
+    Fórmula:
+
+                     C × A_cámara
+        cel/mL  =  ─────────────────
+                   A_contada × V_sed
+
+        cel/L   =  cel/mL × 1000
+
+    Variables:
+        C          conteo bruto de la especie (unidades)        → conteos_brutos[especie]
+        A_cámara   área total del fondo de la cámara (mm²)       → area_camara_mm2
+        A_contada  área efectivamente contada (mm²): suma de
+                   transectos o de campos contados               → area_contada_mm2
+        V_sed      volumen de muestra sedimentada en la cámara (mL) → vol_sedimentado_ml
+
+    Retorna {especie: {"conteo_bruto", "cel_ml", "cel_l"}} sólo para conteo > 0.
+
+    Lanza ValueError si V_sed, A_contada o A_cámara son cero, o si el área
+    contada supera el área de la cámara (dato mal capturado).
+    """
+    if vol_sedimentado_ml == 0 or area_camara_mm2 == 0 or area_contada_mm2 == 0:
+        raise ValueError(
+            "El volumen sedimentado (V_sed), el área de la cámara (A_cámara) y "
+            "el área contada (A_contada) no pueden ser cero."
+        )
+    if area_contada_mm2 > area_camara_mm2:
+        raise ValueError(
+            f"El área contada (A_contada={area_contada_mm2} mm²) no puede ser "
+            f"mayor que el área de la cámara (A_cámara={area_camara_mm2} mm²)."
+        )
+
+    resultados: dict[str, dict[str, float | int]] = {}
+    for especie, conteo in conteos_brutos.items():
+        if conteo > 0:
+            cel_ml = (conteo * area_camara_mm2) / (area_contada_mm2 * vol_sedimentado_ml)
+            resultados[especie] = {
+                "conteo_bruto": int(conteo),
+                "cel_ml": round(cel_ml, 4),
+                "cel_l": round(cel_ml * 1000.0, 4),
+            }
+    return resultados
+
+
 def calcular_y_agrupar_por_filo(
     conteos_por_filo:   dict[str, dict[str, int]],
-    vol_muestra_ml:     float,
-    vol_concentrado_ml: float,
-    area_campo_mm2:     float,
-    num_campos:         int,
+    vol_muestra_ml:     float = 0.0,
+    vol_concentrado_ml: float = 0.0,
+    area_campo_mm2:     float = 0.0,
+    num_campos:         int = 0,
+    *,
+    metodo:             str = METODO_SEDGEWICK_RAFTER,
+    vol_sedimentado_ml: float = 0.0,
+    area_camara_mm2:    float = 0.0,
+    area_contada_mm2:   float = 0.0,
 ) -> dict[str, dict[str, dict[str, float | int | str]]]:
     """
     Calcula densidad y biovolumen por especie y agrupa por filo.
@@ -322,13 +406,21 @@ def calcular_y_agrupar_por_filo(
     salida: dict[str, dict[str, dict[str, float | int | str]]] = {}
     for filo, especies in conteos_por_filo.items():
         # Densidad bruta en unidades/mL (la fórmula APHA es ortogonal a la unidad).
-        densidades = calcular_densidad_sedgewick_rafter(
-            conteos_brutos=especies,
-            vol_muestra_ml=vol_muestra_ml,
-            vol_concentrado_ml=vol_concentrado_ml,
-            area_campo_mm2=area_campo_mm2,
-            num_campos=num_campos,
-        )
+        if metodo == METODO_UTERMOHL:
+            densidades = calcular_densidad_utermohl(
+                conteos_brutos=especies,
+                vol_sedimentado_ml=vol_sedimentado_ml,
+                area_camara_mm2=area_camara_mm2,
+                area_contada_mm2=area_contada_mm2,
+            )
+        else:
+            densidades = calcular_densidad_sedgewick_rafter(
+                conteos_brutos=especies,
+                vol_muestra_ml=vol_muestra_ml,
+                vol_concentrado_ml=vol_concentrado_ml,
+                area_campo_mm2=area_campo_mm2,
+                num_campos=num_campos,
+            )
         if not densidades:
             continue
 
@@ -832,12 +924,19 @@ def guardar_analisis_fitoplancton(
     num_campos:         int,
     resultados_por_filo: dict[str, dict[str, dict[str, float | int]]],
     analista_id:        Optional[str] = None,
+    *,
+    metodo:             str = METODO_SEDGEWICK_RAFTER,
+    vol_sedimentado_ml: float = 0.0,
+    area_camara_mm2:    float = 0.0,
+    area_contada_mm2:   float = 0.0,
 ) -> None:
     """
     Persiste el análisis de fitoplancton:
 
       - Documento JSONB con metadatos + detalle por especie en
-        muestras.datos_fitoplancton (es la fuente de verdad).
+        muestras.datos_fitoplancton (es la fuente de verdad). Los metadatos
+        incluyen ``metodo`` ("sedgewick_rafter" | "utermohl") y los parámetros
+        propios de cada método para la sección de Control de Calidad del reporte.
       - 10 filas agregadas en resultados_laboratorio (8 phyla en cel/mL,
         Cyanobacteria en biovolumen mm³/L y Fitoplancton total en cel/mL)
         para que los phyla aparezcan como parámetros normales en informes
@@ -845,10 +944,16 @@ def guardar_analisis_fitoplancton(
     """
     documento = {
         "metadatos": {
+            "metodo":             metodo,
+            # Parámetros Sedgewick-Rafter.
             "vol_muestra_ml":     vol_muestra_ml,
             "vol_concentrado_ml": vol_concentrado_ml,
             "area_campo_mm2":     area_campo_mm2,
             "num_campos":         num_campos,
+            # Parámetros Utermöhl (0 si el método es Sedgewick-Rafter).
+            "vol_sedimentado_ml": vol_sedimentado_ml,
+            "area_camara_mm2":    area_camara_mm2,
+            "area_contada_mm2":   area_contada_mm2,
             "fecha_analisis":     datetime.utcnow().date().isoformat(),
             "analista_id":        analista_id,
         },

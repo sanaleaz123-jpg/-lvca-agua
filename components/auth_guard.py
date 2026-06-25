@@ -50,6 +50,7 @@ _PAGINAS_NAV = [
     ("Geoportal",           "pages/7_Geoportal.py",         "visitante",     "visualizacion"),
     ("Parámetros / ECAs",   "pages/5_Parametros.py",        "administrador", "config"),
     ("Puntos de muestreo",  "pages/6_Puntos_Muestreo.py",   "administrador", "config"),
+    ("Catálogo fitoplancton","pages/11_Catalogo_Fitoplancton.py", "administrador", "config"),
     ("Administración",      "pages/9_Administracion.py",    "administrador", "config"),
 ]
 

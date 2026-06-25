@@ -32,7 +32,7 @@ from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
 
 from database.client import get_db
-from services.fitoplancton_service import TAXONOMIA_FITOPLANCTON
+from services.taxonomia_fitoplancton_service import get_taxonomia
 
 
 # Phyla con <= UMBRAL_PHYLA_SIN_FILTRAR especies en la taxonomía muestran todas
@@ -187,7 +187,8 @@ def _construir_matrices(
     conteos: dict[str, dict[str, list[int]]] = {}
     agregados: dict[str, list[dict[str, float]]] = {}
 
-    for filo, especies_def in TAXONOMIA_FITOPLANCTON.items():
+    taxonomia = get_taxonomia()
+    for filo, especies_def in taxonomia.items():
         conteos[filo] = {e["nombre"]: [0] * n for e in especies_def}
         agregados[filo] = [{"total": 0, "cel_ml": 0.0} for _ in range(n)]
 
@@ -223,7 +224,7 @@ def _especies_visibles_por_phylum(
       - Phyla con > UMBRAL especies: sólo las con conteo > 0 en >=1 punto.
     """
     visibles: dict[str, list[str]] = {}
-    for filo, especies_def in TAXONOMIA_FITOPLANCTON.items():
+    for filo, especies_def in get_taxonomia().items():
         nombres = [e["nombre"] for e in especies_def]
         if len(nombres) <= UMBRAL_PHYLA_SIN_FILTRAR:
             visibles[filo] = nombres
@@ -337,7 +338,7 @@ def generar_docx_hidrobiologico_campana(campana_id: str) -> bytes:
     color_phylum_bg = "DCE6F1"   # azul clarito para la columna phylum
     color_resumen_bg = "F2F2F2"  # gris para filas TOTAL/Cel/mL/Cel/L
 
-    for filo, especies_def in TAXONOMIA_FITOPLANCTON.items():
+    for filo, especies_def in get_taxonomia().items():
         especies_a_mostrar = visibles.get(filo, [])
         # Phyla con > UMBRAL y sin especies visibles ni totales: omitir bloque entero.
         total_phylum = sum(a["total"] for a in agregados[filo])

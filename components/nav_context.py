@@ -49,6 +49,7 @@ PAGINAS: dict[str, str] = {
     "informes":   "pages/8_Informes.py",
     "admin":      "pages/9_Administracion.py",
     "base_datos": "pages/10_Base_Datos.py",
+    "catalogo_fito": "pages/11_Catalogo_Fitoplancton.py",
 }
 
 
