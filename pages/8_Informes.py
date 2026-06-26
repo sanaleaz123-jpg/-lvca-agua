@@ -268,7 +268,7 @@ def _render_informe_campana() -> None:
 
     # ── Reporte de Ensayo — Fitoplancton ─────────────────────────────────
     st.divider()
-    section_header("Reporte de Ensayo — Fitoplancton", "biotech")
+    section_header("Generar informe de fitoplancton", "microscope")
 
     if not hay_hidrobio:
         st.caption(
@@ -328,7 +328,7 @@ def _render_informe_campana() -> None:
 
     # ── Reporte de Ensayo — Microcistina ─────────────────────────────────
     st.divider()
-    section_header("Reporte de Ensayo — Microcistina", "science")
+    section_header("Generar informe de microcistina (ELISA)", "test_tube")
 
     if not tiene_resultados_microcistina(campana_id):
         st.caption(
