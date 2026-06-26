@@ -26,10 +26,13 @@ from typing import Optional
 from database.client import get_db
 from services.cache import cached
 from services.audit_service import registrar_cambio
+from services.logging_config import get_logger
 from services.parametro_registry import (
     get_parametros_insitu,
     get_campo_a_parametro_map,
 )
+
+logger = get_logger(__name__)
 
 # Etiquetas de profundidad
 PROFUNDIDAD_LABELS = {"S": "Superficie", "M": "Medio", "F": "Fondo"}
@@ -42,7 +45,8 @@ def _invalidar_cache() -> None:
         from services.cache import invalidate_operational
         invalidate_operational()
     except Exception:
-        pass
+        logger.warning("No se pudo invalidar el caché tras modificar muestras/mediciones "
+                       "(posibles datos obsoletos hasta el próximo TTL).", exc_info=True)
 
 
 # Cache del schema-probing: {columna: (existe, timestamp)}. Evita un

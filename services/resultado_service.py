@@ -22,6 +22,9 @@ from typing import Optional
 from database.client import get_db
 from services.cache import cached
 from services.audit_service import registrar_cambio
+from services.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 def _invalidar_cache() -> None:
@@ -30,7 +33,8 @@ def _invalidar_cache() -> None:
         from services.cache import invalidate_operational
         invalidate_operational()
     except Exception:
-        pass
+        logger.warning("No se pudo invalidar el caché tras modificar un resultado "
+                       "(posibles datos obsoletos hasta el próximo TTL).", exc_info=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

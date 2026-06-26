@@ -19,6 +19,9 @@ from typing import Optional
 
 from database.client import get_admin_client
 from services.auth_service import Rol
+from services.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 ROLES: list[Rol] = ["administrador", "analista_lab", "tecnico_campo", "visualizador", "visitante"]
@@ -35,7 +38,9 @@ def _invalidar_cache_usuarios() -> None:
         from services.cache import invalidate_all
         invalidate_all()
     except Exception:
-        pass
+        logger.warning("No se pudo invalidar el caché tras modificar usuarios "
+                       "(los selectores pueden quedar obsoletos hasta el próximo TTL).",
+                       exc_info=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

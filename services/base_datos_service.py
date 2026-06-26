@@ -16,10 +16,13 @@ from typing import Optional
 from database.client import get_db
 from services.audit_service import registrar_cambio
 from services.cache import cached
+from services.logging_config import get_logger
 from services.parametro_registry import (
     get_columnas_parametros,
     get_codigos_parametros,
 )
+
+logger = get_logger(__name__)
 
 
 # Accesores dinámicos — se leen desde la BD (cacheados).
@@ -320,4 +323,5 @@ def _invalidar_cache() -> None:
         from services.cache import invalidate_operational
         invalidate_operational()
     except Exception:
-        pass
+        logger.warning("No se pudo invalidar el caché tras editar un resultado "
+                       "(posibles datos obsoletos hasta el próximo TTL).", exc_info=True)
