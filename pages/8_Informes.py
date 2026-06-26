@@ -43,9 +43,17 @@ from services.reporte_microcistina_service import (
     generar_docx_microcistina_campana,
     DEFAULTS as MC_DEFAULTS,
 )
-from services.resultado_service import get_campanas
+from services.resultado_service import get_campanas, _get_usuario_interno_id
 from services.punto_service import get_puntos
 from services.cumplimiento_service import EstadoECA
+from services.contactos_service import get_contactos, crear_contacto, correo_valido
+from services.email_service import (
+    smtp_configurado,
+    enviar_correo,
+    enviar_correo_prueba,
+    registrar_envio,
+    get_envios,
+)
 
 
 # Paleta de veredictos — fuente única en components.ui_styles, compartida
@@ -56,6 +64,273 @@ _CHIP_ESTADOS: dict[str, dict] = ECA_CHIP_STYLES
 
 def _chip_estado_html(estado: str, motivo: str = "") -> str:
     return chip_eca_html(estado, motivo=motivo)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Centro de informes — generación cacheada + tarjetas + envío por correo
+# ─────────────────────────────────────────────────────────────────────────────
+
+_MIME_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+_MIME_PDF = "application/pdf"
+_MIME_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+# Generación cacheada (evita re-generar en cada interacción de la página).
+# Se limpia con el botón "Actualizar". Los .docx se cachean por overrides.
+@st.cache_data(ttl=600, show_spinner=False)
+def _gen_excel(cid: str) -> bytes:
+    return generar_excel_campana(cid)
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _gen_pdf(cid: str) -> bytes:
+    return generar_pdf_campana(cid)
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _gen_fito(cid: str, ov_items: tuple) -> bytes:
+    return generar_docx_fitoplancton_campana(cid, dict(ov_items))
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _gen_micro(cid: str, ov_items: tuple) -> bytes:
+    return generar_docx_microcistina_campana(cid, dict(ov_items))
+
+
+def _limpiar_cache_generacion() -> None:
+    for fn in (_gen_excel, _gen_pdf, _gen_fito, _gen_micro):
+        try:
+            fn.clear()
+        except Exception:
+            pass
+
+
+def _render_opciones_encabezado(campana, hay_hidrobio, hay_micro):
+    """Expander colapsado con los campos editables del encabezado de los
+    Reportes de Ensayo. Devuelve (overrides_fito, overrides_micro)."""
+    ov_fito: dict = {}
+    ov_micro: dict = {}
+    if not (hay_hidrobio or hay_micro):
+        return ov_fito, ov_micro
+
+    with st.expander("Personalizar encabezado de los Reportes de Ensayo", icon=":material/tune:"):
+        st.caption(
+            "Opcional. Si lo dejas vacío se usan los valores por defecto y los "
+            "datos de la campaña. Aplica a los Reportes de Ensayo (.docx)."
+        )
+        if hay_hidrobio:
+            st.markdown("**Fitoplancton**")
+            a, b = st.columns(2)
+            ov_fito = {
+                "solicitado_por": a.text_input("Solicitado por", value=FITO_DEFAULTS["solicitado_por"], key="fito_ov_sol"),
+                "proyecto": a.text_input("Proyecto", value=campana.get("nombre", "") or FITO_DEFAULTS["proyecto"], key="fito_ov_proy"),
+                "procedencia": a.text_input("Procedencia", value="", placeholder="(se deriva de los puntos)", key="fito_ov_proc"),
+                "muestreado_por": b.text_input("Muestreado por", value=FITO_DEFAULTS["muestreado_por"], key="fito_ov_mues"),
+                "condicion": b.text_input("Condición de conservación", value=FITO_DEFAULTS["condicion"], key="fito_ov_cond"),
+            }
+            fr = b.date_input("Fecha de emisión", value=None, format="DD/MM/YYYY", key="fito_ov_femis")
+            ov_fito["fecha_emision"] = fr.isoformat() if fr else None
+            ov_fito = {k: v for k, v in ov_fito.items() if v}
+        if hay_micro:
+            if hay_hidrobio:
+                st.divider()
+            st.markdown("**Microcistina (ELISA)**")
+            a, b = st.columns(2)
+            ov_micro = {
+                "solicitado_por": a.text_input("Solicitado por", value=MC_DEFAULTS["solicitado_por"], key="mc_ov_sol"),
+                "proyecto": a.text_input("Proyecto", value=campana.get("nombre", ""), key="mc_ov_proy"),
+                "procedencia": a.text_input("Procedencia", value="", placeholder="(se deriva de los puntos)", key="mc_ov_proc"),
+                "tipo_muestra": b.text_input("Tipo de muestra", value=MC_DEFAULTS["tipo_muestra"], key="mc_ov_tipo"),
+                "muestreado_por": b.text_input("Muestreado por", value=MC_DEFAULTS["muestreado_por"], key="mc_ov_mues"),
+            }
+            ov_micro = {k: v for k, v in ov_micro.items() if v}
+    return ov_fito, ov_micro
+
+
+def _catalogo_reportes(campana, campana_id, hay_hidrobio, hay_micro, ov_fito, ov_micro):
+    """Lista de reportes con disponibilidad y generador (cacheado)."""
+    cod = campana["codigo"]
+    fito_items = tuple(sorted(ov_fito.items()))
+    micro_items = tuple(sorted(ov_micro.items()))
+    return [
+        {"key": "excel", "titulo": "Excel", "icono": "📊", "disp": True, "motivo": "",
+         "file": f"informe_{cod}.xlsx", "mime": _MIME_XLSX,
+         "gen": lambda: _gen_excel(campana_id)},
+        {"key": "pdf", "titulo": "PDF", "icono": "📄", "disp": True, "motivo": "",
+         "file": f"informe_{cod}.pdf", "mime": _MIME_PDF,
+         "gen": lambda: _gen_pdf(campana_id)},
+        {"key": "fito", "titulo": "Fitoplancton", "icono": "🔬", "disp": hay_hidrobio,
+         "motivo": "Carga un análisis en Resultados → Hidrobiológico",
+         "file": f"Reporte_Fitoplancton_{cod}.docx", "mime": _MIME_DOCX,
+         "gen": lambda: _gen_fito(campana_id, fito_items)},
+        {"key": "micro", "titulo": "Microcistina", "icono": "🧪", "disp": hay_micro,
+         "motivo": "Calcula una corrida ELISA en Microcistina (ELISA)",
+         "file": f"Reporte_Microcistina_{cod}.docx", "mime": _MIME_DOCX,
+         "gen": lambda: _gen_micro(campana_id, micro_items)},
+    ]
+
+
+def _render_tarjetas_informes(reportes) -> None:
+    """Fila de tarjetas, una por tipo de informe, con estado y descarga."""
+    cols = st.columns(len(reportes))
+    for col, r in zip(cols, reportes):
+        with col:
+            with st.container(border=True):
+                st.markdown(f"##### {r['icono']} {r['titulo']}")
+                if r["disp"]:
+                    st.caption(":material/check_circle: Disponible")
+                    try:
+                        data = r["gen"]()
+                        st.download_button(
+                            "Descargar", data=data, file_name=r["file"], mime=r["mime"],
+                            use_container_width=True, icon=":material/download:",
+                            key=f"dl_{r['key']}",
+                        )
+                    except Exception as exc:
+                        st.error(f"Error: {exc}")
+                else:
+                    st.caption(":material/block: No disponible")
+                    st.caption(r["motivo"])
+
+
+def _render_envio_correo(campana, campana_id, reportes) -> None:
+    """Panel de envío de informes por correo (libreta + adjuntos + mensaje)."""
+    section_header("Enviar informes por correo", "upload")
+
+    disponibles = [r for r in reportes if r["disp"]]
+    if not smtp_configurado():
+        st.warning(
+            "El servidor de correo aún no está configurado. Define `SMTP_HOST`, "
+            "`SMTP_PORT`, `SMTP_USER` y `SMTP_PASSWORD` (y `SMTP_TLS`/`SMTP_SSL`) "
+            "en el archivo `.env` o en los *secrets* de Streamlit para habilitar "
+            "el envío.",
+            icon=":material/mark_email_unread:",
+        )
+
+    # Libreta de contactos.
+    contactos = get_contactos()
+    labels = {f"{c['nombre']} — {c['correo']}"
+              + (f" ({c['entidad']})" if c.get("entidad") else ""): c["correo"]
+              for c in contactos}
+
+    sel = st.multiselect(
+        "Destinatarios (libreta de contactos)",
+        options=list(labels.keys()),
+        key=f"mail_sel_{campana_id}",
+        placeholder="Elige uno o más contactos guardados",
+    )
+    otros = st.text_input(
+        "Otros correos (separados por coma)",
+        key=f"mail_otros_{campana_id}",
+        placeholder="ej. persona@dominio.com, otra@dominio.com",
+    )
+
+    # Alta rápida de contacto a la libreta.
+    with st.expander("Agregar contacto a la libreta", icon=":material/person_add:"):
+        with st.form(f"form_nuevo_contacto_{campana_id}", clear_on_submit=True):
+            n1, n2, n3 = st.columns(3)
+            c_nom = n1.text_input("Nombre")
+            c_cor = n2.text_input("Correo")
+            c_ent = n3.text_input("Entidad", placeholder="(opcional)")
+            if st.form_submit_button("Guardar contacto", icon=":material/save:"):
+                try:
+                    crear_contacto(c_nom, c_cor, c_ent)
+                    st.success(f"Contacto «{c_nom}» agregado.")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(str(exc), icon=":material/error:")
+
+    # Adjuntos disponibles (casillas).
+    st.markdown("**Adjuntar:**")
+    ad_cols = st.columns(max(len(disponibles), 1))
+    seleccion_adj = {}
+    for i, r in enumerate(disponibles):
+        with ad_cols[i]:
+            seleccion_adj[r["key"]] = st.checkbox(
+                f"{r['icono']} {r['titulo']}", value=True,
+                key=f"adj_{r['key']}_{campana_id}",
+            )
+
+    # Asunto y cuerpo (automáticos y editables).
+    asunto_def = f"Informe LVCA — {campana['codigo']} ({campana.get('nombre', '')})"
+    cuerpo_def = (
+        "Estimados,\n\n"
+        f"Adjuntamos los informes correspondientes a la campaña "
+        f"{campana['codigo']} — {campana.get('nombre', '')}.\n\n"
+        "Saludos cordiales,\n"
+        "Laboratorio de Vigilancia de Calidad del Agua (LVCA) — AUTODEMA"
+    )
+    asunto = st.text_input("Asunto", value=asunto_def, key=f"mail_asunto_{campana_id}")
+    cuerpo = st.text_area("Mensaje", value=cuerpo_def, height=160, key=f"mail_cuerpo_{campana_id}")
+
+    b1, b2 = st.columns([2, 1])
+    enviar = b1.button(
+        "Enviar informes", type="primary", use_container_width=True,
+        icon=":material/send:", key=f"btn_enviar_{campana_id}",
+        disabled=not smtp_configurado(),
+    )
+    with b2:
+        with st.popover("Correo de prueba", use_container_width=True, disabled=not smtp_configurado()):
+            dest_prueba = st.text_input("Enviar prueba a", key=f"mail_prueba_{campana_id}")
+            if st.button("Enviar prueba", key=f"btn_prueba_{campana_id}"):
+                try:
+                    enviar_correo_prueba(dest_prueba)
+                    st.success("Correo de prueba enviado.")
+                except Exception as exc:
+                    st.error(str(exc), icon=":material/error:")
+
+    if enviar:
+        destinatarios = [labels[s] for s in sel]
+        destinatarios += [e.strip() for e in (otros or "").replace(";", ",").split(",") if e.strip()]
+        # Validación y deduplicado.
+        invalidos = [d for d in destinatarios if not correo_valido(d)]
+        destinatarios = list(dict.fromkeys(d for d in destinatarios if correo_valido(d)))
+        if invalidos:
+            st.error(f"Correos inválidos: {', '.join(invalidos)}", icon=":material/error:")
+        elif not destinatarios:
+            st.error("Elige al menos un destinatario.", icon=":material/error:")
+        else:
+            adjuntos = []
+            nombres_adj = []
+            try:
+                for r in disponibles:
+                    if seleccion_adj.get(r["key"]):
+                        adjuntos.append((r["file"], r["gen"](), r["mime"]))
+                        nombres_adj.append(r["file"])
+            except Exception as exc:
+                st.error(f"Error preparando adjuntos: {exc}", icon=":material/error:")
+                adjuntos = None
+            if adjuntos is not None:
+                if not adjuntos:
+                    st.error("Selecciona al menos un documento para adjuntar.", icon=":material/error:")
+                else:
+                    sesion = st.session_state.get("sesion")
+                    enviado_por = _get_usuario_interno_id(sesion.uid) if sesion else None
+                    try:
+                        with st.spinner("Enviando correo…"):
+                            enviar_correo(destinatarios, asunto, cuerpo, adjuntos)
+                        registrar_envio(campana_id, destinatarios, asunto, nombres_adj,
+                                        enviado_por, estado="enviado")
+                        st.success(
+                            f"Informes enviados a {len(destinatarios)} destinatario(s): "
+                            f"{', '.join(destinatarios)}.",
+                            icon=":material/mark_email_read:",
+                        )
+                    except Exception as exc:
+                        registrar_envio(campana_id, destinatarios, asunto, nombres_adj,
+                                        enviado_por, estado="error", error=str(exc))
+                        st.error(f"No se pudo enviar: {exc}", icon=":material/error:")
+
+    # Historial de envíos.
+    envios = get_envios(campana_id, limite=5)
+    if envios:
+        with st.expander(f"Últimos envíos ({len(envios)})", icon=":material/history:"):
+            for e in envios:
+                cuando = str(e.get("enviado_at", ""))[:16].replace("T", " ")
+                estado = e.get("estado", "")
+                icono = "✅" if estado == "enviado" else "⚠️"
+                st.caption(f"{icono} {cuando} → {e.get('destinatarios', '')} · "
+                           f"{e.get('adjuntos', '') or 'sin adjuntos'}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -108,6 +383,8 @@ def _render_informe_campana() -> None:
     cached_id = st.session_state.get("informe_campana_id")
     cached = st.session_state.get("informe_campana")
     if refresh or cached is None or cached_id != campana_id:
+        if refresh:
+            _limpiar_cache_generacion()
         with st.spinner("Cargando informe..."):
             try:
                 resumen = get_resumen_campana(campana_id)
@@ -231,160 +508,25 @@ def _render_informe_campana() -> None:
                 },
             )
 
-    # ── Descargas ────────────────────────────────────────────────────────
+    # ── Centro de informes (descargas + envío por correo) ─────────────────
     st.divider()
-    section_header("Descargas", "download")
+    section_header("Informes de la campaña", "file")
+    st.caption(
+        "Descarga cada informe con un clic o envíalos por correo. Personaliza el "
+        "encabezado de los Reportes de Ensayo en *opciones* si lo necesitas."
+    )
 
     hay_hidrobio = tiene_analisis_hidrobiologico(campana_id)
-    cols_descarga = st.columns(2)
+    hay_micro = tiene_resultados_microcistina(campana_id)
 
-    with cols_descarga[0]:
-        try:
-            excel_bytes = generar_excel_campana(campana_id)
-            st.download_button(
-                label="Descargar Excel",
-                data=excel_bytes,
-                file_name=f"informe_{campana['codigo']}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-                icon=":material/table_view:",
-            )
-        except Exception as exc:
-            st.error(f"Error generando Excel: {exc}")
+    ov_fito, ov_micro = _render_opciones_encabezado(campana, hay_hidrobio, hay_micro)
+    reportes = _catalogo_reportes(
+        campana, campana_id, hay_hidrobio, hay_micro, ov_fito, ov_micro,
+    )
+    _render_tarjetas_informes(reportes)
 
-    with cols_descarga[1]:
-        try:
-            pdf_bytes = generar_pdf_campana(campana_id)
-            st.download_button(
-                label="Descargar PDF",
-                data=pdf_bytes,
-                file_name=f"informe_{campana['codigo']}.pdf",
-                mime="application/pdf",
-                use_container_width=True,
-                icon=":material/picture_as_pdf:",
-            )
-        except Exception as exc:
-            st.error(f"Error generando PDF: {exc}")
-
-    # ── Reporte de Ensayo — Fitoplancton ─────────────────────────────────
     st.divider()
-    section_header("Generar informe de fitoplancton", "microscope")
-
-    if not hay_hidrobio:
-        st.caption(
-            ":material/info: El *Reporte de Ensayo de fitoplancton* se habilita "
-            "cuando al menos una muestra de la campaña tenga el análisis de "
-            "fitoplancton cargado en *Resultados de laboratorio → Hidrobiológico*."
-        )
-    else:
-        with st.form("form_reporte_fito"):
-            st.caption(
-                "Datos del encabezado (editables). El código de reporte, los "
-                "puntos, los resultados (cel/mL), los parámetros comunitarios y el "
-                "control de calidad se toman de la base de datos."
-            )
-            fc1, fc2 = st.columns(2)
-            with fc1:
-                fito_solicitado = st.text_input("Solicitado por", value=FITO_DEFAULTS["solicitado_por"])
-                fito_proyecto = st.text_input("Proyecto", value=campana.get("nombre", "") or FITO_DEFAULTS["proyecto"])
-                fito_procedencia = st.text_input("Procedencia", value="", placeholder="(se deriva de los puntos)")
-                fito_muestreado = st.text_input("Muestreado por", value=FITO_DEFAULTS["muestreado_por"])
-            with fc2:
-                fito_condicion = st.text_input("Condición de conservación", value=FITO_DEFAULTS["condicion"])
-                fito_frecep = st.date_input("Fecha de recepción", value=None, format="DD/MM/YYYY")
-                fito_fensayo = st.date_input("Fecha de ensayo", value=None, format="DD/MM/YYYY")
-                fito_femis = st.date_input("Fecha de emisión", value=None, format="DD/MM/YYYY")
-            fito_generar = st.form_submit_button(
-                "Generar reporte Word", use_container_width=True,
-                icon=":material/description:",
-            )
-        if fito_generar:
-            overrides = {
-                "solicitado_por": fito_solicitado,
-                "proyecto": fito_proyecto,
-                "procedencia": fito_procedencia,
-                "muestreado_por": fito_muestreado,
-                "condicion": fito_condicion,
-                "fecha_recepcion": fito_frecep.isoformat() if fito_frecep else None,
-                "fecha_ensayo": fito_fensayo.isoformat() if fito_fensayo else None,
-                "fecha_emision": fito_femis.isoformat() if fito_femis else None,
-            }
-            overrides = {k: v for k, v in overrides.items() if v}
-            try:
-                docx_bytes = generar_docx_fitoplancton_campana(campana_id, overrides)
-                st.download_button(
-                    label="Descargar Reporte de Ensayo (.docx)",
-                    data=docx_bytes,
-                    file_name=f"Reporte_Fitoplancton_{campana['codigo']}.docx",
-                    mime=(
-                        "application/vnd.openxmlformats-officedocument."
-                        "wordprocessingml.document"
-                    ),
-                    use_container_width=True,
-                    icon=":material/download:",
-                )
-            except Exception as exc:
-                st.error(f"Error generando el reporte de fitoplancton: {exc}")
-
-    # ── Reporte de Ensayo — Microcistina ─────────────────────────────────
-    st.divider()
-    section_header("Generar informe de microcistina (ELISA)", "test_tube")
-
-    if not tiene_resultados_microcistina(campana_id):
-        st.caption(
-            ":material/info: El *Reporte de Ensayo de microcistina* se habilita "
-            "cuando la campaña tenga una corrida ELISA calculada en la página "
-            "*Microcistina (ELISA)*."
-        )
-    else:
-        with st.form("form_reporte_mc"):
-            st.caption(
-                "Datos del encabezado (editables). El código de reporte, los "
-                "resultados, el control de calidad y las fechas se toman de la "
-                "corrida ELISA y de la base de datos."
-            )
-            fc1, fc2 = st.columns(2)
-            with fc1:
-                mc_solicitado = st.text_input("Solicitado por", value=MC_DEFAULTS["solicitado_por"])
-                mc_proyecto = st.text_input("Proyecto", value=campana.get("nombre", ""))
-                mc_procedencia = st.text_input("Procedencia", value="", placeholder="(se deriva de los puntos)")
-                mc_tipo = st.text_input("Tipo de muestra", value=MC_DEFAULTS["tipo_muestra"])
-            with fc2:
-                mc_muestreado = st.text_input("Muestreado por", value=MC_DEFAULTS["muestreado_por"])
-                mc_condicion = st.text_input("Condición de conservación", value=MC_DEFAULTS["condicion"])
-                mc_frecep = st.date_input("Fecha de recepción", value=None, format="DD/MM/YYYY")
-                mc_femis = st.date_input("Fecha de emisión", value=None, format="DD/MM/YYYY")
-            mc_generar = st.form_submit_button(
-                "Generar reporte Word", use_container_width=True,
-                icon=":material/description:",
-            )
-        if mc_generar:
-            overrides = {
-                "solicitado_por": mc_solicitado,
-                "proyecto": mc_proyecto,
-                "procedencia": mc_procedencia,
-                "tipo_muestra": mc_tipo,
-                "muestreado_por": mc_muestreado,
-                "condicion": mc_condicion,
-                "fecha_recepcion": mc_frecep.isoformat() if mc_frecep else None,
-                "fecha_emision": mc_femis.isoformat() if mc_femis else None,
-            }
-            overrides = {k: v for k, v in overrides.items() if v}
-            try:
-                docx_bytes = generar_docx_microcistina_campana(campana_id, overrides)
-                st.download_button(
-                    label="Descargar Reporte de Ensayo (.docx)",
-                    data=docx_bytes,
-                    file_name=f"Reporte_Microcistina_{campana['codigo']}.docx",
-                    mime=(
-                        "application/vnd.openxmlformats-officedocument."
-                        "wordprocessingml.document"
-                    ),
-                    use_container_width=True,
-                    icon=":material/download:",
-                )
-            except Exception as exc:
-                st.error(f"Error generando el reporte de microcistina: {exc}")
+    _render_envio_correo(campana, campana_id, reportes)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -65,6 +65,12 @@ SMTP_HOST: str     = _optional("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT: int     = int(_optional("SMTP_PORT", "587"))
 SMTP_USER: str     = _optional("SMTP_USER")
 SMTP_PASSWORD: str = _optional("SMTP_PASSWORD")
+# STARTTLS activado por defecto (puerto 587). Para SSL directo (puerto 465)
+# pon SMTP_SSL=1. Remitente visible: SMTP_FROM (default = SMTP_USER).
+SMTP_TLS: bool     = _optional("SMTP_TLS", "1").strip().lower() in ("1", "true", "yes")
+SMTP_SSL: bool     = _optional("SMTP_SSL", "0").strip().lower() in ("1", "true", "yes")
+SMTP_FROM: str     = _optional("SMTP_FROM") or SMTP_USER
+SMTP_FROM_NAME: str = _optional("SMTP_FROM_NAME", "LVCA - AUTODEMA")
 
 # ── Taxonomía / AlgaeBase ──────────────────────────────────────────────────────
 # Clave de la API de AlgaeBase (https://api.algaebase.org). Opcional: si está
