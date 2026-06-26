@@ -16,6 +16,7 @@ import pandas as pd
 import streamlit as st
 
 from components.auth_guard import require_rol
+from components.catalogo_fitoplancton_ui import render_catalogo_fitoplancton
 from components.ui_styles import aplicar_estilos, page_header, section_header, top_nav
 from services.parametro_service import (
     get_parametros,
@@ -661,10 +662,11 @@ def main() -> None:
     top_nav()
     page_header("Parámetros y ECAs", "Gestión de parámetros de calidad de agua y estándares ambientales")
 
-    tab_lista, tab_nuevo, tab_eca = st.tabs([
+    tab_lista, tab_nuevo, tab_eca, tab_fito = st.tabs([
         "Listado de parámetros",
         "Nuevo parámetro",
         "Valores ECA",
+        "Catálogo fitoplancton",
     ])
 
     with tab_lista:
@@ -675,6 +677,9 @@ def main() -> None:
 
     with tab_eca:
         _render_valores_eca()
+
+    with tab_fito:
+        render_catalogo_fitoplancton()
 
 
 main()
