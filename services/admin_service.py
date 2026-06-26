@@ -24,6 +24,20 @@ from services.auth_service import Rol
 ROLES: list[Rol] = ["administrador", "analista_lab", "tecnico_campo", "visualizador", "visitante"]
 
 
+def _invalidar_cache_usuarios() -> None:
+    """
+    Limpia los cachés tras alta/edición/baja de usuarios. Los selectores de
+    usuarios (get_usuarios_campo / get_responsables_lab en muestra_service)
+    están cacheados como dato de 'referencia', por lo que se usa invalidate_all
+    para que se reflejen los cambios al instante (mismo patrón que puntos/contactos).
+    """
+    try:
+        from services.cache import invalidate_all
+        invalidate_all()
+    except Exception:
+        pass
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Gestión de usuarios
 # ─────────────────────────────────────────────────────────────────────────────
@@ -96,6 +110,7 @@ def actualizar_usuario(usuario_id: str, datos: dict) -> dict:
         .eq("id", usuario_id)
         .execute()
     )
+    _invalidar_cache_usuarios()
     return res.data[0] if res.data else {}
 
 
@@ -105,12 +120,14 @@ def actualizar_rol(usuario_id: str, nuevo_rol: Rol) -> None:
         raise ValueError(f"Rol inválido: {nuevo_rol}")
     db = get_admin_client()
     db.table("usuarios").update({"rol": nuevo_rol}).eq("id", usuario_id).execute()
+    _invalidar_cache_usuarios()
 
 
 def toggle_usuario(usuario_id: str, activo: bool) -> None:
     """Activa o desactiva un usuario."""
     db = get_admin_client()
     db.table("usuarios").update({"activo": activo}).eq("id", usuario_id).execute()
+    _invalidar_cache_usuarios()
 
 
 def eliminar_usuario(usuario_id: str) -> None:
@@ -164,6 +181,8 @@ def eliminar_usuario(usuario_id: str) -> None:
         valor_anterior=f"auth_id={auth_id}",
         valor_nuevo=None if auth_eliminado else f"ADVERTENCIA: cuenta Auth huérfana ({auth_id})",
     )
+
+    _invalidar_cache_usuarios()
 
 
 def resetear_password(usuario_id: str, nueva_password: str) -> None:
@@ -224,6 +243,7 @@ def crear_usuario(
     res = db.table("usuarios").insert(perfil).execute()
     resultado = res.data[0] if res.data else perfil
     resultado["email"] = email.strip().lower()
+    _invalidar_cache_usuarios()
     return resultado
 
 

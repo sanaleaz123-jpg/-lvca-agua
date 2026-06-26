@@ -24,6 +24,7 @@ from datetime import datetime
 from typing import Optional
 
 from database.client import get_db
+from services.cache import cached
 from services.audit_service import registrar_cambio
 from services.parametro_registry import (
     get_parametros_insitu,
@@ -135,6 +136,7 @@ PARAMETROS_INSITU = get_parametros_insitu
 # Selectores
 # ─────────────────────────────────────────────────────────────────────────────
 
+@cached(ttl=120, grupo="operacional")
 def get_campanas_en_campo() -> list[dict]:
     """Campañas con estado 'en_campo' (aptas para registrar muestras)."""
     db = get_db()
@@ -148,6 +150,7 @@ def get_campanas_en_campo() -> list[dict]:
     return res.data or []
 
 
+@cached(ttl=300, grupo="operacional")
 def get_puntos_de_campana_activa(campana_id: str) -> list[dict]:
     """Puntos vinculados a la campaña (desde campana_puntos)."""
     db = get_db()
@@ -165,6 +168,7 @@ def get_puntos_de_campana_activa(campana_id: str) -> list[dict]:
     return sorted(puntos, key=lambda x: x.get("codigo", ""))
 
 
+@cached(ttl=300, grupo="referencia")
 def get_usuarios_campo() -> list[dict]:
     """
     Usuarios activos aptos para trabajo de campo.
@@ -182,6 +186,7 @@ def get_usuarios_campo() -> list[dict]:
     return res.data or []
 
 
+@cached(ttl=300, grupo="referencia")
 def get_responsables_lab() -> list[dict]:
     """Usuarios activos aptos para responsable de laboratorio."""
     db = get_db()
@@ -196,6 +201,7 @@ def get_responsables_lab() -> list[dict]:
     return res.data or []
 
 
+@cached(ttl=300, grupo="operacional")
 def get_campana_detalle(campana_id: str) -> dict:
     """
     Detalle de una campaña por id (codigo, nombre, fechas, responsable_campo,

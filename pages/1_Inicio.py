@@ -16,8 +16,6 @@ from __future__ import annotations
 from collections import Counter
 
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
 import streamlit as st
 
 from components.auth_guard import require_rol
@@ -349,6 +347,8 @@ def _render_tabla_excedencias(excedencias: list[dict]) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_grafico_excedencias(excedencias: list[dict]) -> None:
+    import plotly.graph_objects as go
+
     section_header("Parámetros con más excedencias ECA", "chart")
 
     if not excedencias:
@@ -394,6 +394,8 @@ def _render_grafico_excedencias(excedencias: list[dict]) -> None:
 
 def _render_excedencias_por_punto(excedencias: list[dict]) -> None:
     """Gráfico de barras horizontal: puntos con más excedencias."""
+    import plotly.graph_objects as go
+
     section_header("Puntos con más excedencias", "chart")
 
     if not excedencias:
@@ -442,6 +444,8 @@ def _render_excedencias_por_punto(excedencias: list[dict]) -> None:
 
 def _render_donut_estado(puntos: list[dict]) -> None:
     """Donut chart con distribución de estados de los puntos."""
+    import plotly.graph_objects as go
+
     estados = Counter(p.get("estado", "sin_datos") for p in puntos)
     etiquetas = {
         "excedencia": "Excedencia",

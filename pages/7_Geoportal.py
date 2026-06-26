@@ -19,7 +19,6 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 import pandas as pd
-import plotly.graph_objects as go
 import streamlit as st
 
 from components.auth_guard import require_rol
@@ -286,6 +285,8 @@ def _render_barras_tendencia_anual(punto: dict, parametros: list[dict]) -> None:
     (verde dashed). Sin queries nuevas — usa get_historial_punto +
     get_limite_eca_parametro (ambas cacheadas).
     """
+    import plotly.graph_objects as go
+
     param = _buscar_parametro_por_nombre(parametros, "turbidez")
     if not param:
         param = _buscar_parametro_por_nombre(parametros, "ph") or (parametros[0] if parametros else None)
@@ -444,6 +445,8 @@ def _render_grafico_campana_comparativo(
     4. Temperatura → sin ECA (DS define un Δ, no valor absoluto). Dots
        grises con caption explicativo.
     """
+    import plotly.graph_objects as go
+
     if not puntos:
         st.info("La campaña seleccionada no tiene puntos asociados.")
         return
@@ -852,6 +855,8 @@ def _render_linea_estacionalidad(
       líneas ECA ni sombreado.
     - Temperatura → markers grises, sin líneas ECA (el DS define un Δ).
     """
+    import plotly.graph_objects as go
+
     historial = get_historial_punto(punto["id"], parametro["id"], limite=400)
     nombre_dis = _display_nombre_parametro(parametro)
     if not historial:
@@ -2064,6 +2069,8 @@ def _export_kml_puntos(puntos: list[dict]) -> str:
 
 def _render_gauge(punto: dict) -> None:
     """Indicador de cumplimiento ECA — bullet horizontal compacto."""
+    import plotly.graph_objects as go
+
     ic = punto.get("indice_cumplimiento")
     if ic is None:
         st.info("Sin datos suficientes para evaluar el cumplimiento ECA.")
@@ -2127,6 +2134,8 @@ def _render_gauge(punto: dict) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_tendencia(punto: dict, parametro: dict, campana_label: str, cat: str = "") -> None:
+    import plotly.graph_objects as go
+
     historial = get_historial_punto(punto["id"], parametro["id"])
     if not historial:
         st.info(f"Sin datos de **{parametro['nombre']}** para este punto.")
@@ -2231,6 +2240,8 @@ def _render_barras_comparativa_puntos(
     Una sola query agrupada (get_ultimo_valor_parametro_por_punto) reemplaza
     el patrón anterior N+1 (get_comparativa_eca_punto por cada punto).
     """
+    import plotly.graph_objects as go
+
     ultimos = get_ultimo_valor_parametro_por_punto(
         parametro["id"], fecha_inicio, fecha_fin,
     )
@@ -2334,6 +2345,8 @@ def _render_barras_mensuales(
     Antes mostraba todos los puntos a la vez — ahora se ciñe al punto activo
     para que coincida con el subtítulo y sea interpretable.
     """
+    import plotly.graph_objects as go
+
     datos = get_datos_mensuales_parametro(parametro["id"], anio, punto_id=punto["id"])
     if not datos:
         st.info(f"Sin datos de {parametro['nombre']} para {anio} en este punto.")

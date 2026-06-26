@@ -1018,6 +1018,7 @@ def guardar_analisis_fitoplancton(
     invalidate_operational()
 
 
+@cached(ttl=180)
 def get_analisis_fitoplancton(muestra_id: str) -> Optional[dict]:
     """
     Lee el JSONB datos_fitoplancton de la muestra. Retorna None si no hay
@@ -1224,6 +1225,7 @@ def get_phyllum_dominante_punto(punto_muestreo_id: str) -> Optional[dict]:
     return None
 
 
+@cached(ttl=300)
 def get_historico_cianobacterias_por_punto(
     punto_muestreo_id: str,
     limite: int = 50,
@@ -1276,6 +1278,7 @@ def get_historico_cianobacterias_por_punto(
     return serie
 
 
+@cached(ttl=300)
 def get_historico_cianobacterias_por_muestra(muestra_id: str) -> list[dict]:
     """
     Wrapper de conveniencia: dado un muestra_id, deduce el punto_muestreo_id
