@@ -985,7 +985,7 @@ def _render_registro(campana_id: str) -> None:
                     # La campaña ya es global — solo pre-seleccionamos la
                     # muestra en el tab in-situ.
                     st.session_state["insitu_prefill_muestra_id"] = muestra_id_fotos
-                    st.rerun()
+                    st.rerun(scope="app")
             with cta_b:
                 if st.button(
                     "Registrar otra muestra",
@@ -993,10 +993,10 @@ def _render_registro(campana_id: str) -> None:
                     icon=":material/add:",
                     use_container_width=True,
                 ):
-                    st.rerun()
+                    st.rerun(scope="app")
         else:
             # Refrescar para mostrar datos actualizados (modo edición)
-            st.rerun()
+            st.rerun(scope="app")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1236,7 +1236,7 @@ def _render_insitu_single(
                     st.caption(f"• {e}")
             else:
                 success_check_overlay(f"{ok} medición(es) guardadas")
-                st.rerun()
+                st.rerun(scope="app")
 
 
 def _render_insitu_columna(
@@ -1365,7 +1365,7 @@ def _render_insitu_columna(
                 st.caption(f"• {e}")
         elif total_ok > 0:
             success_check_overlay(f"{total_ok} medición(es) guardadas en {n_prof} profundidades")
-            st.rerun()
+            st.rerun(scope="app")
         else:
             st.warning("Ingresa al menos un valor.")
 
@@ -1470,7 +1470,7 @@ def _render_custodia(campana_id: str) -> None:
                 if ok > 0:
                     success_check_overlay(f"{ok} muestra(s) recibida(s) en laboratorio")
                     st.session_state["_recepcion_recien_hecha"] = campana_id
-                    st.rerun()
+                    st.rerun(scope="app")
 
     st.divider()
 
@@ -1512,7 +1512,7 @@ def _render_custodia(campana_id: str) -> None:
                     else:
                         st.success(f"Estado actualizado a {etiq}.")
                     _invalidar_muestras_cache(campana_id)
-                    st.rerun()
+                    st.rerun(scope="app")
                 except TransicionMuestraError as exc:
                     st.error(str(exc))
         elif estado_actual == "analizada":
@@ -1559,7 +1559,7 @@ def _render_custodia(campana_id: str) -> None:
                     success_check_overlay("Muestra recibida en laboratorio")
                     # Marcar para mostrar el banner de "ir al documento CC"
                     st.session_state["_recepcion_recien_hecha"] = campana_id
-                    st.rerun()
+                    st.rerun(scope="app")
                 except TransicionMuestraError as exc:
                     st.error(str(exc))
                 except ValueError as exc:
@@ -1591,7 +1591,7 @@ def _render_custodia(campana_id: str) -> None:
                 # La campaña ya es global — solo señalizamos el "salto" para
                 # mostrar el banner contextual en el tab Documento CC.
                 st.session_state["_jump_to_cadena"] = True
-                st.rerun()
+                st.rerun(scope="app")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1666,7 +1666,7 @@ def _render_listado(campana_id: str) -> None:
                     eliminar_muestra(muestra_sel["id"])
                     _invalidar_muestras_cache(campana_id)
                     st.success("Muestra eliminada.")
-                    st.rerun()
+                    st.rerun(scope="app")
                 except ValueError as exc:
                     st.error(str(exc))
 
