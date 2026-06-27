@@ -490,6 +490,12 @@ def _render_registro(campana_id: str) -> None:
     punto_label = st.selectbox("Punto de muestreo *", list(opciones_puntos.keys()), key="reg_punto")
     punto_id = opciones_puntos[punto_label]
 
+    # "Descarga" y "Nivel del embalse" son datos propios de embalses; en ríos
+    # y demás cuerpos de agua no aplican y no deben mostrarse.
+    es_embalse = next(
+        (p.get("tipo") for p in puntos if p["id"] == punto_id), ""
+    ) == "embalse"
+
     # ── Detectar si ya existe una muestra para este punto en la campaña ──
     existente = get_muestra_por_campana_punto(campana_id, punto_id)
     es_edicion = existente is not None
@@ -769,15 +775,20 @@ def _render_registro(campana_id: str) -> None:
             step=0.5,
         )
 
-        # ── Observaciones (incluye clima, descarga, nivel) ──────────────
+        # ── Observaciones (clima siempre; descarga y nivel solo en embalses) ──
         section_header("Observaciones de campo", "file")
-        oc1, oc2, oc3 = st.columns(3)
-        with oc1:
+        if es_embalse:
+            oc1, oc2, oc3 = st.columns(3)
+            with oc1:
+                clima = st.selectbox("Clima", lista_clima, index=clima_idx)
+            with oc2:
+                caudal = st.text_input("Descarga", value=def_caudal, placeholder="Ej: 2.5 m3/s")
+            with oc3:
+                nivel = st.text_input("Nivel del embalse", value=def_nivel, placeholder="Ej: normal / alto / bajo")
+        else:
             clima = st.selectbox("Clima", lista_clima, index=clima_idx)
-        with oc2:
-            caudal = st.text_input("Descarga", value=def_caudal, placeholder="Ej: 2.5 m3/s")
-        with oc3:
-            nivel = st.text_input("Nivel del embalse", value=def_nivel, placeholder="Ej: normal / alto / bajo")
+            caudal = ""
+            nivel = ""
 
         observaciones = st.text_area(
             "Observaciones adicionales",
