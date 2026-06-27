@@ -304,9 +304,11 @@ def _fila_muestra(m: dict, campos: tuple[str, ...] = ()) -> dict:
 
     out: dict = {}
     if "codigo" in campos:
-        out["Código"] = f"{m['codigo']}{prof_suf}"
+        # Código de muestra limpio; el sufijo de profundidad (S)/(M)/(F) va
+        # junto al código del punto (igual que el Excel de cadena de custodia).
+        out["Código"] = m["codigo"]
     if "punto" in campos:
-        out["Punto"] = f"{pt.get('codigo','')} — {pt.get('nombre','')}"
+        out["Punto"] = f"{pt.get('codigo','')}{prof_suf} — {pt.get('nombre','')}"
     if "fecha" in campos:
         out["Fecha"] = str(m.get("fecha_muestreo", ""))[:10]
     if "hora" in campos:
@@ -397,6 +399,35 @@ def _abreviar_nombre(nombre_completo: str) -> str:
 def _render_registro(campana_id: str) -> None:
     section_header("Registro de muestra de campo", "edit")
     st.caption("Si el punto ya tiene una muestra en la campaña, se cargan los datos para editar.")
+
+    # Si acabamos de registrar una muestra (el submit hace rerun de app para
+    # refrescar el tab In situ), mostramos aquí arriba el banner de éxito y los
+    # atajos al flujo in-situ / nueva muestra.
+    _exito = st.session_state.get("_registro_exito")
+    if _exito:
+        st.success(_exito.get("mensaje", "Muestra registrada."))
+        _cta_a, _cta_b = st.columns(2)
+        with _cta_a:
+            if st.button(
+                "Registrar mediciones in-situ ahora",
+                key="btn_goto_insitu_exito",
+                type="primary",
+                icon=":material/arrow_forward:",
+                use_container_width=True,
+            ):
+                st.session_state["insitu_prefill_muestra_id"] = _exito["muestra_id"]
+                st.session_state.pop("_registro_exito", None)
+                st.rerun(scope="app")
+        with _cta_b:
+            if st.button(
+                "Registrar otra muestra",
+                key="btn_otra_muestra_exito",
+                icon=":material/add:",
+                use_container_width=True,
+            ):
+                st.session_state.pop("_registro_exito", None)
+                st.rerun(scope="app")
+        st.divider()
 
     if not _bloquear_si_estado_incorrecto(
         campana_id, ("en_campo",), "registrar muestras"
@@ -945,14 +976,12 @@ def _render_registro(campana_id: str) -> None:
             if modo_muestreo == "columna":
                 n_niv = len(niveles_seleccionados)
                 sigla = "/".join(niveles_seleccionados)
-                success_check_overlay(f"{n_niv} muestra(s) registrada(s) — {creada['codigo']}")
-                st.success(
+                _mensaje_exito = (
                     f"{n_niv} muestra(s) de columna registrada(s) ({sigla}). "
                     f"Primera: **{creada['codigo']}**"
                 )
             else:
-                success_check_overlay(f"Muestra {creada['codigo']} registrada")
-                st.success(f"Muestra **{creada['codigo']}** registrada exitosamente.")
+                _mensaje_exito = f"Muestra **{creada['codigo']}** registrada exitosamente."
             muestra_id_fotos = creada["id"]
 
         # ── Subir fotos asociadas ────────────────────────────────────────
@@ -969,34 +998,17 @@ def _render_registro(campana_id: str) -> None:
                     st.warning(f"Error subiendo {archivo.name}: {exc}")
             st.info(f"{len(fotos_subidas)} foto(s) subida(s).")
 
-        # Puente al tab "In situ" — evita que el técnico tenga que cambiar
-        # de tab y re-seleccionar la misma campaña/punto manualmente.
+        # Forzar un rerun de APP (no de fragment) para que TODOS los tabs —en
+        # particular "In situ", que es otro @st.fragment— vean la muestra
+        # recién creada de inmediato. Sin esto, el técnico cambiaba al tab
+        # In situ y el punto no aparecía hasta una segunda recarga.
+        # El banner de éxito + atajos se repintan arriba desde esta bandera.
         if not es_edicion:
-            st.divider()
-            cta_a, cta_b = st.columns(2)
-            with cta_a:
-                if st.button(
-                    "Registrar mediciones in-situ ahora",
-                    key=f"btn_goto_insitu_{muestra_id_fotos}",
-                    type="primary",
-                    icon=":material/arrow_forward:",
-                    use_container_width=True,
-                ):
-                    # La campaña ya es global — solo pre-seleccionamos la
-                    # muestra en el tab in-situ.
-                    st.session_state["insitu_prefill_muestra_id"] = muestra_id_fotos
-                    st.rerun(scope="app")
-            with cta_b:
-                if st.button(
-                    "Registrar otra muestra",
-                    key=f"btn_otra_muestra_{muestra_id_fotos}",
-                    icon=":material/add:",
-                    use_container_width=True,
-                ):
-                    st.rerun(scope="app")
-        else:
-            # Refrescar para mostrar datos actualizados (modo edición)
-            st.rerun(scope="app")
+            st.session_state["_registro_exito"] = {
+                "muestra_id": muestra_id_fotos,
+                "mensaje": _mensaje_exito,
+            }
+        st.rerun(scope="app")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1032,22 +1044,24 @@ def _render_insitu(campana_id: str) -> None:
         pt_id = pt.get("id", "")
         muestras_por_punto.setdefault(pt_id, []).append(m)
 
-    # Construir opciones: seleccionar por punto
+    # Construir opciones: seleccionar por punto. Formato unificado para todas
+    # las muestras (1 o varios niveles): código del PUNTO como principal y los
+    # códigos de muestra con su profundidad (S/M/F) entre paréntesis, p.ej.
+    #   134ECond4 — Represa Condoroma (LVCA-2026-034 (S), LVCA-2026-035 (M))
     opciones_punto_insitu: dict[str, str] = {}
+    _orden_prof = {"S": 0, "M": 1, "F": 2}
     for pt_id, ms in muestras_por_punto.items():
         pt = (ms[0].get("puntos_muestreo") or {})
         pt_name = pt.get("nombre", "")
         pt_code = pt.get("codigo", "")
-        n_muestras = len(ms)
-        codigos = ", ".join(m["codigo"] for m in ms)
-        es_col_grupo = any(
-            m.get("modo_muestreo") == "columna" or m.get("grupo_profundidad")
-            for m in ms
+        ms_ord = sorted(ms, key=lambda m: _orden_prof.get(m.get("profundidad_tipo"), 9))
+        codigos = ", ".join(
+            f"{m['codigo']} {PROFUNDIDAD_SUFIJOS[m['profundidad_tipo']]}"
+            if m.get("profundidad_tipo") in PROFUNDIDAD_SUFIJOS
+            else m["codigo"]
+            for m in ms_ord
         )
-        if es_col_grupo and n_muestras >= 2:
-            label = f"{pt_code} — {pt_name} ({n_muestras} muestras: {codigos})"
-        else:
-            label = f"{ms[0]['codigo']} — {pt_name}"
+        label = f"{pt_code} — {pt_name} ({codigos})"
         opciones_punto_insitu[label] = pt_id
 
     # Si veníamos del flujo "Registrar mediciones in-situ ahora", pre-seleccionar
