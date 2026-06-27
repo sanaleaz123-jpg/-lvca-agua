@@ -527,7 +527,7 @@ def _render_registro(campana_id: str) -> None:
         def_nivel = existente.get("nivel_agua") or ""
         def_temp = existente.get("temperatura_transporte")
         if def_temp is None:
-            def_temp = 4.0
+            def_temp = 6.0
         else:
             def_temp = float(def_temp)
         def_obs = existente.get("observaciones_campo") or ""
@@ -552,7 +552,7 @@ def _render_registro(campana_id: str) -> None:
         def_clima = ""
         def_caudal = ""
         def_nivel = ""
-        def_temp = 4.0
+        def_temp = 6.0
         def_obs = ""
         def_tecnico_id = None
         def_modo = "superficial"
