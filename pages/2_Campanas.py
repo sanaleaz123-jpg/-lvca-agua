@@ -684,13 +684,11 @@ def _render_editar_campana(campana_id: str, camp: dict) -> None:
             fecha_ini = st.date_input(
                 "Fecha inicio",
                 value=date.fromisoformat(camp["fecha_inicio"][:10]) if camp.get("fecha_inicio") else date.today(),
-                key="edit_fecha_ini",
             )
         with ec2:
             fecha_f = st.date_input(
                 "Fecha fin",
                 value=date.fromisoformat(camp["fecha_fin"][:10]) if camp.get("fecha_fin") else date.today(),
-                key="edit_fecha_fin",
             )
 
         ec3, ec4 = st.columns(2)
@@ -701,7 +699,6 @@ def _render_editar_campana(campana_id: str, camp: dict) -> None:
                 "Frecuencia",
                 [f.capitalize() for f in FRECUENCIAS],
                 index=freq_idx,
-                key="edit_frecuencia",
             )
         with ec4:
             # Parsear responsables actuales desde el texto almacenado
@@ -716,7 +713,6 @@ def _render_editar_campana(campana_id: str, camp: dict) -> None:
                 opciones_resp,
                 default=default_resp,
                 max_selections=_MAX_RESP_CAMPO,
-                key="edit_resp_campo",
             )
 
         st.caption(
@@ -728,7 +724,6 @@ def _render_editar_campana(campana_id: str, camp: dict) -> None:
         observaciones = st.text_area(
             "Observaciones",
             value=camp.get("observaciones") or "",
-            key="edit_obs",
         )
 
         section_header("Parámetros de laboratorio a analizar", "beaker")
