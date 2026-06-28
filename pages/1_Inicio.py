@@ -591,29 +591,16 @@ def _render_mapa(puntos: list[dict]) -> None:
 # Página principal
 # ─────────────────────────────────────────────────────────────────────────────
 
-@require_rol("visitante")
-def main() -> None:
-    sesion = st.session_state.get("sesion")
-    if not sesion:
-        st.error("Sesión expirada. Inicia sesión nuevamente.")
-        st.stop()
-
-    aplicar_estilos()
-    top_nav()
-    page_header(
-        "Panel de Control LVCA",
-        f"AUTODEMA &middot; {sesion.nombre_completo}",
-        ambito="Cuenca Chili-Quilca",
-    )
-
-    # ── Cargar puntos (siempre completos, para listar cuencas) ──────────────
-    with st.spinner("Cargando métricas..."):
-        try:
-            puntos_all = get_puntos_con_estado(dias=30)
-        except Exception as exc:
-            st.error(f"Error al cargar datos del dashboard: {exc}")
-            st.stop()
-
+@st.fragment
+def _panel_dashboard(puntos_all: list[dict]) -> None:
+    """
+    Panel del dashboard dependiente de la cuenca seleccionada, aislado en un
+    @st.fragment: al cambiar el selector de cuenca solo se re-ejecuta este
+    bloque (hero, KPIs, excedencias, gráficos, mapa, grilla de módulos), en vez
+    de toda la página. Evita re-inyectar el CSS global (~50 KB) y reconstruir el
+    top-nav en cada cambio de filtro → menos parpadeo. Los datos están cacheados
+    (get_metricas_dashboard), así que no hay riesgo de datos obsoletos.
+    """
     # ── Selector de cuenca (vista "por cuenca", estilo Visor por Cuencas) ───
     cuencas_disp = sorted({
         (p.get("cuenca") or "").strip()
@@ -686,6 +673,35 @@ def main() -> None:
 
     # ── 4. Mapa de puntos ───────────────────────────────────────────────────
     _render_mapa(puntos)
+
+
+@require_rol("visitante")
+def main() -> None:
+    sesion = st.session_state.get("sesion")
+    if not sesion:
+        st.error("Sesión expirada. Inicia sesión nuevamente.")
+        st.stop()
+
+    aplicar_estilos()
+    top_nav()
+    page_header(
+        "Panel de Control LVCA",
+        f"AUTODEMA &middot; {sesion.nombre_completo}",
+        ambito="Cuenca Chili-Quilca",
+    )
+
+    # ── Cargar puntos (siempre completos, para listar cuencas) ──────────────
+    with st.spinner("Cargando métricas..."):
+        try:
+            puntos_all = get_puntos_con_estado(dias=30)
+        except Exception as exc:
+            st.error(f"Error al cargar datos del dashboard: {exc}")
+            st.stop()
+
+    # ── Panel dependiente de la cuenca, aislado en @st.fragment ─────────────
+    #   Cambiar de cuenca re-ejecuta solo este bloque (sin re-inyectar el CSS
+    #   global ni reconstruir el top-nav) → menos parpadeo y más fluidez.
+    _panel_dashboard(puntos_all)
 
     # ── Tareas pendientes accionables ───────────────────────────────────────
     st.divider()
