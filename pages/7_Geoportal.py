@@ -199,10 +199,11 @@ def _format_valor(v) -> str:
 MAPA_CENTRO = [-15.75, -71.53]
 MAPA_ZOOM = 8
 
+# Estados de punto → semáforo ECA unificado (espejo de COLORS, sin hex sueltos).
 COLORES = {
-    "excedencia": "#c62828",
-    "cumple":     "#2e7d32",
-    "sin_datos":  "#9e9e9e",
+    "excedencia": COLORS["eca_excede"],
+    "cumple":     COLORS["eca_cumple"],
+    "sin_datos":  COLORS["eca_sin_dato"],
 }
 
 MESES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun",
@@ -224,27 +225,34 @@ _CODIGOS_CAMPO = {"P001", "P002", "P003", "P004", "P006", "P008", "P009"}
 
 # ─── Helpers de color ────────────────────────────────────────────────────────
 
+def _lerp_hex(c1: str, c2: str, f: float) -> str:
+    """Interpola linealmente entre dos colores hex #rrggbb (f en [0, 1])."""
+    f = max(0.0, min(1.0, f))
+    a, b = c1.lstrip("#"), c2.lstrip("#")
+    r = round(int(a[0:2], 16) + (int(b[0:2], 16) - int(a[0:2], 16)) * f)
+    g = round(int(a[2:4], 16) + (int(b[2:4], 16) - int(a[2:4], 16)) * f)
+    bl = round(int(a[4:6], 16) + (int(b[4:6], 16) - int(a[4:6], 16)) * f)
+    return f"#{r:02x}{g:02x}{bl:02x}"
+
+
 def _color_termico(p: dict) -> str:
-    """Color hex según índice de cumplimiento ECA del punto."""
+    """
+    Color hex según índice de cumplimiento ECA del punto, interpolado sobre el
+    semáforo ECA de la plataforma: verde (cumple) → ámbar (alerta) → rojo
+    (excede). Sin datos → gris ECA. Deriva de COLORS, así el degradado del mapa
+    calza exactamente con el semáforo de gráficos, leyendas y donut.
+    """
     ic = p.get("indice_cumplimiento")
     if ic is None:
-        return "#808080"
-    if ic == 1.0:
-        return "#2e7d32"
-    t = 1.0 - ic
+        return COLORS["eca_sin_dato"]
+    t = 1.0 - max(0.0, min(1.0, ic))  # 0 = cumple total, 1 = excede total
     if t <= 0.5:
-        r = int(40 + t * 2 * 200)
-        g = int(167 - t * 2 * 40)
-        b = int(69 - t * 2 * 60)
-    else:
-        r = int(220 + (t - 0.5) * 2 * 20)
-        g = int(127 - (t - 0.5) * 2 * 110)
-        b = int(9)
-    return f"#{min(r,255):02x}{max(g,0):02x}{max(b,0):02x}"
+        return _lerp_hex(COLORS["eca_cumple"], COLORS["eca_alerta"], t * 2)
+    return _lerp_hex(COLORS["eca_alerta"], COLORS["eca_excede"], (t - 0.5) * 2)
 
 
 def _color_estado(estado: str) -> str:
-    return COLORES.get(estado, "#808080")
+    return COLORES.get(estado, COLORS["eca_sin_dato"])
 
 
 def _clasificar_cat(param: dict) -> str:

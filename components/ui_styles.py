@@ -1570,6 +1570,7 @@ hr {
 .lvca-kpi-lite.rojo     { --kpi-accent: var(--lvca-acento-rojo);     --kpi-accent-bg: #fee2e2; }
 .lvca-kpi-lite.gris     { --kpi-accent: #94a3b8;                     --kpi-accent-bg: #f1f5f9; }
 .lvca-kpi-lite.azul     { --kpi-accent: var(--lvca-brand-azul-light); --kpi-accent-bg: #e0f2fe; }
+.lvca-kpi-lite.teal     { --kpi-accent: var(--lvca-acento-teal);     --kpi-accent-bg: #d4f1f2; }
 
 /* ── Scrollbar custom (WebKit) — detalle de pulido en tablas largas ───── */
 ::-webkit-scrollbar { width: 10px; height: 10px; }

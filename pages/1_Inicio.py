@@ -22,6 +22,9 @@ from components.auth_guard import require_rol
 from components.ui_styles import (
     COLORS,
     aplicar_estilos,
+    apply_plotly_layout,
+    card,
+    eca_colorscale,
     page_header,
     section_header,
     stat_counters,
@@ -205,17 +208,16 @@ def _render_module_grid() -> None:
 # Sección 1 — Tarjetas KPI
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _render_kpi_card_material(valor, label: str, color: str, icon: str) -> str:
+def _render_kpi_card_material(valor, label: str, variant: str, icon: str) -> str:
     """
-    KPI card estilo SSDH-ANA con Material icon (en vez de SVG custom del
-    icon() registry). Mismo patrón visual que los KPI del Geoportal v2:
-    borde inferior coloreado + ícono circular pastel + valor grande dark.
+    KPI card estilo SSDH-ANA con Material icon. Usa las variantes semánticas
+    de `.lvca-kpi-lite` (azul / teal / verde / amarillo / rojo / gris) en vez
+    de parsear hex arbitrarios — garantiza paleta consistente y sin colores
+    fuera de marca. Patrón visual: acento vertical + ícono circular pastel +
+    valor grande en tinta oscura.
     """
-    h = color.lstrip("#")
-    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
-    halo = f"rgba({r},{g},{b},0.12)"
     return f"""
-    <div class="lvca-kpi-lite" style="--kpi-accent:{color}; --kpi-accent-bg:{halo};">
+    <div class="lvca-kpi-lite {variant}">
         <div class="lvca-kpi-lite-head" style="justify-content:space-between;">
             <div class="lvca-kpi-lite-label" style="flex:1;">{label}</div>
             <div class="lvca-kpi-lite-icon">
@@ -230,21 +232,21 @@ def _render_kpis(metricas: dict) -> None:
     cards = [
         {"valor": metricas["muestras_mes"],
          "label": "Muestras (30 d)",
-         "color": COLORS["secondary"], "icon": "science"},
+         "variant": "teal", "icon": "science"},
         {"valor": metricas["parametros_mes"],
          "label": "Parámetros analizados",
-         "color": "#00796B", "icon": "analytics"},
+         "variant": "azul", "icon": "analytics"},
         {"valor": metricas["excedencias_activas"],
          "label": "Excedencias activas",
-         "color": COLORS["eca_excede"], "icon": "warning"},
+         "variant": "rojo", "icon": "warning"},
         {"valor": metricas["puntos_monitoreados"],
          "label": "Puntos monitoreados",
-         "color": "#1565C0", "icon": "place"},
+         "variant": "gris", "icon": "place"},
     ]
     cols = st.columns(4, gap="medium")
-    for col, card in zip(cols, cards):
+    for col, kpi in zip(cols, cards):
         with col:
-            st.markdown(_render_kpi_card_material(**card), unsafe_allow_html=True)
+            st.markdown(_render_kpi_card_material(**kpi), unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -268,27 +270,24 @@ def _render_excedencia_card(e: dict) -> str:
         f"≥ {e['lim_min']:.4g}" if e.get("lim_min") else "—"
     )
     unidad = e.get("unidad", "") or ""
-    return f"""
-    <div style="background:#ffffff; border:1px solid #e8eaed;
-         border-left:3px solid #C62828; border-radius:8px;
-         padding:12px 16px; margin-bottom:10px;
-         display:grid; grid-template-columns:52px 1fr auto;
-         gap:14px; align-items:center;
-         box-shadow:0 1px 2px rgba(15,23,42,0.04);">
+    rojo = COLORS["eca_excede"]
+    inner = f"""
+    <div style="display:grid; grid-template-columns:52px 1fr auto;
+         gap:14px; align-items:center;">
         <div style="width:52px; height:52px; border-radius:50%;
-             background:rgba(198,40,40,0.1);
+             background:#fee2e2;
              display:inline-flex; align-items:center; justify-content:center;">
             <span class="material-symbols-rounded"
-                style="font-size:26px; color:#C62828; line-height:1;">warning</span>
+                style="font-size:26px; color:{rojo}; line-height:1;">warning</span>
         </div>
         <div style="min-width:0;">
-            <div style="font-size:0.92rem; font-weight:600; color:#1a1a1a;
+            <div style="font-size:0.92rem; font-weight:600; color:var(--lvca-text);
                  line-height:1.3; overflow:hidden; text-overflow:ellipsis;
                  white-space:nowrap;">{e.get('punto_nombre', '—')}</div>
             <div style="font-size:0.8rem; color:#475569; margin-top:3px;
                  line-height:1.4;">
                 <b>{e.get('parametro_nombre', '—')}</b> =
-                <b style="color:#C62828;">{valor}</b> {unidad}
+                <b style="color:{rojo};">{valor}</b> {unidad}
                 <span style="color:#94a3b8;">· ECA {e.get('eca_codigo', '—')}
                 (máx {limite})</span>
             </div>
@@ -296,9 +295,10 @@ def _render_excedencia_card(e: dict) -> str:
                 {e.get('fecha', '—')}
             </div>
         </div>
-        <div style="font-size:0.95rem; font-weight:700; color:#C62828;
+        <div style="font-size:0.95rem; font-weight:700; color:{rojo};
              white-space:nowrap; letter-spacing:-0.01em;">{pct}</div>
     </div>"""
+    return card(inner, accent="eca_excede", padding="12px 16px")
 
 
 def _render_tabla_excedencias(excedencias: list[dict]) -> None:
@@ -323,7 +323,10 @@ def _render_tabla_excedencias(excedencias: list[dict]) -> None:
     max_visibles = 15
     visibles = excedencias[:max_visibles]
     cards_html = "".join(_render_excedencia_card(e) for e in visibles)
-    st.markdown(cards_html, unsafe_allow_html=True)
+    st.markdown(
+        f'<div style="display:flex; flex-direction:column; gap:10px;">{cards_html}</div>',
+        unsafe_allow_html=True,
+    )
 
     if total > max_visibles:
         st.caption(
@@ -370,7 +373,7 @@ def _render_grafico_excedencias(excedencias: list[dict]) -> None:
         orientation="h",
         marker=dict(
             color=df_chart["Excedencias"],
-            colorscale=[[0, "#e8870e"], [0.5, "#c56d00"], [1, "#c62828"]],
+            colorscale=eca_colorscale(),
         ),
         text=df_chart["Excedencias"],
         textposition="outside",
@@ -378,15 +381,12 @@ def _render_grafico_excedencias(excedencias: list[dict]) -> None:
         hovertemplate="<b>%{y}</b><br>Excedencias: %{x}<extra></extra>",
     ))
 
-    fig.update_layout(
-        showlegend=False,
-        yaxis_title=None,
-        xaxis_title="Cantidad de excedencias",
+    apply_plotly_layout(
+        fig,
         height=max(350, len(df_chart) * 32 + 100),
+        x_title="Cantidad de excedencias",
         margin=dict(l=0, r=40, t=10, b=30),
-        plot_bgcolor="white",
-        xaxis=dict(gridcolor="#f0f0f0", showgrid=True),
-        yaxis=dict(showgrid=False),
+        yaxis=dict(showgrid=False, title=None),
     )
 
     st.plotly_chart(fig, use_container_width=True)
@@ -416,11 +416,7 @@ def _render_excedencias_por_punto(excedencias: list[dict]) -> None:
         orientation="h",
         marker=dict(
             color=df_chart["Excedencias"],
-            colorscale=[
-                [0, COLORS["eca_cumple"]],
-                [0.5, COLORS["eca_alerta"]],
-                [1, COLORS["eca_excede"]],
-            ],
+            colorscale=eca_colorscale(),
         ),
         text=df_chart["Excedencias"],
         textposition="outside",
@@ -428,15 +424,12 @@ def _render_excedencias_por_punto(excedencias: list[dict]) -> None:
         hovertemplate="<b>%{y}</b><br>Excedencias: %{x}<extra></extra>",
     ))
 
-    fig.update_layout(
-        showlegend=False,
-        yaxis_title=None,
-        xaxis_title="Cantidad de excedencias",
+    apply_plotly_layout(
+        fig,
         height=max(300, len(df_chart) * 35 + 80),
+        x_title="Cantidad de excedencias",
         margin=dict(l=0, r=40, t=10, b=30),
-        plot_bgcolor="white",
-        xaxis=dict(gridcolor="#f0f0f0", showgrid=True),
-        yaxis=dict(showgrid=False),
+        yaxis=dict(showgrid=False, title=None),
     )
 
     st.plotly_chart(fig, use_container_width=True)
@@ -470,11 +463,11 @@ def _render_donut_estado(puntos: list[dict]) -> None:
         hovertemplate="<b>%{label}</b><br>%{value} punto(s)<br>%{percent}<extra></extra>",
     )])
 
-    fig.update_layout(
-        title=dict(text="<b>Estado ECA de puntos</b>", font_size=14),
+    apply_plotly_layout(
+        fig,
         height=320,
         margin=dict(l=10, r=10, t=50, b=10),
-        showlegend=False,
+        title=dict(text="<b>Estado ECA de puntos</b>", font_size=14),
         annotations=[dict(
             text=f"<b>{len(puntos)}</b><br>puntos",
             x=0.5, y=0.5,
@@ -747,7 +740,7 @@ def _render_tareas_pendientes() -> None:
     en lugar de los genéricos botones de 'Acceso rápido'. Cada item lleva
     a la página exacta donde se resuelve.
     """
-    from components.ui_styles import section_header, icon, COLORS
+    from components.ui_styles import section_header, icon, COLORS, card
 
     section_header("Tareas pendientes", "list")
 
@@ -760,6 +753,7 @@ def _render_tareas_pendientes() -> None:
         items.append({
             "icon": "play",
             "color": COLORS["primary"],
+            "halo": "#e0f2fe",
             "title": f"{len(camp_curso)} campaña(s) activa(s)",
             "detail": ", ".join(c["codigo"] for c in camp_curso[:3])
                       + (f" y {len(camp_curso)-3} más" if len(camp_curso) > 3 else ""),
@@ -773,6 +767,7 @@ def _render_tareas_pendientes() -> None:
         items.append({
             "icon": "beaker",
             "color": COLORS["secondary"],
+            "halo": "#d4f1f2",
             "title": f"{len(muestras_lab)} muestra(s) en laboratorio",
             "detail": "Muestras recibidas o en análisis pendientes de cierre.",
             "page": "pages/4_Resultados_Lab.py",
@@ -785,6 +780,7 @@ def _render_tareas_pendientes() -> None:
         items.append({
             "icon": "shield",
             "color": COLORS["warning"],
+            "halo": "#fef3c7",
             "title": f"{n_sin_val} resultado(s) sin validar",
             "detail": "Resultados ingresados pero no firmados por supervisor.",
             "page": "pages/4_Resultados_Lab.py",
@@ -798,42 +794,32 @@ def _render_tareas_pendientes() -> None:
     cols = st.columns(min(3, len(items)))
     for i, item in enumerate(items):
         with cols[i % len(cols)]:
-            # Card SSDH: ícono en círculo pastel a la izquierda, título +
-            # detalle a la derecha, borde izquierdo del color de severidad.
-            h = item["color"].lstrip("#")
-            r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
-            halo = f"rgba({r},{g},{b},0.12)"
-            st.markdown(
-                f"""<div style="background:#ffffff;
-                     border:1px solid #e8eaed;
-                     border-left:3px solid {item['color']};
-                     border-radius:8px;
-                     padding:14px 16px;
-                     box-shadow:0 1px 2px rgba(15,23,42,0.04);
-                     text-align:left;">
-                    <div style="display:flex; align-items:flex-start;
-                         gap:12px; margin-bottom:10px;">
-                        <div style="width:38px; height:38px; border-radius:50%;
-                             background:{halo}; flex-shrink:0;
-                             display:inline-flex; align-items:center;
-                             justify-content:center;">
-                            <span style="color:{item['color']}; line-height:0;">
-                                {icon(item['icon'], 20, item['color'])}
-                            </span>
+            # Card unificada (card()): acento vertical del color de severidad +
+            # ícono en círculo pastel a la izquierda, título + detalle a la derecha.
+            inner = f"""
+                <div style="display:flex; align-items:flex-start; gap:12px;">
+                    <div style="width:38px; height:38px; border-radius:50%;
+                         background:{item['halo']}; flex-shrink:0;
+                         display:inline-flex; align-items:center;
+                         justify-content:center;">
+                        <span style="color:{item['color']}; line-height:0;">
+                            {icon(item['icon'], 20, item['color'])}
+                        </span>
+                    </div>
+                    <div style="flex:1; min-width:0;">
+                        <div style="font-weight:600; color:var(--lvca-text);
+                             font-size:0.93rem; line-height:1.3;">
+                            {item['title']}
                         </div>
-                        <div style="flex:1; min-width:0;">
-                            <div style="font-weight:600; color:#1a1a1a;
-                                 font-size:0.93rem; line-height:1.3;">
-                                {item['title']}
-                            </div>
-                            <div style="font-size:0.78rem; color:#64748b;
-                                 margin-top:4px; line-height:1.4;
-                                 min-height:2.4em;">
-                                {item['detail']}
-                            </div>
+                        <div style="font-size:0.78rem; color:#64748b;
+                             margin-top:4px; line-height:1.4;
+                             min-height:2.4em;">
+                            {item['detail']}
                         </div>
                     </div>
-                </div>""",
+                </div>"""
+            st.markdown(
+                card(inner, accent=item["color"], padding="14px 16px"),
                 unsafe_allow_html=True,
             )
             st.page_link(item["page"], label=f"→ {item['cta']}")
