@@ -2613,33 +2613,15 @@ def _fragmento_mapa(puntos_con_coords: list[dict], opciones_punto: dict) -> None
             zoom_sel = 13
             punto_sel_id = _p_sel.get("id")
 
-    # Memoización del mapa: reconstruir el folium.Map (capas, marcadores, OMS)
-    # solo cuando cambia algo que afecta su CONTENIDO — puntos visibles, filtro
-    # de excedencias o el punto enfocado. En reruns no relacionados (sidebar,
-    # cambio de campaña, etc.) se reutiliza el MISMO objeto, cuyo HTML es
-    # idéntico, así st_folium (con key estable) NO re-monta el iframe ni pierde
-    # el zoom/posición del usuario. Elimina el "el visor se reinicia" y el coste
-    # O(n_puntos) de reconstruir todas las capas en cada rerun.
-    _firma_mapa = (
-        tuple((p.get("id"), p.get("estado")) for p in pts_mapa),
-        bool(solo_exc),
-        punto_sel_id,
-        tuple(centro) if centro else None,
-        zoom_sel,
+    mapa = _construir_mapa(
+        pts_mapa,
+        solo_excedencias=solo_exc,
+        centro=centro,
+        zoom=zoom_sel,
+        punto_sel_id=punto_sel_id,
     )
-    if st.session_state.get("_geo_mapa_firma") != _firma_mapa:
-        st.session_state["_geo_mapa_obj"] = _construir_mapa(
-            pts_mapa,
-            solo_excedencias=solo_exc,
-            centro=centro,
-            zoom=zoom_sel,
-            punto_sel_id=punto_sel_id,
-        )
-        st.session_state["_geo_mapa_firma"] = _firma_mapa
-    mapa = st.session_state["_geo_mapa_obj"]
-
     map_data = st_folium(
-        mapa, use_container_width=True, height=540, key="geo_mapa",
+        mapa, use_container_width=True, height=540,
         returned_objects=["last_object_clicked"],
     )
     n_visibles = sum(
