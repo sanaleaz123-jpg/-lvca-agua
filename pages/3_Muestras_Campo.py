@@ -93,12 +93,12 @@ def _semaforo_insitu(valor, lim_min, lim_max) -> str:
     """
     if valor is None:
         return (
-            '<span class="material-symbols-rounded" style="color:#9ca3af;">'
+            '<span class="material-symbols-rounded" style="color:var(--lvca-text-faint);">'
             "remove</span>"
         )
     if lim_max is None and lim_min is None:
         return (
-            '<span class="material-symbols-rounded" style="color:#9ca3af;">'
+            '<span class="material-symbols-rounded" style="color:var(--lvca-text-faint);">'
             "horizontal_rule</span>"
         )
     excede = (
@@ -107,11 +107,11 @@ def _semaforo_insitu(valor, lim_min, lim_max) -> str:
     )
     if excede:
         return (
-            '<span class="material-symbols-rounded" style="color:#dc2626;">'
+            '<span class="material-symbols-rounded" style="color:var(--lvca-acento-rojo);">'
             "error</span>"
         )
     return (
-        '<span class="material-symbols-rounded" style="color:#16a34a;">'
+        '<span class="material-symbols-rounded" style="color:var(--lvca-acento-verde);">'
         "check_circle</span>"
     )
 

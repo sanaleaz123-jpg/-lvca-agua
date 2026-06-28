@@ -153,17 +153,17 @@ def _catalogo_reportes(campana, campana_id, hay_hidrobio, hay_micro, ov_fito, ov
     fito_items = tuple(sorted(ov_fito.items()))
     micro_items = tuple(sorted(ov_micro.items()))
     return [
-        {"key": "excel", "titulo": "Excel", "icono": "📊", "disp": True, "motivo": "",
+        {"key": "excel", "titulo": "Excel", "icono": ":material/table_chart:", "disp": True, "motivo": "",
          "file": f"informe_{cod}.xlsx", "mime": _MIME_XLSX,
          "gen": lambda: _gen_excel(campana_id)},
-        {"key": "pdf", "titulo": "PDF", "icono": "📄", "disp": True, "motivo": "",
+        {"key": "pdf", "titulo": "PDF", "icono": ":material/picture_as_pdf:", "disp": True, "motivo": "",
          "file": f"informe_{cod}.pdf", "mime": _MIME_PDF,
          "gen": lambda: _gen_pdf(campana_id)},
-        {"key": "fito", "titulo": "Fitoplancton", "icono": "🔬", "disp": hay_hidrobio,
+        {"key": "fito", "titulo": "Fitoplancton", "icono": ":material/biotech:", "disp": hay_hidrobio,
          "motivo": "Carga un análisis en Resultados → Hidrobiológico",
          "file": f"Reporte_Fitoplancton_{cod}.docx", "mime": _MIME_DOCX,
          "gen": lambda: _gen_fito(campana_id, fito_items)},
-        {"key": "micro", "titulo": "Microcistina", "icono": "🧪", "disp": hay_micro,
+        {"key": "micro", "titulo": "Microcistina", "icono": ":material/science:", "disp": hay_micro,
          "motivo": "Calcula una corrida ELISA en Microcistina (ELISA)",
          "file": f"Reporte_Microcistina_{cod}.docx", "mime": _MIME_DOCX,
          "gen": lambda: _gen_micro(campana_id, micro_items)},
@@ -328,7 +328,7 @@ def _render_envio_correo(campana, campana_id, reportes) -> None:
             for e in envios:
                 cuando = str(e.get("enviado_at", ""))[:16].replace("T", " ")
                 estado = e.get("estado", "")
-                icono = "✅" if estado == "enviado" else "⚠️"
+                icono = ":material/check_circle:" if estado == "enviado" else ":material/warning:"
                 st.caption(f"{icono} {cuando} → {e.get('destinatarios', '')} · "
                            f"{e.get('adjuntos', '') or 'sin adjuntos'}")
 

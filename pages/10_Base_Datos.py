@@ -602,7 +602,7 @@ def main() -> None:
 
                         with col:
                             nuevo_val = st.number_input(
-                                f"{'🔴 ' if excede else ''}{label}",
+                                f"{':red[:material/error:] ' if excede else ''}{label}",
                                 value=float(val_actual) if val_actual is not None else None,
                                 format=formato_codigo.get(cod, _FORMATO_FALLBACK),
                                 help=help_txt or None,

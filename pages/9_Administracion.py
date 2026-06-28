@@ -52,7 +52,7 @@ def _render_usuarios() -> None:
             "Email":        u.get("email", "—"),
             "Rol":          (u.get("rol") or "visitante").capitalize(),
             "Institución":  u.get("institucion") or "—",
-            "Activo":       "Si" if u.get("activo") else "No",
+            "Activo":       "Sí" if u.get("activo") else "No",
             "Registro":     (u.get("created_at") or "")[:10],
         })
 
