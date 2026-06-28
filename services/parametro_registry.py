@@ -209,10 +209,14 @@ def clasificar_categoria(param: dict) -> str:
 # Funciones públicas — reemplazan constantes hardcodeadas
 # ─────────────────────────────────────────────────────────────────────────────
 
+@cached(ttl=300, grupo="referencia")
 def get_columnas_parametros() -> list[tuple[str, str]]:
     """
     Reemplazo dinámico de ``COLUMNAS_PARAMETROS``.
     Retorna ``[(codigo, label), ...]`` ordenados por categoría → código.
+
+    Cacheado (referencia): la transformación (clasificar + ordenar) no cambia
+    salvo al editar parámetros, que limpia el grupo vía invalidar_cache_parametros.
     """
     params = get_parametros_activos()
     items: list[tuple[str, str, int]] = []
@@ -237,10 +241,13 @@ def get_codigos_parametros() -> list[str]:
     return [cod for cod, _ in get_columnas_parametros()]
 
 
+@cached(ttl=300, grupo="referencia")
 def get_cat_params() -> dict[str, list[str]]:
     """
     Reemplazo dinámico de ``cat_params``.
     Retorna ``{"Campo (In situ)": ["P001",...], "Fisicoquímico": [...], ...}``
+
+    Cacheado (referencia): se reconstruye solo al editar parámetros.
     """
     params = get_parametros_activos()
     cats: dict[str, list[str]] = {}

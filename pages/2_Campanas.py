@@ -738,12 +738,17 @@ def _render_editar_campana(campana_id: str, camp: dict) -> None:
                 "observaciones":           observaciones.strip() or None,
             })
             sesion = st.session_state.get("sesion")
-            set_parametros_lab_campana(
+            if not set_parametros_lab_campana(
                 campana_id,
                 params_lab_sel,
                 params_lab_extra,
                 usuario_id=sesion.uid if sesion else None,
-            )
+            ):
+                st.warning(
+                    "Los cambios de la campaña se guardaron, pero no se pudieron "
+                    "registrar los parámetros de laboratorio. Reintenta esa parte.",
+                    icon=":material/warning:",
+                )
             st.success("Campaña actualizada correctamente.")
             st.rerun()
         except Exception as exc:
@@ -1126,12 +1131,17 @@ def _render_formulario_nueva() -> None:
         with st.spinner("Creando campaña..."):
             try:
                 creada = crear_campana(datos, usuario_id=usuario_id)
-                set_parametros_lab_campana(
+                if not set_parametros_lab_campana(
                     creada["id"],
                     params_lab_sel,
                     params_lab_extra,
                     usuario_id=usuario_id,
-                )
+                ):
+                    st.warning(
+                        "La campaña se creó, pero no se pudieron registrar los "
+                        "parámetros de laboratorio. Edítala para reintentar esa parte.",
+                        icon=":material/warning:",
+                    )
                 success_check_overlay(
                     f"Campaña {creada['codigo']} creada"
                 )

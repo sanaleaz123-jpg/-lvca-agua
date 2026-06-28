@@ -38,7 +38,7 @@ CODIGOS_PARAMETROS = get_codigos_parametros
 LIMITE_MUESTRAS = 5000
 
 
-@cached(ttl=120)
+@cached(ttl=600)
 def get_datos_consolidados(
     campana_id: Optional[str] = None,
     punto_id: Optional[str] = None,

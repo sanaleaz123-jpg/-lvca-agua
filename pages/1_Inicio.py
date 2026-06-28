@@ -57,8 +57,13 @@ ICONOS_PUNTO = {
 from pathlib import Path
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
 def _contar_cuencas() -> int:
-    """N° de cuencas con cartografía disponible (archivos GeoJSON)."""
+    """N° de cuencas con cartografía disponible (archivos GeoJSON).
+
+    Cacheado 1 h: el nº de cuencas con cartografía cambia rarísimo; evita el
+    glob de disco en cada render del dashboard.
+    """
     try:
         carpeta = Path(__file__).resolve().parents[1] / "static" / "geojson" / "cuencas"
         return len(list(carpeta.glob("*.geojson")))
@@ -573,7 +578,13 @@ def _render_mapa(puntos: list[dict]) -> None:
         ).add_to(m)
 
     folium.LayerControl(collapsed=True).add_to(m)
-    st_folium(m, use_container_width=True, height=520)
+    # returned_objects=[] → st_folium no propaga eventos de mapa (pan/zoom/clic)
+    # al backend; así mover el mapa no dispara un rerun completo del dashboard
+    # (el valor de retorno no se usa aquí). key estable preserva el iframe.
+    st_folium(
+        m, use_container_width=True, height=520,
+        returned_objects=[], key="inicio_mapa",
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -616,6 +616,7 @@ def eliminar_resultados_muestra(muestra_id: str, usuario_id: Optional[str] = Non
 # API pública: excedencias activas (para el dashboard)
 # ─────────────────────────────────────────────────────────────────────────────
 
+@cached(ttl=300)
 def get_excedencias_activas(dias: int = 30) -> list[dict]:
     """
     Retorna resultados recientes que superan el límite ECA del punto de muestreo.
@@ -889,8 +890,14 @@ def get_puntos_con_estado(dias: int = 30) -> list[dict]:
 # Helper interno
 # ─────────────────────────────────────────────────────────────────────────────
 
+@cached(ttl=600, grupo="referencia")
 def _get_usuario_interno_id(auth_id: str) -> Optional[str]:
-    """Resuelve el UUID interno de 'usuarios' a partir del auth_id de Supabase."""
+    """Resuelve el UUID interno de 'usuarios' a partir del auth_id de Supabase.
+
+    Cacheado (grupo referencia): el mapeo auth_id→UUID interno es estable durante
+    la sesión, así no se pega a Supabase en cada rerun del fragment de captura
+    (cada tecleo). Se invalida solo con cambios de datos de referencia.
+    """
     try:
         res = (
             get_db()

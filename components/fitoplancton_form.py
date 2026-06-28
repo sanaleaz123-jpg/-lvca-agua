@@ -521,7 +521,7 @@ def render_subseccion_fitoplancton(muestra_id: str, analista_id: str | None) -> 
                     area_contada_mm2=float(area_contada),
                 )
                 success_check_overlay("Análisis de fitoplancton guardado")
-                st.rerun()
+                st.rerun(scope="app")
             except Exception as exc:
                 st.error(f"Error al guardar: {exc}", icon=":material/error:")
 
@@ -532,6 +532,6 @@ def render_subseccion_fitoplancton(muestra_id: str, analista_id: str | None) -> 
             # Limpiar la marca de carga para que se rehidrate vacío
             st.session_state.pop(f"fito_loaded_{muestra_id}", None)
             toast("Análisis de fitoplancton eliminado", tipo="warn")
-            st.rerun()
+            st.rerun(scope="app")
         except Exception as exc:
             st.error(f"Error al eliminar: {exc}", icon=":material/error:")
