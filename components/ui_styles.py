@@ -228,7 +228,7 @@ _GLOBAL_CSS = """<style>
     /* Escala tipográfica única — fuente de verdad de los tamaños.
        Reconcilia los h1 que competían (global 1.5rem, banner 2rem/800,
        page-header legacy 1.55rem) en una jerarquía coherente. */
-    --lvca-fs-display: 1.875rem;   /* título de página (banner) */
+    --lvca-fs-display: 2.125rem;   /* título de página (banner) — presencia institucional */
     --lvca-fs-h1:      1.5rem;
     --lvca-fs-h2:      1.25rem;
     --lvca-fs-h3:      1.0625rem;
@@ -287,7 +287,8 @@ small, .small, .stCaption, [data-testid="stCaption"] {
    Refuerza el theme de config.toml por si el despliegue lo ignora. */
 [data-testid="stAppViewContainer"],
 [data-testid="stMain"] {
-    background: var(--lvca-bg-app) !important;
+    background: linear-gradient(180deg, #F7F9FC 0%, #E9EEF5 100%) !important;
+    background-attachment: fixed !important;
 }
 
 /* ── Ocultar nav nativa de Streamlit ───────────────────────────────────── */
@@ -338,9 +339,9 @@ small, .small, .stCaption, [data-testid="stCaption"] {
 [data-testid="stMetric"] {
     background: #ffffff;
     border: 1px solid #eef2f6;
-    border-radius: var(--lvca-radius-md);
-    padding: 18px 22px;
-    box-shadow: var(--lvca-shadow-xs);
+    border-radius: var(--lvca-radius-lg);
+    padding: 20px 24px;
+    box-shadow: var(--lvca-shadow-sm);
     transition: all var(--lvca-t) var(--lvca-ease);
 }
 [data-testid="stMetric"]:hover {
@@ -494,15 +495,16 @@ button[kind="secondary"]:hover {
 /* Botones primarios — azul institucional sólido (minimalista, sin gradiente) */
 .stButton > button[kind="primary"],
 button[kind="primary"] {
-    background: var(--lvca-brand-azul-dark) !important;
+    background: linear-gradient(180deg, #1357b3 0%, var(--lvca-brand-azul-dark) 100%) !important;
     border-color: var(--lvca-brand-azul-dark) !important;
     color: white !important;
+    box-shadow: 0 2px 6px rgba(13, 71, 161, 0.22) !important;
 }
 .stButton > button[kind="primary"]:hover,
 button[kind="primary"]:hover {
-    background: var(--lvca-brand-azul-darker) !important;
+    background: linear-gradient(180deg, var(--lvca-brand-azul-dark) 0%, var(--lvca-brand-azul-darker) 100%) !important;
     border-color: var(--lvca-brand-azul-darker) !important;
-    box-shadow: 0 3px 8px rgba(13, 71, 161, 0.18) !important;
+    box-shadow: 0 5px 14px rgba(13, 71, 161, 0.30) !important;
 }
 
 /* Clase auxiliar para botones destructivos: aplicar como wrapper o mediante
@@ -698,17 +700,26 @@ hr {
 .lvca-section-header {
     display: flex;
     align-items: center;
-    gap: 9px;
+    gap: 11px;
     color: #0f172a;
-    font-size: 1rem;
+    font-size: 1.05rem;
     font-weight: 700;
     margin: 2.6rem 0 1rem 0;
-    padding-bottom: 9px;
-    border-bottom: 2px solid #e2e8f0;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--lvca-border);
     text-transform: uppercase;
     letter-spacing: 0.05em;
 }
-.lvca-section-header svg { color: var(--lvca-acento-teal); }
+/* Ícono de sección dentro de un chip teal suave — acento de marca moderno. */
+.lvca-section-header svg {
+    color: var(--lvca-acento-teal);
+    background: rgba(10, 147, 150, 0.10);
+    border-radius: 8px;
+    padding: 6px;
+    width: 18px; height: 18px;
+    box-sizing: content-box;
+    flex-shrink: 0;
+}
 
 /* ── Badges ────────────────────────────────────────────────────────────── */
 .lvca-badge {
@@ -1469,12 +1480,14 @@ hr {
 .lvca-banner {
     position: relative;
     overflow: hidden;
-    background: var(--lvca-bg-card);
+    background:
+        radial-gradient(130% 150% at 100% 0%, rgba(10,147,150,0.07) 0%, rgba(10,147,150,0) 46%),
+        linear-gradient(135deg, #ffffff 0%, #f3f8fd 100%);
     color: var(--lvca-text);
-    padding: 28px 30px 28px 34px;
+    padding: 32px 36px 32px 40px;
     border: 1px solid var(--lvca-border-soft);
     border-radius: var(--lvca-radius-lg);
-    box-shadow: var(--lvca-shadow-xs);
+    box-shadow: var(--lvca-shadow-sm);
     margin-bottom: 30px;
     display: flex;
     align-items: center;
@@ -1482,14 +1495,15 @@ hr {
     gap: 20px;
     flex-wrap: wrap;
 }
-/* Barra de acento vertical azul→teal: presencia institucional sin recurrir
-   a un bloque de color saturado de fondo. */
+/* Barra de acento vertical azul→teal con leve resplandor: presencia
+   institucional marcada sin recurrir a un bloque de color saturado. */
 .lvca-banner::after {
     content: "";
     position: absolute;
     left: 0; top: 0; bottom: 0;
     width: 6px;
     background: linear-gradient(180deg, var(--lvca-brand-azul-dark), var(--lvca-acento-teal));
+    box-shadow: 0 0 18px rgba(13,71,161,0.28);
 }
 .lvca-banner .lvca-banner-body { flex: 1; min-width: 260px; position: relative; }
 .lvca-banner h1 {
@@ -1858,7 +1872,7 @@ def card(
         "background:var(--lvca-bg-card)",
         "border:1px solid var(--lvca-border-soft)",
         f"border-radius:{radius_var}",
-        "box-shadow:var(--lvca-shadow-xs)",
+        "box-shadow:var(--lvca-shadow-sm)",
         f"padding:{pad}",
     ]
     accent_html = ""
@@ -2117,11 +2131,11 @@ _TOP_NAV_CSS = """<style>
     left: 0 !important;
     right: 0 !important;
     z-index: 999 !important;
-    background: var(--lvca-nav-bg) !important;
-    border-bottom: 1px solid rgba(255,255,255,0.08);
+    background: linear-gradient(180deg, #0F3F78 0%, var(--lvca-nav-bg) 100%) !important;
+    border-bottom: 2px solid rgba(45, 212, 191, 0.38);
     padding: 10px 1.5rem 6px 1.5rem;
-    box-shadow: 0 1px 6px rgba(8, 42, 87, 0.20),
-                inset 0 1px 0 rgba(255,255,255,0.06);
+    box-shadow: 0 2px 12px rgba(8, 42, 87, 0.28),
+                inset 0 1px 0 rgba(255,255,255,0.08);
 }
 
 /* Ocultar el stHeader de Streamlit (la delgada barra nativa arriba)
