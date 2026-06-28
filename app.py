@@ -111,7 +111,7 @@ def _pantalla_login() -> None:
         [data-testid='stMainBlockContainer'] {
             padding-top: 32px !important;
             padding-bottom: 60px !important;
-            background: #F1F5F9;
+            background: var(--lvca-bg-app);
             max-width: 100% !important;
         }
         /* Anti-flash: ocultar la card mientras el form nativo hidrata.
@@ -134,22 +134,21 @@ def _pantalla_login() -> None:
         /* El container con key="lvca_login_card" se convierte en card
            blanca con sombra y banner azul arriba. */
         .st-key-lvca_login_card {
-            background: #ffffff !important;
-            border-radius: 16px !important;
-            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08),
-                        0 2px 6px rgba(15, 23, 42, 0.04) !important;
+            background: var(--lvca-bg-card) !important;
+            border-radius: var(--lvca-radius-lg) !important;
+            box-shadow: var(--lvca-shadow-lg) !important;
             overflow: hidden !important;
             padding: 0 !important;
-            border: 1px solid #eef2f6 !important;
+            border: 1px solid var(--lvca-border-soft) !important;
         }
         /* Inputs del login: focus azul institucional, igual que el resto
            de la plataforma. */
         .st-key-lvca_login_card [data-baseweb="input"] {
-            border-radius: 8px !important;
+            border-radius: var(--lvca-radius-sm) !important;
         }
         .st-key-lvca_login_card [data-baseweb="input"]:focus-within {
-            border-color: #0D47A1 !important;
-            box-shadow: 0 0 0 3px rgba(13,71,161,0.15) !important;
+            border-color: var(--lvca-brand-azul-dark) !important;
+            box-shadow: var(--lvca-focus-ring) !important;
         }
         /* Labels de form */
         .st-key-lvca_login_card label p,
@@ -166,8 +165,8 @@ def _pantalla_login() -> None:
         .st-key-lvca_login_card button[kind="primaryFormSubmit"],
         .st-key-lvca_login_card [data-testid="stFormSubmitButton"] button,
         .st-key-lvca_login_card .stFormSubmitButton button {
-            background: #0D47A1 !important;
-            background-color: #0D47A1 !important;
+            background: var(--lvca-brand-azul-dark) !important;
+            background-color: var(--lvca-brand-azul-dark) !important;
             color: #ffffff !important;
             border: none !important;
             box-shadow: 0 1px 3px rgba(13,71,161,0.15) !important;
@@ -178,7 +177,7 @@ def _pantalla_login() -> None:
         .st-key-lvca_login_card button[kind="primaryFormSubmit"]:hover,
         .st-key-lvca_login_card [data-testid="stFormSubmitButton"] button:hover,
         .st-key-lvca_login_card .stFormSubmitButton button:hover {
-            background: #0A3D7A !important;
+            background: var(--lvca-brand-azul-darker) !important;
             box-shadow: 0 3px 8px rgba(13,71,161,0.2) !important;
             transform: translateY(-1px) !important;
         }
@@ -186,15 +185,15 @@ def _pantalla_login() -> None:
            — para que el PNG con transparencia no muestre el checker pattern
            del tema oscuro / fondo gris. */
         .lvca-logo-frame {
-            background: #ffffff;
-            border: 1px solid #eef2f6;
-            border-radius: 12px;
+            background: var(--lvca-bg-card);
+            border: 1px solid var(--lvca-border-soft);
+            border-radius: var(--lvca-radius-md);
             padding: 14px 18px;
             height: 110px;
             display: flex;
             align-items: center;
             justify-content: center;
-            box-shadow: 0 1px 3px rgba(15,23,42,0.04);
+            box-shadow: var(--lvca-shadow-xs);
         }
         .lvca-logo-frame img {
             max-height: 82px;
@@ -218,7 +217,7 @@ def _pantalla_login() -> None:
             st.markdown(
                 """
                 <div style="position:relative; overflow:hidden;
-                     background:#0D47A1;
+                     background:var(--lvca-brand-azul-dark);
                      color:white; padding:28px 28px 22px 28px; text-align:center;">
                     <h1 style="margin:0; font-size:1.45rem; font-weight:700;
                          color:#ffffff; letter-spacing:-0.02em; line-height:1.25;">
@@ -230,7 +229,7 @@ def _pantalla_login() -> None:
                         AUTODEMA
                     </p>
                     <div style="position:absolute; left:0; right:0; bottom:0; height:3px;
-                         background:linear-gradient(90deg,#0D47A1,#0a9396);"></div>
+                         background:linear-gradient(90deg,var(--lvca-brand-azul-dark),var(--lvca-acento-teal));"></div>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -250,7 +249,7 @@ def _pantalla_login() -> None:
                             <img src="{lvca_uri}" alt="LVCA"/>
                         </div>
                     </div>
-                    <div style="text-align:center; color:#1565C0; font-size:0.88rem;
+                    <div style="text-align:center; color:var(--lvca-brand-azul-mid); font-size:0.88rem;
                          font-weight:600; margin:22px 0 8px 0; letter-spacing:-0.01em;">
                         Iniciar sesión
                     </div>
@@ -288,9 +287,9 @@ def _pantalla_login() -> None:
 
                 # Pie del card
                 st.markdown(
-                    f"""<div style='text-align:center; color:#94a3b8;
+                    f"""<div style='text-align:center; color:var(--lvca-text-faint);
                          font-size:0.72rem; margin-top:16px;
-                         border-top:1px solid #f1f5f9; padding:12px 0 16px 0;'>
+                         border-top:1px solid var(--lvca-border-soft); padding:12px 0 16px 0;'>
                         {APP_ENTIDAD} · v{APP_VERSION}
                     </div>""",
                     unsafe_allow_html=True,
