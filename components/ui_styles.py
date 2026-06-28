@@ -51,6 +51,20 @@ COLORS = {
 }
 
 
+# Estados de campaña → par {bg, fg} (espejo de las clases .lvca-pill-* del CSS).
+# Fuente única para que la celda "Estado" de la tabla de campañas combine con
+# el pill del panel de detalle y con el resto de la plataforma — reemplaza los
+# colores Bootstrap sueltos que vivían en pages/2_Campanas.py.
+CAMPANA_ESTADO_COLORS: dict[str, dict[str, str]] = {
+    "planificada":    {"bg": "#f1f5f9", "fg": "#475569"},
+    "en_campo":       {"bg": "#e0f2fe", "fg": "#0369a1"},
+    "en_laboratorio": {"bg": "#fff4e0", "fg": "#a85d00"},
+    "completada":     {"bg": "#dcfce7", "fg": "#166534"},
+    "anulada":        {"bg": "#fce4e4", "fg": "#a31f1f"},
+    "archivada":      {"bg": "#f8fafc", "fg": "#64748b"},
+}
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Iconografía SVG inline (estilo Lucide, stroke width 1.75)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1861,6 +1875,41 @@ def card(
         f'<div class="{cls}" style="{"; ".join(styles)};">'
         f'{accent_html}{body_html}</div>'
     )
+
+
+def style_eca_dataframe(
+    df,
+    *,
+    state_col: str | None = None,
+    state_colors: dict | None = None,
+    numeric_format: dict | None = None,
+):
+    """
+    Aplica el look de plataforma a un DataFrame y devuelve un pandas Styler.
+    Centraliza el coloreado de tablas para reemplazar los df.style.map() ad-hoc.
+
+    state_col / state_colors: pinta la columna `state_col` como celda tintada
+        estilo pill, usando state_colors = {valor_mostrado: {"bg", "fg"}}
+        (consistente con los .lvca-pill-* y CAMPANA_ESTADO_COLORS).
+    numeric_format: dict {columna: fmt} → Styler.format para dígitos alineados.
+
+    Pensado para st.dataframe (preserva selección/orden, a diferencia de
+    renderizar HTML). Si se necesita un pill real, usar estado_pill() en HTML.
+    """
+    styler = df.style
+    if state_col and state_colors:
+        def _estilo_estado(val):
+            par = state_colors.get(val)
+            if not par:
+                return ""
+            return (
+                f"background-color:{par['bg']}; color:{par['fg']}; "
+                f"text-align:center; font-weight:600; border-radius:4px;"
+            )
+        styler = styler.map(_estilo_estado, subset=[state_col])
+    if numeric_format:
+        styler = styler.format(numeric_format)
+    return styler
 
 
 def aplicar_estilos() -> None:

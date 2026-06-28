@@ -105,10 +105,10 @@ _BD_TABLE_CSS = """
   .bd-table-wrap {
     overflow-x: auto;
     max-height: 720px;
-    border: 1px solid #e2e8f0;
-    border-radius: 10px;
+    border: 1px solid var(--lvca-border);
+    border-radius: var(--lvca-radius-md);
     margin-bottom: 0.75rem;
-    box-shadow: 0 1px 2px rgba(15,23,42,0.05);
+    box-shadow: var(--lvca-shadow-xs);
   }
   table.bd-table {
     border-collapse: collapse;
@@ -116,11 +116,12 @@ _BD_TABLE_CSS = """
     width: max-content;
     min-width: 100%;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-variant-numeric: tabular-nums;
   }
   table.bd-table thead th {
     position: sticky;
     top: 0;
-    background: #f8fafc;
+    background: var(--lvca-surface-alt);
     color: #475569;
     font-weight: 600;
     font-size: 0.72rem;
@@ -128,7 +129,7 @@ _BD_TABLE_CSS = """
     letter-spacing: 0.04em;
     padding: 8px 10px;
     border: none;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid var(--lvca-border);
     text-align: center;
     white-space: nowrap;
     z-index: 2;
@@ -136,15 +137,15 @@ _BD_TABLE_CSS = """
   table.bd-table tbody td {
     padding: 5px 10px;
     border: none;
-    border-bottom: 1px solid #f1f5f9;
-    background: #ffffff;
+    border-bottom: 1px solid var(--lvca-border-soft);
+    background: var(--lvca-bg-card);
     white-space: nowrap;
     text-align: right;
-    color: #1e293b;
+    color: var(--lvca-text);
   }
   table.bd-table tbody td.text { text-align: left; }
   table.bd-table tbody tr:nth-child(even) td { background: #fcfdfe; }
-  table.bd-table tbody tr:hover td { background: #f1f5f9; }
+  table.bd-table tbody tr:hover td { background: var(--lvca-border-soft); }
   table.bd-table td.exceed {
     background: #fee2e2 !important;
     color: #b91c1c;
@@ -157,7 +158,7 @@ _BD_TABLE_CSS = """
     text-transform: uppercase;
     letter-spacing: 0.5px;
     padding: 7px 10px;
-    border-top: 2px solid #f59e0b;
+    border-top: 2px solid var(--lvca-acento-amarillo);
     border-bottom: 1px solid #fde68a;
     text-align: left;
   }

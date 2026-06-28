@@ -19,9 +19,11 @@ import streamlit as st
 from components.auth_guard import require_rol
 from components.nav_context import consumir_contexto, ir_a
 from components.ui_styles import (
+    CAMPANA_ESTADO_COLORS,
     aplicar_estilos,
     page_header,
     section_header,
+    style_eca_dataframe,
     success_check_overlay,
     toast,
     top_nav,
@@ -173,17 +175,6 @@ def _badge_estado(estado: str) -> str:
     return ETIQUETA_ESTADO.get(estado, estado)
 
 
-def _color_estado(estado: str) -> str:
-    return {
-        "planificada":    "#6c757d",
-        "en_campo":       "#0d6efd",
-        "en_laboratorio": "#ffc107",
-        "completada":     "#198754",
-        "anulada":        "#dc3545",
-        "archivada":      "#343a40",
-    }.get(estado, "#6c757d")
-
-
 _ESTADO_LABEL_LIMPIO: dict[str, str] = {
     "planificada":    "Planificada",
     "en_campo":       "En campo",
@@ -193,19 +184,14 @@ _ESTADO_LABEL_LIMPIO: dict[str, str] = {
     "archivada":      "Archivada",
 }
 
-
-def _estilo_celda_estado(label: str) -> str:
-    """CSS para una celda de la columna Estado en la tabla del listado."""
-    estado_key = next(
-        (k for k, v in _ESTADO_LABEL_LIMPIO.items() if v == label), None
-    )
-    bg = _color_estado(estado_key or "")
-    # 'En laboratorio' usa amarillo claro: texto negro para contraste.
-    fg = "black" if estado_key == "en_laboratorio" else "white"
-    return (
-        f"background-color: {bg}; color: {fg}; "
-        f"text-align: center; font-weight: 600; border-radius: 4px;"
-    )
+# Etiqueta mostrada → par {bg, fg} para tintar la celda Estado de la tabla,
+# derivado del mapa centralizado CAMPANA_ESTADO_COLORS (paleta de pills). Así
+# la celda combina con el pill del panel de detalle y con toda la plataforma.
+_ESTADO_CELDA_COLORS: dict[str, dict[str, str]] = {
+    label: CAMPANA_ESTADO_COLORS[key]
+    for key, label in _ESTADO_LABEL_LIMPIO.items()
+    if key in CAMPANA_ESTADO_COLORS
+}
 
 
 def _render_atajo_flujo(camp: dict) -> None:
@@ -320,7 +306,9 @@ def _render_listado() -> None:
         "responsable_campo": "Resp. campo",
     })
 
-    styled = df_view.style.map(_estilo_celda_estado, subset=["Estado"])
+    styled = style_eca_dataframe(
+        df_view, state_col="Estado", state_colors=_ESTADO_CELDA_COLORS
+    )
 
     event = st.dataframe(
         styled,
