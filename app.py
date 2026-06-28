@@ -101,14 +101,13 @@ def _pantalla_login() -> None:
     aplicar_estilos()
 
     # CSS específico del login: fondo neutro + card centrada.
+    # Nota: el sidebar ya queda oculto por el bloque temprano de app.py
+    # (anti-flash, arriba) reforzado por ui_styles; aquí solo se ocultan
+    # elementos propios del login (header nativo) y se ajusta el contenedor.
     st.markdown(
         """
         <style>
-        [data-testid='stSidebar'],
-        [data-testid='stSidebarNav'],
-        [data-testid='collapsedControl'] { display: none !important; }
         [data-testid='stHeader'] { display: none !important; }
-        [data-testid='stMain'] { margin-left: 0 !important; }
         [data-testid='stMainBlockContainer'] {
             padding-top: 32px !important;
             padding-bottom: 60px !important;

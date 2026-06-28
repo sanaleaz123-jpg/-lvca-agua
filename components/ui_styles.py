@@ -191,6 +191,8 @@ _GLOBAL_CSS = """<style>
 :root {
     --lvca-brand-azul:        #1E6091;
     --lvca-brand-azul-dark:   #0D47A1;
+    --lvca-brand-azul-darker: #0A3D7A;   /* hover/active del primario (espejo COLORS["primary_dark"]) */
+    --lvca-brand-azul-mid:    #1565C0;   /* foco WCAG + chip de marca — un solo azul de foco */
     --lvca-brand-azul-light:  #2563EB;
     --lvca-acento-verde:      #10B981;
     --lvca-acento-verde-dark: #047857;
@@ -199,22 +201,45 @@ _GLOBAL_CSS = """<style>
     --lvca-acento-rojo:       #EF4444;
     --lvca-acento-rojo-dark:  #B91C1C;
     --lvca-acento-teal:       #0a9396;
+    --lvca-nav-bg:            #0C3568;   /* fondo de la barra de navegación superior */
     --lvca-bg-app:            #F1F5F9;
     --lvca-bg-card:           #FFFFFF;
+    --lvca-surface-alt:       #F8FAFC;   /* superficie alterna (headers de tabla, separadores) */
     --lvca-border:            #E2E8F0;
     --lvca-border-soft:       #F1F5F9;
     --lvca-text:              #0F172A;
     --lvca-text-muted:        #64748B;
     --lvca-text-faint:        #94A3B8;
 
-    /* Tokens de forma, profundidad y movimiento */
+    /* Escala tipográfica única — fuente de verdad de los tamaños.
+       Reconcilia los h1 que competían (global 1.5rem, banner 2rem/800,
+       page-header legacy 1.55rem) en una jerarquía coherente. */
+    --lvca-fs-display: 1.875rem;   /* título de página (banner) */
+    --lvca-fs-h1:      1.5rem;
+    --lvca-fs-h2:      1.25rem;
+    --lvca-fs-h3:      1.0625rem;
+    --lvca-fs-body:    0.875rem;
+    --lvca-fs-cap:     0.75rem;     /* overline / caption */
+
+    /* Ritmo de espaciado base 4px — paddings/márgenes consistentes. */
+    --lvca-space-1: 4px;
+    --lvca-space-2: 8px;
+    --lvca-space-3: 12px;
+    --lvca-space-4: 16px;
+    --lvca-space-5: 24px;
+    --lvca-space-6: 32px;
+    --lvca-space-7: 48px;
+
+    /* Tokens de forma, profundidad y movimiento.
+       Escalera de elevación afinada: sombras estratificadas, blur algo mayor
+       y alpha menor para un acabado premium más suave. */
     --lvca-radius-sm:   8px;
     --lvca-radius-md:   12px;
     --lvca-radius-lg:   16px;
-    --lvca-shadow-xs:   0 1px 2px rgba(15,23,42,0.05);
-    --lvca-shadow-sm:   0 1px 3px rgba(15,23,42,0.06), 0 1px 2px rgba(15,23,42,0.04);
-    --lvca-shadow-md:   0 3px 8px rgba(15,23,42,0.05), 0 1px 2px rgba(15,23,42,0.03);
-    --lvca-shadow-lg:   0 8px 24px rgba(15,23,42,0.08), 0 2px 6px rgba(15,23,42,0.04);
+    --lvca-shadow-xs:   0 1px 2px rgba(15,23,42,0.04), 0 1px 1px rgba(15,23,42,0.03);
+    --lvca-shadow-sm:   0 1px 3px rgba(15,23,42,0.05), 0 1px 2px rgba(15,23,42,0.03);
+    --lvca-shadow-md:   0 4px 12px rgba(15,23,42,0.06), 0 2px 4px rgba(15,23,42,0.03);
+    --lvca-shadow-lg:   0 12px 32px rgba(15,23,42,0.10), 0 4px 8px rgba(15,23,42,0.04);
     --lvca-ease:        cubic-bezier(0.4, 0, 0.2, 1);
     --lvca-t:           0.18s;
     --lvca-focus-ring:  0 0 0 3px rgba(13,71,161,0.15);
@@ -234,9 +259,9 @@ h1, h2, h3, h4, h5, h6 {
     letter-spacing: -0.015em;
     color: #0f172a;
 }
-h1 { font-weight: 700 !important; font-size: 1.5rem !important; letter-spacing: -0.02em; }
-h2 { font-weight: 600 !important; font-size: 1.25rem !important; }
-h3 { font-weight: 600 !important; font-size: 1.05rem !important; }
+h1 { font-weight: 700 !important; font-size: var(--lvca-fs-h1) !important; letter-spacing: -0.02em; }
+h2 { font-weight: 600 !important; font-size: var(--lvca-fs-h2) !important; }
+h3 { font-weight: 600 !important; font-size: var(--lvca-fs-h3) !important; }
 h4 { font-weight: 600 !important; font-size: 0.95rem !important; }
 small, .small, .stCaption, [data-testid="stCaption"] {
     font-size: 0.78rem !important;
@@ -307,7 +332,7 @@ small, .small, .stCaption, [data-testid="stCaption"] {
 [data-testid="stMetric"]:hover {
     border-color: #e2e8f0;
     box-shadow: var(--lvca-shadow-md);
-    transform: translateY(-1px);
+    transform: translateY(-2px);
 }
 [data-testid="stMetric"] label {
     color: #94a3b8 !important;
@@ -360,6 +385,7 @@ small, .small, .stCaption, [data-testid="stCaption"] {
     border-right: none !important;
     border-bottom: 1px solid #f8fafc !important;
     font-size: 0.86rem !important;
+    font-variant-numeric: tabular-nums;
 }
 [data-testid="stDataFrame"] [role="row"]:hover [role="gridcell"] {
     background: #f1f5f9 !important;
@@ -454,14 +480,14 @@ button[kind="secondary"]:hover {
 /* Botones primarios — azul institucional sólido (minimalista, sin gradiente) */
 .stButton > button[kind="primary"],
 button[kind="primary"] {
-    background: #0D47A1 !important;
-    border-color: #0D47A1 !important;
+    background: var(--lvca-brand-azul-dark) !important;
+    border-color: var(--lvca-brand-azul-dark) !important;
     color: white !important;
 }
 .stButton > button[kind="primary"]:hover,
 button[kind="primary"]:hover {
-    background: #0A3D7A !important;
-    border-color: #0A3D7A !important;
+    background: var(--lvca-brand-azul-darker) !important;
+    border-color: var(--lvca-brand-azul-darker) !important;
     box-shadow: 0 3px 8px rgba(13, 71, 161, 0.18) !important;
 }
 
@@ -530,7 +556,7 @@ input:focus, textarea:focus, [data-baseweb="select"]:focus-within {
 [data-baseweb="input"] input:focus,
 [data-baseweb="textarea"] textarea:focus {
     background: #ffffff !important;
-    border-color: #0D47A1 !important;
+    border-color: var(--lvca-brand-azul-dark) !important;
     box-shadow: var(--lvca-focus-ring) !important;
 }
 
@@ -548,7 +574,7 @@ input:focus, textarea:focus, [data-baseweb="select"]:focus-within {
 }
 .lvca-form-minimal [data-baseweb="input"] input:focus,
 .lvca-form-minimal [data-baseweb="textarea"] textarea:focus {
-    border-bottom: 2px solid #0D47A1 !important;
+    border-bottom: 2px solid var(--lvca-brand-azul-dark) !important;
     box-shadow: none !important;
 }
 .lvca-form-minimal label {
@@ -596,21 +622,21 @@ hr {
 .lvca-card {
     background: #ffffff;
     border: 1px solid #f1f5f9;
-    border-radius: 12px;
-    padding: 24px 22px;
+    border-radius: var(--lvca-radius-md);
+    padding: var(--lvca-space-5) var(--lvca-space-5);
     text-align: center;
-    transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: all var(--lvca-t) var(--lvca-ease);
     height: 100%;
-    box-shadow: none;
+    box-shadow: var(--lvca-shadow-xs);
 }
 .lvca-card:hover {
     border-color: #e2e8f0;
-    box-shadow: 0 2px 8px rgba(15,23,42,0.04);
-    transform: translateY(-1px);
+    box-shadow: var(--lvca-shadow-sm);
+    transform: translateY(-2px);
 }
 .lvca-card-icon {
     margin-bottom: 10px;
-    color: #0D47A1;
+    color: var(--lvca-brand-azul-dark);
 }
 .lvca-card-title {
     font-size: 0.95rem;
@@ -622,6 +648,20 @@ hr {
     font-size: 0.82rem;
     color: #64748b;
     line-height: 1.4;
+}
+
+/* ── Primitiva de tarjeta unificada — generada por card() en ui_styles ──
+   Superficie blanca tokenizada con barra de acento opcional. Reemplaza el
+   HTML de tarjeta escrito a mano (excedencias, tareas, informes, tiles). */
+.lvca-card-surface {
+    transition: box-shadow var(--lvca-t) var(--lvca-ease),
+                transform var(--lvca-t) var(--lvca-ease),
+                border-color var(--lvca-t) var(--lvca-ease);
+}
+.lvca-card-surface--hover:hover {
+    box-shadow: var(--lvca-shadow-sm);
+    transform: translateY(-2px);
+    border-color: var(--lvca-border) !important;
 }
 
 /* ── Encabezados de página y sección — más aireados ───────────────────── */
@@ -1440,11 +1480,11 @@ hr {
 .lvca-banner .lvca-banner-body { flex: 1; min-width: 260px; position: relative; }
 .lvca-banner h1 {
     margin: 0;
-    font-size: 2rem !important;
-    font-weight: 800 !important;
+    font-size: var(--lvca-fs-display) !important;
+    font-weight: 700 !important;
     color: var(--lvca-text) !important;
-    letter-spacing: -0.03em;
-    line-height: 1.12;
+    letter-spacing: -0.025em;
+    line-height: 1.15;
 }
 .lvca-banner .lvca-banner-sub {
     margin: 8px 0 0 0;
@@ -1599,7 +1639,7 @@ button:focus-visible,
 [data-baseweb="select"]:focus-within,
 textarea:focus-visible,
 [data-baseweb="tab"]:focus-visible {
-    outline: 2px solid #1565C0 !important;
+    outline: 2px solid var(--lvca-brand-azul-mid) !important;
     outline-offset: 2px !important;
     border-radius: 6px;
 }
@@ -1651,6 +1691,177 @@ textarea:focus-visible,
 </style>"""
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Tema Plotly unificado ("lvca") + primitiva de tarjeta
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Secuencia de colores de marca para series categóricas en gráficos.
+LVCA_COLORWAY: list[str] = [
+    COLORS["primary"],     # azul institucional
+    COLORS["secondary"],   # teal
+    COLORS["accent"],      # naranja
+    COLORS["eca_cumple"],  # verde
+    COLORS["eca_alerta"],  # ámbar
+    COLORS["eca_excede"],  # rojo
+    "#1565C0",             # azul medio
+    "#7C3AED",             # violeta (categoría extra)
+]
+
+_PLOTLY_TEMPLATE_REGISTRADO = False
+
+
+def register_plotly_template() -> None:
+    """
+    Registra (una sola vez) el template Plotly 'lvca' y lo fija como default.
+
+    Look LVCA: fuente Inter, papel transparente (la figura vive dentro de la
+    card blanca de [data-testid="stPlotlyChart"]), área de plot blanca, grilla
+    gris-borde suave, ticks gris medio, colorway de marca y hover oscuro.
+
+    Idempotente — bandera de módulo para no re-registrar en cada rerun. Falla
+    silenciosa si Plotly no está disponible. Llamado desde aplicar_estilos().
+    """
+    global _PLOTLY_TEMPLATE_REGISTRADO
+    if _PLOTLY_TEMPLATE_REGISTRADO:
+        return
+    try:
+        import plotly.graph_objects as go
+        import plotly.io as pio
+    except Exception:
+        return
+
+    _eje = dict(
+        showgrid=True,
+        gridcolor="#eef2f6",
+        gridwidth=1,
+        zeroline=False,
+        linecolor="#e2e8f0",
+        tickfont=dict(color="#64748b", size=12),
+        title=dict(font=dict(color="#475569", size=12)),
+    )
+    pio.templates["lvca"] = go.layout.Template(
+        layout=dict(
+            font=dict(
+                family="Inter, -apple-system, 'Segoe UI', Roboto, sans-serif",
+                color="#1e293b", size=13,
+            ),
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="#ffffff",
+            colorway=LVCA_COLORWAY,
+            xaxis=_eje,
+            yaxis=_eje,
+            margin=dict(l=48, r=20, t=40, b=40),
+            hoverlabel=dict(
+                bgcolor="#0f172a",
+                bordercolor="#0f172a",
+                font=dict(family="Inter, sans-serif", color="#ffffff", size=12),
+            ),
+            legend=dict(font=dict(color="#475569", size=12), bgcolor="rgba(0,0,0,0)"),
+            title=dict(font=dict(color="#0f172a", size=15)),
+        )
+    )
+    pio.templates.default = "lvca"
+    _PLOTLY_TEMPLATE_REGISTRADO = True
+
+
+def eca_colorscale() -> list[list]:
+    """Escala continua del semáforo ECA (verde→ámbar→rojo) para
+    marker.colorscale de barras/heatmaps. Deriva de COLORS, sin hex literales."""
+    return [
+        [0.0, COLORS["eca_cumple"]],
+        [0.5, COLORS["eca_alerta"]],
+        [1.0, COLORS["eca_excede"]],
+    ]
+
+
+def apply_plotly_layout(
+    fig,
+    *,
+    height: int | None = None,
+    legend: bool = False,
+    x_title: str | None = None,
+    y_title: str | None = None,
+    **layout,
+):
+    """
+    Aplica el look LVCA a una figura Plotly existente y la devuelve.
+
+    Usa el template 'lvca' (lo registra si hace falta), papel transparente (la
+    card blanca de Streamlit ya da el fondo) y opcionalmente altura, leyenda y
+    títulos de eje. Reemplaza los fig.update_layout(...) ad-hoc de las páginas.
+    Cualquier kwarg extra de layout se reenvía a fig.update_layout().
+    """
+    register_plotly_template()
+    base: dict = {"template": "lvca", "paper_bgcolor": "rgba(0,0,0,0)"}
+    if height is not None:
+        base["height"] = height
+    base["showlegend"] = bool(legend)
+    if x_title is not None:
+        base["xaxis_title"] = x_title
+    if y_title is not None:
+        base["yaxis_title"] = y_title
+    base.update(layout)
+    try:
+        fig.update_layout(**base)
+    except Exception:
+        pass
+    return fig
+
+
+def card(
+    body_html: str,
+    *,
+    accent: str | None = None,
+    padding: str | None = None,
+    radius: str = "md",
+    hover: bool = True,
+    extra_class: str = "",
+) -> str:
+    """
+    Devuelve el HTML de una tarjeta-superficie blanca tokenizada, con barra de
+    acento izquierda opcional. Primitiva única que reemplaza el HTML de tarjeta
+    escrito a mano (excedencias, tareas, informes, tiles de módulo).
+
+    accent : clave de COLORS (p. ej. "eca_excede", "primary", "secondary") o un
+             hex/var() literal; None → sin barra de acento.
+    radius : "sm" | "md" | "lg" → --lvca-radius-*.
+    padding: override CSS del padding; por defecto var(--lvca-space-5).
+    hover  : activa el lift sutil en hover.
+
+    Uso: st.markdown(card("<b>Hola</b>", accent="eca_excede"), unsafe_allow_html=True)
+    """
+    radius_map = {
+        "sm": "var(--lvca-radius-sm)",
+        "md": "var(--lvca-radius-md)",
+        "lg": "var(--lvca-radius-lg)",
+    }
+    radius_var = radius_map.get(radius, radius)
+    pad = padding or "var(--lvca-space-5)"
+    styles = [
+        "position:relative",
+        "overflow:hidden",
+        "background:var(--lvca-bg-card)",
+        "border:1px solid var(--lvca-border-soft)",
+        f"border-radius:{radius_var}",
+        "box-shadow:var(--lvca-shadow-xs)",
+        f"padding:{pad}",
+    ]
+    accent_html = ""
+    if accent:
+        color = COLORS.get(accent, accent)
+        styles.append(f"padding-left:calc({pad} + 6px)")
+        accent_html = (
+            f'<span style="position:absolute; left:0; top:0; bottom:0; width:4px; '
+            f'background:{color};"></span>'
+        )
+    hover_cls = " lvca-card-surface--hover" if hover else ""
+    cls = f"lvca-card-surface{hover_cls}" + (f" {extra_class}" if extra_class else "")
+    return (
+        f'<div class="{cls}" style="{"; ".join(styles)};">'
+        f'{accent_html}{body_html}</div>'
+    )
+
+
 def aplicar_estilos() -> None:
     """
     Inyecta el CSS global y la fuente Inter. Llamar al inicio de cada página.
@@ -1662,8 +1873,10 @@ def aplicar_estilos() -> None:
 
     Además inyecta el footer institucional (position:fixed) que se muestra
     en todas las páginas. Como `position:fixed` saca el elemento del flow,
-    el orden de inyección no importa.
+    el orden de inyección no importa. Registra también el template Plotly
+    'lvca' para que cualquier gráfico posterior herede el look de marca.
     """
+    register_plotly_template()
     st.markdown(_FONT_LINK, unsafe_allow_html=True)
     st.markdown(_GLOBAL_CSS, unsafe_allow_html=True)
     st.markdown(_RESPONSIVE_A11Y_CSS, unsafe_allow_html=True)
@@ -1672,10 +1885,12 @@ def aplicar_estilos() -> None:
 
 def page_header(titulo: str, subtitulo: str = "", ambito: str = "") -> None:
     """
-    Encabezado de página — banner estilo SSDH-ANA.
+    Encabezado de página — banner minimalista refinado (.lvca-banner).
 
-    - Gradiente azul institucional (#0D47A1 → #1565C0).
-    - Título en blanco, subtítulo en blanco semitransparente.
+    - Tarjeta blanca con título en tinta oscura a tamaño display
+      (--lvca-fs-display) y filete vertical de acento azul→teal a la
+      izquierda; sin bloque de color saturado de fondo.
+    - Subtítulo opcional en gris tenue debajo del título.
     - Ámbito opcional: píldora a la derecha, equivalente al "UH 132" del
       SSDH. Solo lo usa el Geoportal por ahora; el resto de páginas lo
       dejan vacío.
@@ -1852,10 +2067,11 @@ _TOP_NAV_CSS = """<style>
     left: 0 !important;
     right: 0 !important;
     z-index: 999 !important;
-    background: #0C3568 !important;
+    background: var(--lvca-nav-bg) !important;
     border-bottom: 1px solid rgba(255,255,255,0.08);
     padding: 10px 1.5rem 6px 1.5rem;
-    box-shadow: 0 1px 6px rgba(8, 42, 87, 0.20);
+    box-shadow: 0 1px 6px rgba(8, 42, 87, 0.20),
+                inset 0 1px 0 rgba(255,255,255,0.06);
 }
 
 /* Ocultar el stHeader de Streamlit (la delgada barra nativa arriba)
@@ -1879,7 +2095,7 @@ _TOP_NAV_CSS = """<style>
 .lvca-brand-logo {
     width: 28px; height: 28px;
     border-radius: 8px;
-    background: #1565C0;
+    background: var(--lvca-brand-azul-mid);
     color: #ffffff;
     display: inline-flex; align-items: center; justify-content: center;
     flex-shrink: 0;
