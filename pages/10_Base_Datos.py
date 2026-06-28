@@ -277,6 +277,37 @@ def _render_tabla_por_campana(
     )
 
 
+@st.cache_data(show_spinner=False)
+def _df_a_csv(df: pd.DataFrame) -> bytes:
+    """Serializa el DataFrame a CSV (UTF-8), cacheado por contenido. Evita
+    re-serializar el conjunto completo en cada rerun (paginación, filtros de
+    presentación), ya que st.download_button evalúa su argumento `data` siempre."""
+    return df.to_csv(index=False).encode("utf-8")
+
+
+@st.cache_data(show_spinner=False)
+def _metricas_bd(campana_id, punto_ids, fecha_inicio, fecha_fin, categorias):
+    """Métricas del consolidado (valores registrados / excedencias) cacheadas por
+    la firma de filtros. Evita recorrer ~5000×40 filas en cada rerun (p. ej. al
+    paginar). Re-deriva datos/límites desde sus cachés (cache-hit) y se limpia
+    junto con ellas en cada escritura/edición de referencia."""
+    datos = get_datos_consolidados(
+        campana_id=campana_id, punto_ids=punto_ids,
+        fecha_inicio=fecha_inicio, fecha_fin=fecha_fin,
+    )
+    limites = get_limites_eca_todos()
+    cat_params = get_cat_params()
+    codigos: list[str] = []
+    for cat in categorias:
+        codigos.extend(cat_params.get(cat, []))
+    n_val = sum(1 for d in datos for cod in codigos if d.get(cod) is not None)
+    n_exc = sum(
+        1 for d in datos for cod in codigos
+        if d.get(cod) is not None and _excede_eca(d[cod], d.get("eca_id"), cod, limites)
+    )
+    return n_val, n_exc
+
+
 @require_rol("visitante")
 def main() -> None:
     aplicar_estilos()
@@ -411,11 +442,12 @@ def main() -> None:
     # ── Métricas rápidas ────────────────────────────────────────────────
     n_muestras = len(datos)
     n_puntos = len({d["punto_codigo"] for d in datos})
-    n_valores = sum(1 for d in datos for cod in codigos_visibles if d.get(cod) is not None)
-    n_excedencias = sum(
-        1 for d in datos
-        for cod in codigos_visibles
-        if d.get(cod) is not None and _excede_eca(d[cod], d.get("eca_id"), cod, limites)
+    n_valores, n_excedencias = _metricas_bd(
+        campana_id,
+        punto_ids_filtro,
+        str(fecha_inicio) if fecha_inicio else None,
+        str(fecha_fin) if fecha_fin else None,
+        tuple(categoria_filtro),
     )
 
     mc1, mc2, mc3, mc4 = st.columns(4)
@@ -542,7 +574,7 @@ def main() -> None:
         st.markdown(html_table, unsafe_allow_html=True)
 
         # Botón de descarga (siempre el conjunto completo filtrado)
-        csv = df.to_csv(index=False).encode("utf-8")
+        csv = _df_a_csv(df)
         st.download_button(
             "Descargar CSV",
             csv,
