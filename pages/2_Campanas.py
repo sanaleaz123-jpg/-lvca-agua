@@ -789,16 +789,62 @@ def _render_editar_puntos(campana_id: str, puntos_actuales: list[dict]) -> None:
 
 _PROF_LABELS = {"S": "Superficie", "M": "Medio", "F": "Fondo"}
 
+# Etiquetas cortas para las columnas de la matriz de ensayos (encabezados
+# compactos). Cualquier ensayo no listado usa su nombre completo.
+_ENSAYO_ABREV = {
+    "Hierro y manganeso disuelto": "Fe/Mn",
+    "Fitoplancton":                "Fitopl.",
+    "Clorofila A":                 "Clorof. A",
+    "Color":                       "Color",
+    "Fisicoquímicos y nutrientes": "FQ + Nutr.",
+    "DBO5":                        "DBO5",
+    "Microcistina - LR":           "Microc. LR",
+}
+
+# Ensayos estándar marcados por defecto en cada punto (los opcionales —DBO5,
+# Microcistina - LR— quedan desmarcados: los decide el analista por punto).
+_ENSAYOS_OPCIONALES = {"DBO5", "Microcistina - LR"}
+
+
+def _matriz_ensayos_default(
+    puntos: list[dict], tipo_muestreo: str, ensayos: list[str]
+) -> tuple[pd.DataFrame, list[tuple]]:
+    """
+    Construye el DataFrame inicial de la matriz punto × ensayo y la metadata
+    de filas (alineada por posición).
+
+      • Superficial → una fila por punto; estándar=True, opcionales=False.
+      • Columna     → una fila por punto×profundidad (S/M/F); todo en False.
+
+    Devuelve (df, meta) donde meta[i] = (punto_id, prof|None) para la fila i.
+    """
+    filas: list[dict] = []
+    meta:  list[tuple] = []
+    for pt in puntos:
+        etiqueta = f"{pt.get('codigo','')} — {pt.get('nombre','')}"
+        if tipo_muestreo == MODO_SUPERFICIAL:
+            fila = {"Punto": etiqueta}
+            for e in ensayos:
+                fila[e] = e not in _ENSAYOS_OPCIONALES
+            filas.append(fila)
+            meta.append((pt["id"], None))
+        else:
+            for prof in PROFUNDIDADES_COLUMNA:
+                fila = {"Punto": etiqueta, "Prof.": _PROF_LABELS[prof]}
+                for e in ensayos:
+                    fila[e] = False
+                filas.append(fila)
+                meta.append((pt["id"], prof))
+    return pd.DataFrame(filas), meta
+
 
 def _render_etiquetas_frascos(campana_id: str, puntos: list[dict]) -> None:
     """
     Generador del .docx con etiquetas pre-rellenas para los frascos de campo.
-    Cada hoja contiene las etiquetas en una grilla 2×3 (izquierda/derecha).
+    Cada hoja contiene las etiquetas en una grilla 2×N (izquierda/derecha).
 
-    Modos:
-      • Superficial → 1 hoja por punto, PROF=0.3 m, código sin sufijo.
-      • Columna     → 1 hoja por cada profundidad (S/M/F) marcada en cada
-                      punto. PROF en blanco. CÓDIGO con sufijo (S/M/F).
+    El analista elige por punto —y por profundidad en modo columna— qué ensayos
+    lleva cada estación, mediante una matriz de casillas (punto × ensayo).
     """
     if not puntos:
         st.caption("Vincula al menos un punto de muestreo para generar etiquetas.")
@@ -809,44 +855,51 @@ def _render_etiquetas_frascos(campana_id: str, puntos: list[dict]) -> None:
         options=["Superficial", "Columna de agua"],
         horizontal=True,
         key=f"etiq_tipo_{campana_id}",
-        help="Superficial → PROF=0.3 m. Columna → eliges qué profundidades (S/M/F) en cada punto.",
+        help="Superficial → PROF=0.3 m, 1 hoja por punto. "
+             "Columna → 1 hoja por cada profundidad (S/M/F) con ensayos marcados.",
     )
     tipo_muestreo = MODO_SUPERFICIAL if tipo_label == "Superficial" else MODO_COLUMNA
 
-    profundidades_por_punto: dict[str, list[str]] = {}
-    if tipo_muestreo == MODO_COLUMNA:
-        st.caption(
-            ":material/info: Marca por punto cuáles profundidades vas a muestrear. "
-            "Cada profundidad marcada genera una hoja independiente."
-        )
-        for pt in puntos:
-            cols = st.columns([3, 1, 1, 1])
-            with cols[0]:
-                st.markdown(
-                    f"**{pt.get('codigo','')}** — {pt.get('nombre','')}",
-                )
-            seleccionadas: list[str] = []
-            for idx, prof in enumerate(PROFUNDIDADES_COLUMNA, start=1):
-                with cols[idx]:
-                    marcado = st.checkbox(
-                        _PROF_LABELS[prof],
-                        key=f"etiq_prof_{campana_id}_{pt['id']}_{prof}",
-                        value=False,
-                    )
-                if marcado:
-                    seleccionadas.append(prof)
-            profundidades_por_punto[pt["id"]] = seleccionadas
-
     ensayos_disp = get_ensayos_disponibles()
-    sel_ensayos = st.multiselect(
-        "Ensayos a incluir",
-        options=ensayos_disp,
-        default=ensayos_disp,
-        key=f"etiq_ensayos_{campana_id}",
-        help="Cada ensayo genera una etiqueta con su preservante correspondiente. "
-             "DBO5 y Microcistina - LR van rotulados en azul (sin preservante). "
-             "Caben hasta 8 etiquetas por hoja.",
+    st.caption(
+        ":material/info: Marca qué ensayos lleva cada punto"
+        + (" y profundidad" if tipo_muestreo == MODO_COLUMNA else "")
+        + ". Cada fila con ≥1 ensayo marcado genera una hoja (máx. 8 etiquetas)."
     )
+
+    df_default, meta = _matriz_ensayos_default(puntos, tipo_muestreo, ensayos_disp)
+
+    col_cfg: dict = {
+        "Punto": st.column_config.TextColumn("Punto", disabled=True, width="medium"),
+    }
+    if tipo_muestreo == MODO_COLUMNA:
+        col_cfg["Prof."] = st.column_config.TextColumn(
+            "Prof.", disabled=True, width="small"
+        )
+    for e in ensayos_disp:
+        col_cfg[e] = st.column_config.CheckboxColumn(
+            _ENSAYO_ABREV.get(e, e), help=e, default=False
+        )
+
+    edited = st.data_editor(
+        df_default,
+        column_config=col_cfg,
+        hide_index=True,
+        num_rows="fixed",
+        use_container_width=True,
+        key=f"etiq_matriz_{campana_id}_{tipo_muestreo}",
+    )
+
+    # Reconstruir la selección por punto / por profundidad desde la matriz.
+    seleccion: dict = {}
+    for i, (pid, prof) in enumerate(meta):
+        marcados = [e for e in ensayos_disp if bool(edited.iloc[i][e])]
+        if not marcados:
+            continue
+        if tipo_muestreo == MODO_SUPERFICIAL:
+            seleccion[pid] = marcados
+        else:
+            seleccion.setdefault(pid, {})[prof] = marcados
 
     sel_resp = st.multiselect(
         "Muestreado por",
@@ -858,38 +911,30 @@ def _render_etiquetas_frascos(campana_id: str, puntos: list[dict]) -> None:
     )
 
     if tipo_muestreo == MODO_SUPERFICIAL:
-        n_hojas = len(puntos)
+        n_hojas = len(seleccion)
+        n_etiq  = sum(len(v) for v in seleccion.values())
     else:
-        n_hojas = sum(len(v) for v in profundidades_por_punto.values())
-    n_etiq = n_hojas * len(sel_ensayos)
+        n_hojas = sum(len(d) for d in seleccion.values())
+        n_etiq  = sum(len(lst) for d in seleccion.values() for lst in d.values())
 
     col_a, col_b = st.columns([1, 2])
     with col_a:
-        if not sel_ensayos:
+        if n_hojas == 0:
             st.button(
                 "Generar etiquetas",
                 key=f"btn_gen_etiq_{campana_id}",
                 disabled=True,
                 icon=":material/label:",
             )
-            st.caption("Selecciona al menos un ensayo.")
-        elif tipo_muestreo == MODO_COLUMNA and n_hojas == 0:
-            st.button(
-                "Generar etiquetas",
-                key=f"btn_gen_etiq_{campana_id}",
-                disabled=True,
-                icon=":material/label:",
-            )
-            st.caption("Marca al menos una profundidad (S, M o F) en algún punto.")
+            st.caption("Marca al menos un ensayo en algún punto.")
         else:
             try:
                 with st.spinner("Generando documento..."):
                     docx_bytes = generar_etiquetas_campana(
                         campana_id=campana_id,
-                        ensayos_seleccionados=sel_ensayos,
                         responsables=sel_resp,
                         tipo_muestreo=tipo_muestreo,
-                        profundidades_por_punto=profundidades_por_punto,
+                        seleccion_ensayos=seleccion,
                     )
                 st.download_button(
                     label="Descargar etiquetas (Word)",
