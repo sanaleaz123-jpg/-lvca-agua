@@ -55,9 +55,9 @@ ENSAYOS_PLANTILLA: list[dict] = [
     # clonando una etiqueta base con el MISMO preservante.
     {"nombre": "DBO5",              "preservante": "S/P",   "sintetico": True},  # azul (S/P)
     {"nombre": "Microcistina - LR", "preservante": "S/P",   "sintetico": True},  # azul (S/P)
-    # Zooplancton y Perifiton: Lugol, pero con membrete lila para distinguirlos.
-    {"nombre": "Zooplancton", "preservante": "LUGOL", "sintetico": True, "membrete": "membrete_lila.png"},
-    {"nombre": "Perifiton",   "preservante": "LUGOL", "sintetico": True, "membrete": "membrete_lila.png"},
+    # Zooplancton y Perifiton: Formol → membrete lila (automático por preservante).
+    {"nombre": "Zooplancton", "preservante": "FORMOL", "sintetico": True},
+    {"nombre": "Perifiton",   "preservante": "FORMOL", "sintetico": True},
     # DQO: H2SO4 → membrete naranja (automático). Se ofrece para seleccionar
     # pero arranca DESMARCADO por defecto (ver _DEFAULT_PROF_ENSAYO en la UI).
     {"nombre": "DQO", "preservante": "H2SO4", "sintetico": True},
@@ -75,17 +75,18 @@ _BASE_SINTETICA_POR_PRESERVANTE = {
 _MEMBRETE_DIR = os.path.join(os.path.dirname(__file__), "..", "templates")
 
 # Convención de color del FONDO del membrete por preservante:
-#   HNO3   → amarillo   (horneado en la etiqueta pre-impresa de Fe/Mn)
-#   LUGOL  → verde      (horneado en la etiqueta pre-impresa de Fitoplancton)
-#   S/P    → azul       (horneado en las etiquetas pre-impresas S/P)
-#   HCl    → rojo pastel    (imagen lista; aún sin ensayo que lo use)
-#   H2SO4  → naranja pastel (imagen lista; p. ej. futura DQO)
-# (caso especial: Zooplancton/Perifiton usan membrete lila aunque sean Lugol.)
+#   HNO3   → amarillo        (horneado en la etiqueta pre-impresa de Fe/Mn)
+#   LUGOL  → verde           (horneado en la etiqueta pre-impresa de Fitoplancton)
+#   S/P    → azul            (horneado en las etiquetas pre-impresas S/P)
+#   FORMOL → lila pastel     (Zooplancton, Perifiton)
+#   HCl    → rojo pastel     (imagen lista; aún sin ensayo que lo use)
+#   H2SO4  → naranja pastel  (DQO)
 # Para los preservantes con imagen propia, al crear un ensayo sintético con ese
 # preservante se le aplica automáticamente su membrete si no trae uno explícito.
 MEMBRETE_POR_PRESERVANTE: dict[str, str] = {
-    "HCl":   "membrete_rojo.png",
-    "H2SO4": "membrete_naranja.png",
+    "FORMOL": "membrete_lila.png",
+    "HCl":    "membrete_rojo.png",
+    "H2SO4":  "membrete_naranja.png",
 }
 
 # Mapeo de cada ensayo (frasco/etiqueta) a los códigos de parámetro de la

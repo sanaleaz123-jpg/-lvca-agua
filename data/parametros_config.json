@@ -22,6 +22,6 @@
     "P077": {"preservante": "HCl", "tipo_frasco": "Polipropileno 500 ml"},
     "P120": {"preservante": "Lugol", "tipo_frasco": "Polipropileno 1000 ml"},
     "P124": {"preservante": "Ninguno", "tipo_frasco": "Polipropileno 500 ml"},
-    "P126": {"preservante": "Lugol", "tipo_frasco": "Polipropileno 1000 ml"},
-    "P130": {"preservante": "Lugol", "tipo_frasco": "Polipropileno 120 ml"}
+    "P126": {"preservante": "Formol", "tipo_frasco": "Polipropileno 1000 ml"},
+    "P130": {"preservante": "Formol", "tipo_frasco": "Polipropileno 120 ml"}
 }
