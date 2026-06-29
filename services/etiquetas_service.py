@@ -40,30 +40,36 @@ from database.client import get_db
 
 # 5 ensayos fijos de la plantilla, con el preservante asociado (no editable —
 # coinciden con las cajas pre-impresas en `ETIQUETAS_EnBlanco_10puntos.docx`).
+# El color de FONDO del membrete (la franja del encabezado, que es una imagen)
+# codifica el preservante: amarillo=HNO3, verde=Lugol, azul=S/P. El texto del
+# ENSAYO va siempre en negro. Los ensayos sintéticos clonan una etiqueta base
+# con su preservante (heredan su membrete); `membrete` permite sobreescribir la
+# imagen del membrete por una variante propia (p. ej. lila para Zoo/Perifiton).
 ENSAYOS_PLANTILLA: list[dict] = [
-    {"nombre": "Hierro y manganeso disuelto", "preservante": "HNO3"},
-    # Fitoplancton: Lugol, rotulado en verde.
-    {"nombre": "Fitoplancton",                "preservante": "LUGOL", "color": "008000"},
-    {"nombre": "Clorofila A",                 "preservante": "S/P"},
-    {"nombre": "Color",                       "preservante": "S/P"},
-    {"nombre": "Fisicoquímicos y nutrientes", "preservante": "S/P"},
-    # Ensayos añadidos por la plataforma (no pre-impresos en la plantilla): se
-    # sintetizan clonando una etiqueta base con el MISMO preservante y se
-    # rotulan en su color.
-    {"nombre": "DBO5",              "preservante": "S/P",   "sintetico": True, "color": "000000"},
-    {"nombre": "Microcistina - LR", "preservante": "S/P",   "sintetico": True, "color": "000000"},
-    # Zooplancton y Perifiton: Lugol, rotulados en lila claro pastel.
-    {"nombre": "Zooplancton",       "preservante": "LUGOL", "sintetico": True, "color": "B19CD9"},
-    {"nombre": "Perifiton",         "preservante": "LUGOL", "sintetico": True, "color": "B19CD9"},
+    {"nombre": "Hierro y manganeso disuelto", "preservante": "HNO3"},   # amarillo
+    {"nombre": "Fitoplancton",                "preservante": "LUGOL"},  # verde
+    {"nombre": "Clorofila A",                 "preservante": "S/P"},    # azul
+    {"nombre": "Color",                       "preservante": "S/P"},    # azul
+    {"nombre": "Fisicoquímicos y nutrientes", "preservante": "S/P"},    # azul
+    # Ensayos añadidos por la plataforma (no pre-impresos): se sintetizan
+    # clonando una etiqueta base con el MISMO preservante.
+    {"nombre": "DBO5",              "preservante": "S/P",   "sintetico": True},  # azul (S/P)
+    {"nombre": "Microcistina - LR", "preservante": "S/P",   "sintetico": True},  # azul (S/P)
+    # Zooplancton y Perifiton: Lugol, pero con membrete lila para distinguirlos.
+    {"nombre": "Zooplancton", "preservante": "LUGOL", "sintetico": True, "membrete": "membrete_lila.png"},
+    {"nombre": "Perifiton",   "preservante": "LUGOL", "sintetico": True, "membrete": "membrete_lila.png"},
 ]
 
 # Etiqueta base a clonar para cada preservante al sintetizar ensayos nuevos
 # (debe ser una etiqueta pre-impresa con ese preservante marcado).
 _BASE_SINTETICA = "Color"  # fallback (S/P)
 _BASE_SINTETICA_POR_PRESERVANTE = {
-    "S/P":   "Color",        # casilla S/P marcada
-    "LUGOL": "Fitoplancton", # casilla LUGOL marcada
+    "S/P":   "Color",        # casilla S/P marcada, membrete azul
+    "LUGOL": "Fitoplancton", # casilla LUGOL marcada, membrete verde
 }
+
+# Carpeta con las variantes de membrete (imágenes) referenciadas por `membrete`.
+_MEMBRETE_DIR = os.path.join(os.path.dirname(__file__), "..", "templates")
 
 # Mapeo de cada ensayo (frasco/etiqueta) a los códigos de parámetro de la
 # cadena de custodia que cubre. Permite que la cadena marque "x" solo en los
@@ -389,8 +395,8 @@ def _extraer_etiqueta_templates(doc) -> dict[str, object]:
             break
 
     # Sintetizar las etiquetas no pre-impresas (DBO5, Microcistina, Zooplancton,
-    # Perifiton, …) clonando una etiqueta base con el MISMO preservante y
-    # re-rotulando el campo ENSAYO en su color.
+    # Perifiton, …) clonando una etiqueta base con el MISMO preservante (hereda
+    # su casilla de preservante y su membrete). Texto del ENSAYO en negro.
     for e in ENSAYOS_PLANTILLA:
         if not e.get("sintetico") or e["nombre"] in capturados:
             continue
@@ -402,19 +408,17 @@ def _extraer_etiqueta_templates(doc) -> dict[str, object]:
             base = capturados.get(_BASE_SINTETICA)
         if base is None:
             continue
-        capturados[e["nombre"]] = _sintetizar_etiqueta(
-            base, e["nombre"], e.get("color") or "000000"
-        )
+        capturados[e["nombre"]] = _sintetizar_etiqueta(base, e["nombre"])
 
-    # Colorear el texto ENSAYO de las etiquetas pre-impresas que definan color
-    # (p. ej. Fitoplancton en verde).
+    # Sobreescribir la imagen del membrete para los ensayos que lo definan
+    # (p. ej. Zooplancton/Perifiton → membrete lila). Requiere el `doc` para
+    # registrar la imagen y obtener su relación (rId).
+    membrete_cache: dict[str, str] = {}
     for e in ENSAYOS_PLANTILLA:
-        if e.get("sintetico"):
-            continue
-        color = e.get("color")
+        img = e.get("membrete")
         el = capturados.get(e["nombre"])
-        if color and el is not None:
-            _colorear_ensayo(el, color)
+        if img and el is not None:
+            _set_membrete(doc, el, img, membrete_cache)
 
     return capturados
 
@@ -431,42 +435,36 @@ def _celda_ensayo(etiqueta_element):
     return tcs[2] if len(tcs) >= 3 else None
 
 
-def _colorear_ensayo(etiqueta_element, color_hex: str) -> None:
-    """Aplica `color_hex` al texto del campo ENSAYO de una etiqueta."""
-    tc = _celda_ensayo(etiqueta_element)
-    if tc is not None:
-        _colorear_celda(tc, color_hex)
-
-
-def _sintetizar_etiqueta(base_element, nombre: str, color_hex: str):
+def _sintetizar_etiqueta(base_element, nombre: str):
     """
     Clona una etiqueta base (mismo preservante) y reescribe su campo ENSAYO
-    (fila 5, celda 2) con `nombre` en color `color_hex`. El resto de la etiqueta
-    —incluida la casilla de preservante marcada— se conserva del clon.
+    (fila 5, celda 2) con `nombre`. El resto —incluida la casilla de preservante
+    marcada y el membrete— se conserva del clon. Texto en negro (el de la base).
     """
     nuevo = deepcopy(base_element)
     tc = _celda_ensayo(nuevo)
     if tc is not None:
         _set_paragrafo_directo(tc, nombre)
-        _colorear_celda(tc, color_hex)
     return nuevo
 
 
-def _colorear_celda(tc, color_hex: str) -> None:
+def _set_membrete(doc, etiqueta_element, image_filename: str, cache: dict) -> None:
     """
-    Aplica color de fuente `color_hex` (RRGGBB) a todos los runs <w:r> de la
-    celda, insertando o reemplazando <w:color> dentro de su <w:rPr>.
+    Reapunta la imagen del membrete (franja del encabezado) de la etiqueta a
+    `image_filename` (en _MEMBRETE_DIR), registrándola una sola vez en el `doc`.
+    Si la imagen no existe, deja el membrete original sin tocar.
     """
-    for r in tc.iter(qn("w:r")):
-        rPr = r.find(qn("w:rPr"))
-        if rPr is None:
-            rPr = OxmlElement("w:rPr")
-            r.insert(0, rPr)
-        color = rPr.find(qn("w:color"))
-        if color is None:
-            color = OxmlElement("w:color")
-            rPr.append(color)
-        color.set(qn("w:val"), color_hex)
+    blip = etiqueta_element.find(".//" + qn("a:blip"))
+    if blip is None:
+        return
+    rid = cache.get(image_filename)
+    if rid is None:
+        path = os.path.join(_MEMBRETE_DIR, image_filename)
+        if not os.path.exists(path):
+            return
+        rid, _ = doc.part.get_or_add_image(path)
+        cache[image_filename] = rid
+    blip.set(qn("r:embed"), rid)
 
 
 def _extraer_outer_template(doc):
