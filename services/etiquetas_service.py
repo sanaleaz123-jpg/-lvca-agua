@@ -47,10 +47,10 @@ ENSAYOS_PLANTILLA: list[dict] = [
     {"nombre": "Color",                       "preservante": "S/P"},
     {"nombre": "Fisicoquímicos y nutrientes", "preservante": "S/P"},
     # Ensayos sin preservante añadidos por la plataforma (no pre-impresos en la
-    # plantilla): se sintetizan clonando una etiqueta S/P existente y se rotulan
-    # en azul como código visual de "sin preservar".
-    {"nombre": "DBO5",              "preservante": "S/P", "sintetico": True, "color": "0000FF"},
-    {"nombre": "Microcistina - LR", "preservante": "S/P", "sintetico": True, "color": "0000FF"},
+    # plantilla): se sintetizan clonando una etiqueta S/P existente. Texto en
+    # negro, igual que el resto de etiquetas.
+    {"nombre": "DBO5",              "preservante": "S/P", "sintetico": True, "color": "000000"},
+    {"nombre": "Microcistina - LR", "preservante": "S/P", "sintetico": True, "color": "000000"},
 ]
 
 # Etiqueta S/P existente que se clona como base para los ensayos sintéticos.
