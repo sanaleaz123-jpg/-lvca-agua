@@ -806,6 +806,7 @@ _ENSAYO_ABREV = {
     "Microcistina - LR":           "Microc. LR",
     "Zooplancton":                 "Zoopl.",
     "Perifiton":                   "Perif.",
+    "DQO":                         "DQO",
 }
 
 # Profundidades donde un ensayo viene MARCADO por defecto. Los ensayos no
@@ -815,6 +816,7 @@ _DEFAULT_PROF_ENSAYO: dict[str, set[str]] = {
     "Microcistina - LR": {"S"},        # solo superficie
     "Fitoplancton":      {"S", "M"},   # superficie y medio
     "Clorofila A":       {"S", "M"},   # superficie y medio
+    "DQO":               set(),        # desmarcado por defecto (se elige a voluntad)
 }
 
 

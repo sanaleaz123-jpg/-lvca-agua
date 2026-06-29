@@ -58,6 +58,9 @@ ENSAYOS_PLANTILLA: list[dict] = [
     # Zooplancton y Perifiton: Lugol, pero con membrete lila para distinguirlos.
     {"nombre": "Zooplancton", "preservante": "LUGOL", "sintetico": True, "membrete": "membrete_lila.png"},
     {"nombre": "Perifiton",   "preservante": "LUGOL", "sintetico": True, "membrete": "membrete_lila.png"},
+    # DQO: H2SO4 → membrete naranja (automático). Se ofrece para seleccionar
+    # pero arranca DESMARCADO por defecto (ver _DEFAULT_PROF_ENSAYO en la UI).
+    {"nombre": "DQO", "preservante": "H2SO4", "sintetico": True},
 ]
 
 # Etiqueta base a clonar para cada preservante al sintetizar ensayos nuevos
@@ -422,7 +425,9 @@ def _extraer_etiqueta_templates(doc) -> dict[str, object]:
             base = capturados.get(_BASE_SINTETICA)
         if base is None:
             continue
-        capturados[e["nombre"]] = _sintetizar_etiqueta(base, e["nombre"])
+        capturados[e["nombre"]] = _sintetizar_etiqueta(
+            base, e["nombre"], e.get("preservante")
+        )
 
     # Sobreescribir la imagen del membrete: explícito (`membrete`, p. ej.
     # Zoo/Perifiton → lila) o por preservante (HCl→rojo, H2SO4→naranja).
@@ -449,17 +454,54 @@ def _celda_ensayo(etiqueta_element):
     return tcs[2] if len(tcs) >= 3 else None
 
 
-def _sintetizar_etiqueta(base_element, nombre: str):
+def _sintetizar_etiqueta(base_element, nombre: str, preservante: str | None = None):
     """
-    Clona una etiqueta base (mismo preservante) y reescribe su campo ENSAYO
-    (fila 5, celda 2) con `nombre`. El resto —incluida la casilla de preservante
-    marcada y el membrete— se conserva del clon. Texto en negro (el de la base).
+    Clona una etiqueta base y reescribe su campo ENSAYO (fila 5, celda 2) con
+    `nombre`. Si `preservante` se indica, marca esa casilla de preservante (y
+    desmarca las demás), permitiendo que la base tenga otro preservante (p. ej.
+    DQO=H2SO4 clonando una base S/P). Texto en negro (el de la base).
     """
     nuevo = deepcopy(base_element)
     tc = _celda_ensayo(nuevo)
     if tc is not None:
         _set_paragrafo_directo(tc, nombre)
+    if preservante:
+        _marcar_preservante(nuevo, preservante)
     return nuevo
+
+
+# Etiquetas de preservante que aparecen en la casilla del membrete.
+_PRESERVANTES_ETIQUETA = {"LUGOL", "HNO3", "H2SO4", "FORMOL", "HCl", "S/P"}
+
+
+def _marcar_preservante(etiqueta_element, preservante: str) -> None:
+    """
+    En la fila PRESERVANTE, marca la casilla `( X )` del preservante indicado y
+    deja en `(    )` las demás. Las opciones son pares de runs: etiqueta
+    (LUGOL/HNO3/…) seguida de su casilla `(    )` o `( X )`.
+    """
+    tbl = _encontrar_tabla_campos(etiqueta_element)
+    if tbl is None:
+        return
+    rows = tbl.findall(qn("w:tr"))
+    if len(rows) < 2:
+        return
+    celda = None
+    for tc in rows[1].findall(qn("w:tc")):
+        txt = "".join(t.text or "" for t in tc.iter(qn("w:t")))
+        if "PRESERVANTE" in txt:
+            celda = tc
+            break
+    if celda is None:
+        return
+    pendiente = None
+    for t in celda.iter(qn("w:t")):
+        s = (t.text or "").strip()
+        if s in _PRESERVANTES_ETIQUETA:
+            pendiente = s
+        elif s.startswith("(") and s.endswith(")"):   # casilla
+            t.text = "( X )" if pendiente == preservante else "(    )"
+            pendiente = None
 
 
 def _set_membrete(doc, etiqueta_element, image_filename: str, cache: dict) -> None:
