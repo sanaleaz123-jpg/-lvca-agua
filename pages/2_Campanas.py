@@ -801,20 +801,16 @@ _ENSAYO_ABREV = {
     "Microcistina - LR":           "Microc. LR",
 }
 
-# Ensayos estándar marcados por defecto en cada punto (los opcionales —DBO5,
-# Microcistina - LR— quedan desmarcados: los decide el analista por punto).
-_ENSAYOS_OPCIONALES = {"DBO5", "Microcistina - LR"}
-
-
 def _matriz_ensayos_default(
     puntos: list[dict], tipo_muestreo: str, ensayos: list[str]
 ) -> tuple[pd.DataFrame, list[tuple]]:
     """
     Construye el DataFrame inicial de la matriz punto × ensayo y la metadata
-    de filas (alineada por posición).
+    de filas (alineada por posición). Todos los ensayos vienen marcados por
+    defecto; el analista desmarca los que no apliquen a cada punto/profundidad.
 
-      • Superficial → una fila por punto; estándar=True, opcionales=False.
-      • Columna     → una fila por punto×profundidad (S/M/F); todo en False.
+      • Superficial → una fila por punto.
+      • Columna     → una fila por punto×profundidad (S/M/F).
 
     Devuelve (df, meta) donde meta[i] = (punto_id, prof|None) para la fila i.
     """
@@ -825,14 +821,14 @@ def _matriz_ensayos_default(
         if tipo_muestreo == MODO_SUPERFICIAL:
             fila = {"Punto": etiqueta}
             for e in ensayos:
-                fila[e] = e not in _ENSAYOS_OPCIONALES
+                fila[e] = True
             filas.append(fila)
             meta.append((pt["id"], None))
         else:
             for prof in PROFUNDIDADES_COLUMNA:
                 fila = {"Punto": etiqueta, "Prof.": _PROF_LABELS[prof]}
                 for e in ensayos:
-                    fila[e] = False
+                    fila[e] = True
                 filas.append(fila)
                 meta.append((pt["id"], prof))
     return pd.DataFrame(filas), meta
@@ -855,8 +851,8 @@ def _render_etiquetas_frascos(campana_id: str, puntos: list[dict]) -> None:
         options=["Superficial", "Columna de agua"],
         horizontal=True,
         key=f"etiq_tipo_{campana_id}",
-        help="Superficial → PROF=0.3 m, 1 hoja por punto. "
-             "Columna → 1 hoja por cada profundidad (S/M/F) con ensayos marcados.",
+        help="Superficial: PROF=0.3 m, 1 hoja por punto. "
+             "Columna: 1 hoja por cada profundidad (S/M/F) con ensayos marcados.",
     )
     tipo_muestreo = MODO_SUPERFICIAL if tipo_label == "Superficial" else MODO_COLUMNA
 
@@ -864,7 +860,8 @@ def _render_etiquetas_frascos(campana_id: str, puntos: list[dict]) -> None:
     st.caption(
         ":material/info: Marca qué ensayos lleva cada punto"
         + (" y profundidad" if tipo_muestreo == MODO_COLUMNA else "")
-        + ". Cada fila con ≥1 ensayo marcado genera una hoja (máx. 8 etiquetas)."
+        + ". Todo viene marcado: desmarca lo que no aplique. "
+        "Cada fila con al menos 1 ensayo genera una hoja (máx. 8 etiquetas)."
     )
 
     df_default, meta = _matriz_ensayos_default(puntos, tipo_muestreo, ensayos_disp)
@@ -878,7 +875,7 @@ def _render_etiquetas_frascos(campana_id: str, puntos: list[dict]) -> None:
         )
     for e in ensayos_disp:
         col_cfg[e] = st.column_config.CheckboxColumn(
-            _ENSAYO_ABREV.get(e, e), help=e, default=False
+            _ENSAYO_ABREV.get(e, e), help=e, default=True
         )
 
     edited = st.data_editor(
