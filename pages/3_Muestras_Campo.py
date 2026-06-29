@@ -490,6 +490,15 @@ def _render_registro(campana_id: str) -> None:
     punto_label = st.selectbox("Punto de muestreo *", list(opciones_puntos.keys()), key="reg_punto")
     punto_id = opciones_puntos[punto_label]
 
+    # Sufijo de scope para los widgets que tienen key= explícita. Sin esto,
+    # Streamlit conserva el valor del widget en session_state según su key e
+    # IGNORA el `value=`/`index=` recalculado al cambiar de punto: las
+    # profundidades, el modo y los niveles se quedaban "pegados" del punto
+    # anterior. Incluir campana_id + punto_id en la key fuerza un widget nuevo
+    # (con sus defaults frescos) por cada punto. Los widgets SIN key (tipo,
+    # fecha, hora, técnico, clima, temp, observaciones) ya se refrescan solos.
+    scope = f"__{campana_id}__{punto_id}"
+
     # "Descarga" y "Nivel del embalse" son datos propios de embalses; en ríos
     # y demás cuerpos de agua no aplican y no deben mostrarse.
     es_embalse = next(
@@ -586,7 +595,7 @@ def _render_registro(campana_id: str) -> None:
         index=modo_idx,
         format_func=lambda m: "Superficial" if m == "superficial" else "Columna de agua (Superficie / Medio / Fondo)",
         horizontal=True,
-        key="reg_modo_muestreo",
+        key=f"reg_modo_muestreo{scope}",
     )
 
     # ── Niveles a muestrear (FUERA del form para que sea dinámico) ──────
@@ -612,19 +621,19 @@ def _render_registro(campana_id: str) -> None:
             sel_niv["S"] = st.checkbox(
                 "Superficie",
                 value=("S" in niveles_existentes) if es_edicion else True,
-                key="reg_nivel_S",
+                key=f"reg_nivel_S{scope}",
             )
         with cn2:
             sel_niv["M"] = st.checkbox(
                 "Medio",
                 value=("M" in niveles_existentes) if es_edicion else True,
-                key="reg_nivel_M",
+                key=f"reg_nivel_M{scope}",
             )
         with cn3:
             sel_niv["F"] = st.checkbox(
                 "Fondo",
                 value=("F" in niveles_existentes) if es_edicion else True,
-                key="reg_nivel_F",
+                key=f"reg_nivel_F{scope}",
             )
         niveles_seleccionados = [t for t in ("S", "M", "F") if sel_niv[t]]
 
@@ -652,7 +661,7 @@ def _render_registro(campana_id: str) -> None:
                 )
                 confirmacion_eliminar = st.checkbox(
                     "Confirmo la eliminación de los niveles desmarcados",
-                    key="reg_confirmar_eliminar_niveles",
+                    key=f"reg_confirmar_eliminar_niveles{scope}",
                 )
 
     # ── Fotos ya guardadas del punto (FUERA del form para permitir eliminar) ─
@@ -723,7 +732,7 @@ def _render_registro(campana_id: str) -> None:
                 "Profundidad de muestreo (m)",
                 min_value=0.0, max_value=50.0, step=0.1,
                 value=float(def_profundidades.get("S", 0.3)),
-                key="reg_prof_sup",
+                key=f"reg_prof_sup{scope}",
             )
         else:
             # Columna de agua: ecosonda, Secchi y profundidad de cada nivel marcado
@@ -735,14 +744,14 @@ def _render_registro(campana_id: str) -> None:
                     "Profundidad total (ecosonda) (m)",
                     min_value=0.0, max_value=500.0, step=0.1,
                     value=float(def_prof_total) if def_prof_total else 0.0,
-                    key="reg_prof_total",
+                    key=f"reg_prof_total{scope}",
                 )
             with pt2:
                 prof_secchi_val = st.number_input(
                     "Profundidad Secchi (disco) (m)",
                     min_value=0.0, max_value=100.0, step=0.1,
                     value=float(def_prof_secchi) if def_prof_secchi else 0.0,
-                    key="reg_prof_secchi",
+                    key=f"reg_prof_secchi{scope}",
                 )
 
             if niveles_seleccionados:
@@ -758,7 +767,7 @@ def _render_registro(campana_id: str) -> None:
                             f"Prof. {label} (m)",
                             min_value=0.0, max_value=500.0, step=0.1,
                             value=float(default),
-                            key=f"reg_prof_{tp}",
+                            key=f"reg_prof_{tp}{scope}",
                         )
             else:
                 st.info(
