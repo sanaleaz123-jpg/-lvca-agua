@@ -52,6 +52,7 @@ from services.etiquetas_service import (
     MODO_COLUMNA,
     MODO_SUPERFICIAL,
     PROFUNDIDADES_COLUMNA,
+    TIPOS_COLUMNA,
     generar_etiquetas_campana,
     get_ensayos_disponibles,
 )
@@ -807,30 +808,39 @@ def _matriz_ensayos_default(
     """
     Construye el DataFrame inicial de la matriz punto × ensayo y la metadata
     de filas (alineada por posición). Todos los ensayos vienen marcados por
-    defecto; el analista desmarca los que no apliquen a cada punto/profundidad.
+    defecto; el analista desmarca los que no apliquen.
 
-      • Superficial → una fila por punto.
-      • Columna     → una fila por punto×profundidad (S/M/F).
+    El perfil por columna (S/M/F) solo aplica a cuerpos lénticos
+    (embalse/laguna, ver TIPOS_COLUMNA):
+      • Superficial → una fila por punto (PROF. "Superficie").
+      • Columna     → embalse/laguna: 3 filas (S/M/F); el resto: 1 fila
+                      "Superficie".
 
     Devuelve (df, meta) donde meta[i] = (punto_id, prof|None) para la fila i.
+    `prof=None` → agua superficial.
     """
     filas: list[dict] = []
     meta:  list[tuple] = []
+
+    def _fila(etiqueta: str, prof_label: str) -> dict:
+        fila = {"Punto": etiqueta, "Prof.": prof_label}
+        for e in ensayos:
+            fila[e] = True
+        return fila
+
     for pt in puntos:
         etiqueta = f"{pt.get('codigo','')} — {pt.get('nombre','')}"
-        if tipo_muestreo == MODO_SUPERFICIAL:
-            fila = {"Punto": etiqueta}
-            for e in ensayos:
-                fila[e] = True
-            filas.append(fila)
-            meta.append((pt["id"], None))
-        else:
+        es_lentic = (pt.get("tipo") or "").lower() in TIPOS_COLUMNA
+
+        if tipo_muestreo == MODO_COLUMNA and es_lentic:
             for prof in PROFUNDIDADES_COLUMNA:
-                fila = {"Punto": etiqueta, "Prof.": _PROF_LABELS[prof]}
-                for e in ensayos:
-                    fila[e] = True
-                filas.append(fila)
+                filas.append(_fila(etiqueta, _PROF_LABELS[prof]))
                 meta.append((pt["id"], prof))
+        else:
+            # Agua superficial (modo superficial, o punto no léntico en columna).
+            filas.append(_fila(etiqueta, _PROF_LABELS["S"]))
+            meta.append((pt["id"], None))
+
     return pd.DataFrame(filas), meta
 
 
@@ -846,21 +856,36 @@ def _render_etiquetas_frascos(campana_id: str, puntos: list[dict]) -> None:
         st.caption("Vincula al menos un punto de muestreo para generar etiquetas.")
         return
 
-    tipo_label = st.radio(
-        "Tipo de muestreo en esta campaña",
-        options=["Superficial", "Columna de agua"],
-        horizontal=True,
-        key=f"etiq_tipo_{campana_id}",
-        help="Superficial: PROF=0.3 m, 1 hoja por punto. "
-             "Columna: 1 hoja por cada profundidad (S/M/F) con ensayos marcados.",
+    # El muestreo por columna (S/M/F) solo aplica a embalses/lagunas. Si la
+    # campaña no tiene ninguno, solo se ofrece muestreo superficial.
+    hay_lentic = any(
+        (pt.get("tipo") or "").lower() in TIPOS_COLUMNA for pt in puntos
     )
-    tipo_muestreo = MODO_SUPERFICIAL if tipo_label == "Superficial" else MODO_COLUMNA
+
+    if hay_lentic:
+        tipo_label = st.radio(
+            "Tipo de muestreo en esta campaña",
+            options=["Superficial", "Columna de agua"],
+            horizontal=True,
+            key=f"etiq_tipo_{campana_id}",
+            help="Superficial: PROF=0.3 m, 1 hoja por punto. "
+                 "Columna: en embalses/lagunas, 1 hoja por profundidad (S/M/F); "
+                 "los demás puntos siempre van solo en superficie.",
+        )
+        tipo_muestreo = (
+            MODO_SUPERFICIAL if tipo_label == "Superficial" else MODO_COLUMNA
+        )
+    else:
+        tipo_muestreo = MODO_SUPERFICIAL
+        st.caption(
+            ":material/water_drop: Solo muestreo superficial "
+            "(la campaña no tiene embalses ni lagunas)."
+        )
 
     ensayos_disp = get_ensayos_disponibles()
     st.caption(
-        ":material/info: Marca qué ensayos lleva cada punto"
-        + (" y profundidad" if tipo_muestreo == MODO_COLUMNA else "")
-        + ". Todo viene marcado: desmarca lo que no aplique. "
+        ":material/info: Marca qué ensayos lleva cada punto y profundidad. "
+        "Todo viene marcado: desmarca lo que no aplique. "
         "Cada fila con al menos 1 ensayo genera una hoja (máx. 8 etiquetas)."
     )
 
@@ -868,11 +893,8 @@ def _render_etiquetas_frascos(campana_id: str, puntos: list[dict]) -> None:
 
     col_cfg: dict = {
         "Punto": st.column_config.TextColumn("Punto", disabled=True, width="medium"),
+        "Prof.": st.column_config.TextColumn("Prof.", disabled=True, width="small"),
     }
-    if tipo_muestreo == MODO_COLUMNA:
-        col_cfg["Prof."] = st.column_config.TextColumn(
-            "Prof.", disabled=True, width="small"
-        )
     for e in ensayos_disp:
         col_cfg[e] = st.column_config.CheckboxColumn(
             _ENSAYO_ABREV.get(e, e), help=e, default=True
@@ -887,16 +909,14 @@ def _render_etiquetas_frascos(campana_id: str, puntos: list[dict]) -> None:
         key=f"etiq_matriz_{campana_id}_{tipo_muestreo}",
     )
 
-    # Reconstruir la selección por punto / por profundidad desde la matriz.
-    seleccion: dict = {}
+    # Reconstruir las filas de selección (1 por renglón con ensayos marcados).
+    filas_seleccion: list[dict] = []
     for i, (pid, prof) in enumerate(meta):
         marcados = [e for e in ensayos_disp if bool(edited.iloc[i][e])]
-        if not marcados:
-            continue
-        if tipo_muestreo == MODO_SUPERFICIAL:
-            seleccion[pid] = marcados
-        else:
-            seleccion.setdefault(pid, {})[prof] = marcados
+        if marcados:
+            filas_seleccion.append(
+                {"punto_id": pid, "prof": prof, "ensayos": marcados}
+            )
 
     sel_resp = st.multiselect(
         "Muestreado por",
@@ -907,12 +927,8 @@ def _render_etiquetas_frascos(campana_id: str, puntos: list[dict]) -> None:
         help="Aparecerán en el campo «MUESTREADO POR» de cada etiqueta.",
     )
 
-    if tipo_muestreo == MODO_SUPERFICIAL:
-        n_hojas = len(seleccion)
-        n_etiq  = sum(len(v) for v in seleccion.values())
-    else:
-        n_hojas = sum(len(d) for d in seleccion.values())
-        n_etiq  = sum(len(lst) for d in seleccion.values() for lst in d.values())
+    n_hojas = len(filas_seleccion)
+    n_etiq  = sum(len(f["ensayos"]) for f in filas_seleccion)
 
     col_a, col_b = st.columns([1, 2])
     with col_a:
@@ -930,8 +946,7 @@ def _render_etiquetas_frascos(campana_id: str, puntos: list[dict]) -> None:
                     docx_bytes = generar_etiquetas_campana(
                         campana_id=campana_id,
                         responsables=sel_resp,
-                        tipo_muestreo=tipo_muestreo,
-                        seleccion_ensayos=seleccion,
+                        filas_seleccion=filas_seleccion,
                     )
                 st.download_button(
                     label="Descargar etiquetas (Word)",

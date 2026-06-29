@@ -63,6 +63,10 @@ MODO_COLUMNA     = "columna"
 # Orden canónico de profundidades para muestreo en columna.
 PROFUNDIDADES_COLUMNA = ["S", "M", "F"]
 
+# Tipos de punto a los que aplica el muestreo por columna de agua (S/M/F):
+# cuerpos lénticos profundos. El resto se muestrea solo en superficie.
+TIPOS_COLUMNA = {"embalse", "laguna"}
+
 # Mapeo tipo de punto → código de matriz (mismo criterio que
 # cadena_custodia_service.py para mantener consistencia con la cadena oficial).
 _TIPO_A_MATRIZ: dict[str, str] = {
@@ -104,28 +108,27 @@ def get_ensayos_disponibles() -> list[str]:
 
 
 def generar_etiquetas_campana(
-    campana_id:        str,
-    responsables:      list[str],
-    tipo_muestreo:     str = MODO_SUPERFICIAL,
-    seleccion_ensayos: dict | None = None,
+    campana_id:      str,
+    responsables:    list[str],
+    filas_seleccion: list[dict] | None = None,
 ) -> bytes:
     """
-    Genera el .docx con etiquetas, con ensayos elegibles por punto (y por
-    profundidad en modo columna). Cada hoja corresponde a un punto —o a una
-    combinación punto×profundidad— y lleva solo los ensayos marcados para él.
+    Genera el .docx con etiquetas. Cada "fila de selección" produce una hoja
+    auto-descrita (punto + profundidad) y lleva solo los ensayos marcados.
 
     Args:
         campana_id: UUID de la campaña.
         responsables: nombres de los responsables de campo. Se concatenan
             con coma para el campo "MUESTREADO POR".
-        tipo_muestreo: "superficial" (PROF=0.3 m, 1 hoja por punto) o
-            "columna" (PROF en blanco, 1 hoja por cada profundidad de cada
-            punto, con sufijo (S)/(M)/(F) en CÓDIGO).
-        seleccion_ensayos: matriz de ensayos por punto.
-            • Superficial → {punto_id: ["DBO5", "Color", ...]}
-            • Columna     → {punto_id: {"S": [...], "M": [...], "F": [...]}}
-            Solo se genera una hoja para los puntos/profundidades con al
-            menos un ensayo marcado.
+        filas_seleccion: lista de renglones a generar. Cada renglón es un
+            dict:
+                {"punto_id": str,
+                 "prof": "S" | "M" | "F" | None,   # None = agua superficial
+                 "ensayos": ["DBO5", "Color", ...]}
+            • prof None → CÓDIGO sin sufijo, PROF=0.3 m (agua superficial).
+            • prof S/M/F → CÓDIGO con sufijo "(S)|(M)|(F)", PROF en blanco
+              (columna de agua; solo aplica a embalse/laguna, lo decide la UI).
+            Solo se genera hoja para renglones con al menos un ensayo.
 
     Returns:
         Bytes del archivo .docx listo para descarga.
@@ -133,10 +136,8 @@ def generar_etiquetas_campana(
     Raises:
         FileNotFoundError: si la plantilla no existe.
         ValueError: si la campaña no tiene puntos o si la selección no
-            produce ninguna hoja (ningún ensayo marcado en ningún punto).
+            produce ninguna hoja (ningún ensayo marcado en ningún renglón).
     """
-    if tipo_muestreo not in (MODO_SUPERFICIAL, MODO_COLUMNA):
-        raise ValueError(f"tipo_muestreo inválido: {tipo_muestreo!r}")
     if not os.path.exists(_TEMPLATE_PATH):
         raise FileNotFoundError(
             f"Plantilla de etiquetas no encontrada: {_TEMPLATE_PATH}"
@@ -154,11 +155,11 @@ def generar_etiquetas_campana(
         or _MUESTREADO_POR_DEFAULT
     )
 
-    slots = _construir_slots(puntos, tipo_muestreo, seleccion_ensayos or {})
+    slots = _construir_slots(puntos, filas_seleccion or [])
     if not slots:
         raise ValueError(
             "No hay ensayos marcados para ningún punto. Marca al menos un "
-            "ensayo en algún punto (y profundidad, en modo columna)."
+            "ensayo en algún punto (y profundidad, en embalses/lagunas)."
         )
 
     doc = Document(_TEMPLATE_PATH)
@@ -271,49 +272,46 @@ def _to_date(valor):
 
 
 def _construir_slots(
-    puntos:            list[dict],
-    tipo_muestreo:     str,
-    seleccion_ensayos: dict,
+    puntos:          list[dict],
+    filas_seleccion: list[dict],
 ) -> list[dict]:
     """
-    Expande los puntos en "slots" de generación. Cada slot = 1 hoja y lleva su
-    propia lista de ensayos (`ensayos`). Solo se crean slots con ≥1 ensayo.
+    Convierte cada fila de selección en un "slot" (1 hoja) con su propia lista
+    de ensayos. Solo se crean slots con ≥1 ensayo. El orden respeta el de
+    `filas_seleccion`.
 
-    Superficial → un slot por punto con ensayos marcados; código sin sufijo,
-                  PROF=0.3 m. `seleccion_ensayos = {punto_id: [ensayos]}`.
-    Columna    → un slot por cada profundidad con ensayos marcados de cada
-                 punto; código con sufijo "(S)|(M)|(F)", PROF en blanco.
-                 `seleccion_ensayos = {punto_id: {"S": [...], ...}}`.
+    Cada fila: {"punto_id", "prof": "S"|"M"|"F"|None, "ensayos": [...]}.
+      • prof None  → código sin sufijo, PROF=0.3 m (agua superficial).
+      • prof S/M/F → código con sufijo "(S)|(M)|(F)", PROF en blanco (columna).
     """
+    pts_por_id = {p.get("id"): p for p in puntos}
     slots: list[dict] = []
-    for pt in puntos:
-        estacion = pt.get("nombre", "") or ""
-        codigo   = pt.get("codigo", "") or ""
-        matriz   = _TIPO_A_MATRIZ.get((pt.get("tipo") or "").lower(), "AN")
-        pid      = pt.get("id")
+    for fila in filas_seleccion:
+        pt = pts_por_id.get(fila.get("punto_id"))
+        if pt is None:
+            continue
+        ensayos = fila.get("ensayos") or []
+        if not ensayos:
+            continue
 
-        if tipo_muestreo == MODO_SUPERFICIAL:
-            ensayos = seleccion_ensayos.get(pid) or []
-            if ensayos:
-                slots.append({
-                    "estacion":         estacion,
-                    "codigo_etiqueta":  codigo,
-                    "matriz":           matriz,
-                    "prof_valor":       "0.3 m",
-                    "ensayos":          ensayos,
-                })
-        else:  # columna
-            por_prof = seleccion_ensayos.get(pid) or {}
-            for prof in PROFUNDIDADES_COLUMNA:
-                ensayos = por_prof.get(prof) or []
-                if ensayos:
-                    slots.append({
-                        "estacion":        estacion,
-                        "codigo_etiqueta": f"{codigo} ({prof})",
-                        "matriz":          matriz,
-                        "prof_valor":      "",
-                        "ensayos":         ensayos,
-                    })
+        codigo = pt.get("codigo", "") or ""
+        matriz = _TIPO_A_MATRIZ.get((pt.get("tipo") or "").lower(), "AN")
+        prof   = fila.get("prof")
+
+        if prof in PROFUNDIDADES_COLUMNA:
+            codigo_etiqueta = f"{codigo} ({prof})"
+            prof_valor      = ""
+        else:
+            codigo_etiqueta = codigo
+            prof_valor      = "0.3 m"
+
+        slots.append({
+            "estacion":        pt.get("nombre", "") or "",
+            "codigo_etiqueta": codigo_etiqueta,
+            "matriz":          matriz,
+            "prof_valor":      prof_valor,
+            "ensayos":         ensayos,
+        })
     return slots
 
 
