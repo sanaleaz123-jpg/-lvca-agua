@@ -71,6 +71,20 @@ _BASE_SINTETICA_POR_PRESERVANTE = {
 # Carpeta con las variantes de membrete (imágenes) referenciadas por `membrete`.
 _MEMBRETE_DIR = os.path.join(os.path.dirname(__file__), "..", "templates")
 
+# Convención de color del FONDO del membrete por preservante:
+#   HNO3   → amarillo   (horneado en la etiqueta pre-impresa de Fe/Mn)
+#   LUGOL  → verde      (horneado en la etiqueta pre-impresa de Fitoplancton)
+#   S/P    → azul       (horneado en las etiquetas pre-impresas S/P)
+#   HCl    → rojo pastel    (imagen lista; aún sin ensayo que lo use)
+#   H2SO4  → naranja pastel (imagen lista; p. ej. futura DQO)
+# (caso especial: Zooplancton/Perifiton usan membrete lila aunque sean Lugol.)
+# Para los preservantes con imagen propia, al crear un ensayo sintético con ese
+# preservante se le aplica automáticamente su membrete si no trae uno explícito.
+MEMBRETE_POR_PRESERVANTE: dict[str, str] = {
+    "HCl":   "membrete_rojo.png",
+    "H2SO4": "membrete_naranja.png",
+}
+
 # Mapeo de cada ensayo (frasco/etiqueta) a los códigos de parámetro de la
 # cadena de custodia que cubre. Permite que la cadena marque "x" solo en los
 # parámetros realmente analizados por punto/profundidad (ver
@@ -410,12 +424,12 @@ def _extraer_etiqueta_templates(doc) -> dict[str, object]:
             continue
         capturados[e["nombre"]] = _sintetizar_etiqueta(base, e["nombre"])
 
-    # Sobreescribir la imagen del membrete para los ensayos que lo definan
-    # (p. ej. Zooplancton/Perifiton → membrete lila). Requiere el `doc` para
-    # registrar la imagen y obtener su relación (rId).
+    # Sobreescribir la imagen del membrete: explícito (`membrete`, p. ej.
+    # Zoo/Perifiton → lila) o por preservante (HCl→rojo, H2SO4→naranja).
+    # Requiere el `doc` para registrar la imagen y obtener su relación (rId).
     membrete_cache: dict[str, str] = {}
     for e in ENSAYOS_PLANTILLA:
-        img = e.get("membrete")
+        img = e.get("membrete") or MEMBRETE_POR_PRESERVANTE.get(e.get("preservante"))
         el = capturados.get(e["nombre"])
         if img and el is not None:
             _set_membrete(doc, el, img, membrete_cache)

@@ -7,7 +7,7 @@
     "P008": {"preservante": "Ninguno", "tipo_frasco": ""},
     "P009": {"preservante": "Ninguno", "tipo_frasco": ""},
     "P010": {"preservante": "Ninguno", "tipo_frasco": "Polipropileno 500 ml"},
-    "P019": {"preservante": "HCl", "tipo_frasco": "Polipropileno 500 ml"},
+    "P019": {"preservante": "Ninguno", "tipo_frasco": "Polipropileno 500 ml"},
     "P025": {"preservante": "Ninguno", "tipo_frasco": "Polipropileno 500 ml"},
     "P028": {"preservante": "Ninguno", "tipo_frasco": "Polipropileno 500 ml"},
     "P031": {"preservante": "HCl", "tipo_frasco": "Polipropileno 500 ml"},
