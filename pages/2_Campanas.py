@@ -881,6 +881,34 @@ def _matriz_ensayos_default(
     return pd.DataFrame(filas), meta
 
 
+def _matriz_set_columnas(
+    base_key: str, widget_key: str, columnas: list[str], valor: bool
+) -> None:
+    """
+    Callback de los botones "marcar/desmarcar": fija `valor` en las `columnas`
+    indicadas del DataFrame base de la matriz y resetea el estado del editor
+    (para que el nuevo base se muestre sin que las ediciones previas lo pisen).
+    Corre como on_click, antes de instanciar el data_editor en el rerun.
+    """
+    df = st.session_state.get(base_key)
+    if df is None:
+        return
+    df = df.copy()
+    # Incorporar primero las ediciones manuales pendientes del editor, para no
+    # perderlas al resetear el widget.
+    estado = st.session_state.get(widget_key) or {}
+    for ridx, cambios in (estado.get("edited_rows") or {}).items():
+        for col, val in (cambios or {}).items():
+            if col in df.columns:
+                df.at[int(ridx), col] = val
+    # Aplicar el cambio masivo (marca/desmarca columnas completas).
+    for c in columnas:
+        if c in df.columns:
+            df[c] = valor
+    st.session_state[base_key] = df
+    st.session_state.pop(widget_key, None)
+
+
 def _render_etiquetas_frascos(campana_id: str, puntos: list[dict]) -> None:
     """
     Generador del .docx con etiquetas pre-rellenas para los frascos de campo.
@@ -940,9 +968,10 @@ def _render_etiquetas_frascos(campana_id: str, puntos: list[dict]) -> None:
     # por modo evita el "rebote" de st.data_editor (que revivía casillas al
     # reconstruir el DataFrame en cada interacción). Las ediciones las gestiona
     # el propio widget vía su `key`; aquí no se reasigna el DataFrame cacheado.
-    base_key  = f"etiq_matriz_df_{campana_id}_{tipo_muestreo}"
-    meta_key  = base_key + "_meta"
-    firma_key = base_key + "_firma"
+    base_key   = f"etiq_matriz_df_{campana_id}_{tipo_muestreo}"
+    meta_key   = base_key + "_meta"
+    firma_key  = base_key + "_firma"
+    widget_key = f"etiq_matriz_w_{campana_id}_{tipo_muestreo}"
     firma = tuple(p["id"] for p in puntos) + tuple(ensayos_disp)
     if st.session_state.get(firma_key) != firma:
         df0, meta0 = _matriz_ensayos_default(
@@ -952,6 +981,31 @@ def _render_etiquetas_frascos(campana_id: str, puntos: list[dict]) -> None:
         st.session_state[meta_key] = meta0
         st.session_state[firma_key] = firma
     meta = st.session_state[meta_key]
+
+    # ── Acciones rápidas: marcar/desmarcar toda la matriz o una columna ──────
+    a1, a2, a3, a4, a5 = st.columns([1.1, 1.1, 1.8, 1, 1])
+    a1.button(
+        "Marcar todo", key=f"etiq_all_on_{campana_id}", use_container_width=True,
+        icon=":material/select_check_box:",
+        on_click=_matriz_set_columnas, args=(base_key, widget_key, ensayos_disp, True),
+    )
+    a2.button(
+        "Desmarcar todo", key=f"etiq_all_off_{campana_id}", use_container_width=True,
+        icon=":material/check_box_outline_blank:",
+        on_click=_matriz_set_columnas, args=(base_key, widget_key, ensayos_disp, False),
+    )
+    ens_sel = a3.selectbox(
+        "Columna (ensayo)", ensayos_disp, key=f"etiq_colsel_{campana_id}",
+        label_visibility="collapsed",
+    )
+    a4.button(
+        "Marcar col.", key=f"etiq_col_on_{campana_id}", use_container_width=True,
+        on_click=_matriz_set_columnas, args=(base_key, widget_key, [ens_sel], True),
+    )
+    a5.button(
+        "Desmarcar col.", key=f"etiq_col_off_{campana_id}", use_container_width=True,
+        on_click=_matriz_set_columnas, args=(base_key, widget_key, [ens_sel], False),
+    )
 
     col_cfg: dict = {
         "Punto": st.column_config.TextColumn("Punto", disabled=True, width="medium"),
@@ -966,7 +1020,7 @@ def _render_etiquetas_frascos(campana_id: str, puntos: list[dict]) -> None:
         hide_index=True,
         num_rows="fixed",
         use_container_width=True,
-        key=f"etiq_matriz_w_{campana_id}_{tipo_muestreo}",
+        key=widget_key,
     )
 
     # Filas completas de la matriz (incluye renglones sin marcar, para
