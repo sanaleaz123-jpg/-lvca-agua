@@ -802,13 +802,31 @@ _ENSAYO_ABREV = {
     "Microcistina - LR":           "Microc. LR",
 }
 
+# Profundidades donde un ensayo viene MARCADO por defecto. Los ensayos no
+# listados se marcan en todas. Clave de profundidad: "S"/"M"/"F"
+# (agua superficial cuenta como "S").
+_DEFAULT_PROF_ENSAYO: dict[str, set[str]] = {
+    "Microcistina - LR": {"S"},        # solo superficie
+    "Fitoplancton":      {"S", "M"},   # superficie y medio
+    "Clorofila A":       {"S", "M"},   # superficie y medio
+}
+
+
+def _marcado_default(ensayo: str, prof: str | None) -> bool:
+    """¿El `ensayo` viene marcado por defecto en la profundidad `prof`?"""
+    permitidas = _DEFAULT_PROF_ENSAYO.get(ensayo)
+    if permitidas is None:
+        return True
+    return (prof or "S") in permitidas
+
+
 def _matriz_ensayos_default(
     puntos: list[dict], tipo_muestreo: str, ensayos: list[str]
 ) -> tuple[pd.DataFrame, list[tuple]]:
     """
     Construye el DataFrame inicial de la matriz punto × ensayo y la metadata
-    de filas (alineada por posición). Todos los ensayos vienen marcados por
-    defecto; el analista desmarca los que no apliquen.
+    de filas (alineada por posición). Los ensayos vienen marcados por defecto
+    según la profundidad (ver `_DEFAULT_PROF_ENSAYO`); el analista ajusta.
 
     El perfil por columna (S/M/F) solo aplica a cuerpos lénticos
     (embalse/laguna, ver TIPOS_COLUMNA):
@@ -822,10 +840,10 @@ def _matriz_ensayos_default(
     filas: list[dict] = []
     meta:  list[tuple] = []
 
-    def _fila(etiqueta: str, prof_label: str) -> dict:
+    def _fila(etiqueta: str, prof: str | None, prof_label: str) -> dict:
         fila = {"Punto": etiqueta, "Prof.": prof_label}
         for e in ensayos:
-            fila[e] = True
+            fila[e] = _marcado_default(e, prof)
         return fila
 
     for pt in puntos:
@@ -834,11 +852,11 @@ def _matriz_ensayos_default(
 
         if tipo_muestreo == MODO_COLUMNA and es_lentic:
             for prof in PROFUNDIDADES_COLUMNA:
-                filas.append(_fila(etiqueta, _PROF_LABELS[prof]))
+                filas.append(_fila(etiqueta, prof, _PROF_LABELS[prof]))
                 meta.append((pt["id"], prof))
         else:
             # Agua superficial (modo superficial, o punto no léntico en columna).
-            filas.append(_fila(etiqueta, _PROF_LABELS["S"]))
+            filas.append(_fila(etiqueta, None, _PROF_LABELS["S"]))
             meta.append((pt["id"], None))
 
     return pd.DataFrame(filas), meta
