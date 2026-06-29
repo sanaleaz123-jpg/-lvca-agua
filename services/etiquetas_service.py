@@ -61,14 +61,18 @@ ENSAYOS_PLANTILLA: list[dict] = [
     # DQO: H2SO4 → membrete naranja (automático). Se ofrece para seleccionar
     # pero arranca DESMARCADO por defecto (ver _DEFAULT_PROF_ENSAYO en la UI).
     {"nombre": "DQO", "preservante": "H2SO4", "sintetico": True},
+    # Dureza (EDTA): HNO3 → membrete amarillo (clona la base de Fe/Mn). Va en
+    # frasco aparte por requerir acidificación (no puede ir con los S/P).
+    {"nombre": "Dureza", "preservante": "HNO3", "sintetico": True},
 ]
 
 # Etiqueta base a clonar para cada preservante al sintetizar ensayos nuevos
 # (debe ser una etiqueta pre-impresa con ese preservante marcado).
 _BASE_SINTETICA = "Color"  # fallback (S/P)
 _BASE_SINTETICA_POR_PRESERVANTE = {
-    "S/P":   "Color",        # casilla S/P marcada, membrete azul
-    "LUGOL": "Fitoplancton", # casilla LUGOL marcada, membrete verde
+    "S/P":   "Color",                        # casilla S/P marcada, membrete azul
+    "LUGOL": "Fitoplancton",                 # casilla LUGOL marcada, membrete verde
+    "HNO3":  "Hierro y manganeso disuelto",  # casilla HNO3 marcada, membrete amarillo
 }
 
 # Carpeta con las variantes de membrete (imágenes) referenciadas por `membrete`.
@@ -102,8 +106,9 @@ ENSAYO_A_PARAMS_CADENA: dict[str, list[str]] = {
     "Zooplancton":                 ["P126"],
     "Perifiton":                   ["P130"],
     "Hierro y manganeso disuelto": ["P074", "P077"],               # Fe + Mn disuelto
+    "Dureza":                      ["P025"],                       # Dureza total (HNO3)
     "Fisicoquímicos y nutrientes": [
-        "P025", "P028", "P031", "P032", "P033", "P034",
+        "P028", "P031", "P032", "P033", "P034",
         "P036", "P038", "P041", "P042", "P050",
     ],
 }
@@ -147,13 +152,14 @@ _MUESTREADO_POR_DEFAULT = "A. Llacho, A. Vilcapaza"
 # Posiciones (fila, col) dentro de la outer table donde se ubican las etiquetas
 # (col 1 es separadora). Orden de lectura: izquierda→derecha, arriba→abajo.
 # La plantilla trae 3 filas (6 posiciones); cuando se requieren más etiquetas se
-# clonan filas adicionales hasta 5 filas (10 posiciones) (ver _construir_hoja).
+# clonan filas adicionales hasta 6 filas (12 posiciones) (ver _construir_hoja).
 _POSICIONES_ETIQUETAS = [
     (0, 0), (0, 2),
     (1, 0), (1, 2),
     (2, 0), (2, 2),
     (3, 0), (3, 2),
     (4, 0), (4, 2),
+    (5, 0), (5, 2),
 ]
 
 # Ruta a la plantilla (raíz del proyecto LVCA).

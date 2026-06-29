@@ -807,6 +807,7 @@ _ENSAYO_ABREV = {
     "Zooplancton":                 "Zoopl.",
     "Perifiton":                   "Perif.",
     "DQO":                         "DQO",
+    "Dureza":                      "Dureza",
 }
 
 # Profundidades donde un ensayo viene MARCADO por defecto. Los ensayos no
@@ -922,7 +923,7 @@ def _render_etiquetas_frascos(campana_id: str, puntos: list[dict]) -> None:
     st.caption(
         ":material/info: Marca qué ensayos lleva cada punto y profundidad. "
         "Esta selección también define qué se marca en la **cadena de custodia**. "
-        "Cada fila con al menos 1 ensayo genera una hoja (máx. 10 etiquetas)."
+        "Cada fila con al menos 1 ensayo genera una hoja (máx. 12 etiquetas)."
     )
 
     # Selección guardada previamente (compartida con la cadena de custodia).
