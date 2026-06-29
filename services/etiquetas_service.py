@@ -42,19 +42,28 @@ from database.client import get_db
 # coinciden con las cajas pre-impresas en `ETIQUETAS_EnBlanco_10puntos.docx`).
 ENSAYOS_PLANTILLA: list[dict] = [
     {"nombre": "Hierro y manganeso disuelto", "preservante": "HNO3"},
-    {"nombre": "Fitoplancton",                "preservante": "LUGOL"},
+    # Fitoplancton: Lugol, rotulado en verde.
+    {"nombre": "Fitoplancton",                "preservante": "LUGOL", "color": "008000"},
     {"nombre": "Clorofila A",                 "preservante": "S/P"},
     {"nombre": "Color",                       "preservante": "S/P"},
     {"nombre": "Fisicoquímicos y nutrientes", "preservante": "S/P"},
-    # Ensayos sin preservante añadidos por la plataforma (no pre-impresos en la
-    # plantilla): se sintetizan clonando una etiqueta S/P existente. Texto en
-    # negro, igual que el resto de etiquetas.
-    {"nombre": "DBO5",              "preservante": "S/P", "sintetico": True, "color": "000000"},
-    {"nombre": "Microcistina - LR", "preservante": "S/P", "sintetico": True, "color": "000000"},
+    # Ensayos añadidos por la plataforma (no pre-impresos en la plantilla): se
+    # sintetizan clonando una etiqueta base con el MISMO preservante y se
+    # rotulan en su color.
+    {"nombre": "DBO5",              "preservante": "S/P",   "sintetico": True, "color": "000000"},
+    {"nombre": "Microcistina - LR", "preservante": "S/P",   "sintetico": True, "color": "000000"},
+    # Zooplancton y Perifiton: Lugol, rotulados en lila claro pastel.
+    {"nombre": "Zooplancton",       "preservante": "LUGOL", "sintetico": True, "color": "B19CD9"},
+    {"nombre": "Perifiton",         "preservante": "LUGOL", "sintetico": True, "color": "B19CD9"},
 ]
 
-# Etiqueta S/P existente que se clona como base para los ensayos sintéticos.
-_BASE_SINTETICA = "Color"
+# Etiqueta base a clonar para cada preservante al sintetizar ensayos nuevos
+# (debe ser una etiqueta pre-impresa con ese preservante marcado).
+_BASE_SINTETICA = "Color"  # fallback (S/P)
+_BASE_SINTETICA_POR_PRESERVANTE = {
+    "S/P":   "Color",        # casilla S/P marcada
+    "LUGOL": "Fitoplancton", # casilla LUGOL marcada
+}
 
 # Mapeo de cada ensayo (frasco/etiqueta) a los códigos de parámetro de la
 # cadena de custodia que cubre. Permite que la cadena marque "x" solo en los
@@ -66,6 +75,8 @@ ENSAYO_A_PARAMS_CADENA: dict[str, list[str]] = {
     "Microcistina - LR":           ["P091"],                       # Microcistina LR
     "Fitoplancton":                ["P120"],
     "Clorofila A":                 ["P124"],
+    "Zooplancton":                 ["P126"],
+    "Perifiton":                   ["P130"],
     "Hierro y manganeso disuelto": ["P074", "P077"],               # Fe + Mn disuelto
     "Fisicoquímicos y nutrientes": [
         "P025", "P028", "P031", "P032", "P033", "P034",
@@ -111,13 +122,14 @@ _MUESTREADO_POR_DEFAULT = "A. Llacho, A. Vilcapaza"
 
 # Posiciones (fila, col) dentro de la outer table donde se ubican las etiquetas
 # (col 1 es separadora). Orden de lectura: izquierda→derecha, arriba→abajo.
-# La plantilla trae 3 filas (6 posiciones); cuando se requieren más de 6
-# etiquetas se clona una 4ª fila para llegar a 8 (ver _construir_hoja).
+# La plantilla trae 3 filas (6 posiciones); cuando se requieren más etiquetas se
+# clonan filas adicionales hasta 5 filas (10 posiciones) (ver _construir_hoja).
 _POSICIONES_ETIQUETAS = [
     (0, 0), (0, 2),
     (1, 0), (1, 2),
     (2, 0), (2, 2),
     (3, 0), (3, 2),
+    (4, 0), (4, 2),
 ]
 
 # Ruta a la plantilla (raíz del proyecto LVCA).
@@ -376,35 +388,67 @@ def _extraer_etiqueta_templates(doc) -> dict[str, object]:
         if len(capturados) >= len(nombres_preimpresos):
             break
 
-    # Sintetizar las etiquetas no pre-impresas (DBO5, Microcistina - LR, …)
-    # clonando la etiqueta S/P base y re-rotulando el campo ENSAYO en color.
-    base = capturados.get(_BASE_SINTETICA)
-    if base is not None:
-        for e in ENSAYOS_PLANTILLA:
-            if not e.get("sintetico") or e["nombre"] in capturados:
-                continue
-            capturados[e["nombre"]] = _sintetizar_etiqueta(
-                base, e["nombre"], e.get("color", "0000FF")
-            )
+    # Sintetizar las etiquetas no pre-impresas (DBO5, Microcistina, Zooplancton,
+    # Perifiton, …) clonando una etiqueta base con el MISMO preservante y
+    # re-rotulando el campo ENSAYO en su color.
+    for e in ENSAYOS_PLANTILLA:
+        if not e.get("sintetico") or e["nombre"] in capturados:
+            continue
+        base_nombre = _BASE_SINTETICA_POR_PRESERVANTE.get(
+            e.get("preservante"), _BASE_SINTETICA
+        )
+        base = capturados.get(base_nombre)
+        if base is None:
+            base = capturados.get(_BASE_SINTETICA)
+        if base is None:
+            continue
+        capturados[e["nombre"]] = _sintetizar_etiqueta(
+            base, e["nombre"], e.get("color") or "000000"
+        )
+
+    # Colorear el texto ENSAYO de las etiquetas pre-impresas que definan color
+    # (p. ej. Fitoplancton en verde).
+    for e in ENSAYOS_PLANTILLA:
+        if e.get("sintetico"):
+            continue
+        color = e.get("color")
+        el = capturados.get(e["nombre"])
+        if color and el is not None:
+            _colorear_ensayo(el, color)
 
     return capturados
 
 
+def _celda_ensayo(etiqueta_element):
+    """Celda <w:tc> con el valor del campo ENSAYO (fila 5, col 2), o None."""
+    tbl = _encontrar_tabla_campos(etiqueta_element)
+    if tbl is None:
+        return None
+    rows = tbl.findall(qn("w:tr"))
+    if len(rows) < 6:
+        return None
+    tcs = rows[5].findall(qn("w:tc"))
+    return tcs[2] if len(tcs) >= 3 else None
+
+
+def _colorear_ensayo(etiqueta_element, color_hex: str) -> None:
+    """Aplica `color_hex` al texto del campo ENSAYO de una etiqueta."""
+    tc = _celda_ensayo(etiqueta_element)
+    if tc is not None:
+        _colorear_celda(tc, color_hex)
+
+
 def _sintetizar_etiqueta(base_element, nombre: str, color_hex: str):
     """
-    Clona una etiqueta base S/P y reescribe su campo ENSAYO (fila 5, celda 2)
-    con `nombre`, aplicándole color `color_hex`. El resto de la etiqueta —incluida
-    la casilla `S/P ( X )`— se conserva del clon.
+    Clona una etiqueta base (mismo preservante) y reescribe su campo ENSAYO
+    (fila 5, celda 2) con `nombre` en color `color_hex`. El resto de la etiqueta
+    —incluida la casilla de preservante marcada— se conserva del clon.
     """
     nuevo = deepcopy(base_element)
-    tbl = _encontrar_tabla_campos(nuevo)
-    if tbl is not None:
-        rows = tbl.findall(qn("w:tr"))
-        if len(rows) >= 6:
-            tcs = rows[5].findall(qn("w:tc"))
-            if len(tcs) >= 3:
-                _set_paragrafo_directo(tcs[2], nombre)
-                _colorear_celda(tcs[2], color_hex)
+    tc = _celda_ensayo(nuevo)
+    if tc is not None:
+        _set_paragrafo_directo(tc, nombre)
+        _colorear_celda(tc, color_hex)
     return nuevo
 
 
