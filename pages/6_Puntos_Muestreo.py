@@ -27,6 +27,7 @@ from services.punto_service import (
     eliminar_punto,
     get_cuencas,
     get_tipos,
+    utm_a_latlon,
     CUENCAS_CANONICAS,
     TIPOS_PUNTO,
 )
@@ -45,6 +46,29 @@ from services.linea_base_service import (
     guardar_linea_base_desde_historico,
     UMBRAL_DELTA_C,
 )
+
+
+# Zonas UTM que cubren el territorio peruano (de oeste a este). Arequipa
+# (la región monitoreada) se reparte entre 18S — toda la franja occidental:
+# Majes, Camaná, Ocoña, Caravelí — y 19S — el sector oriental: Chili, Colca,
+# Quilca-Vítor. Guardar un punto del oeste como 19S lo manda a Bolivia/Brasil.
+ZONAS_UTM_PERU = ["19S", "18S", "17S"]
+
+# Bounding box generoso del Perú continental (WGS84). Sirve para detectar
+# puntos convertidos con la zona UTM equivocada: caen fuera (hacia el este, en
+# Bolivia/Brasil) y se bloquea el guardado con una pista clara.
+_PERU_LAT_MIN, _PERU_LAT_MAX = -18.5, 0.5
+_PERU_LON_MIN, _PERU_LON_MAX = -81.4, -68.6
+
+
+def _fuera_de_peru(lat: float | None, lon: float | None) -> bool:
+    """True si (lat, lon) cae fuera del bounding box del Perú continental."""
+    if lat is None or lon is None:
+        return False
+    return not (
+        _PERU_LAT_MIN <= lat <= _PERU_LAT_MAX
+        and _PERU_LON_MIN <= lon <= _PERU_LON_MAX
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -590,11 +614,13 @@ def _render_editar(punto_id: str) -> None:
 
         section_header("Coordenadas", "map_pin")
         st.caption(
-            "Ingresa las coordenadas UTM (zona 19S, WGS84). Latitud/longitud "
-            "se calculan automáticamente al guardar para mostrar el punto en "
+            "Ingresa las coordenadas UTM (WGS84) y selecciona su **zona**. "
+            "Arequipa occidental (Majes, Camaná, Ocoña, Caravelí): **18S** · "
+            "Arequipa oriental (Chili, Colca, Quilca-Vítor): **19S**. "
+            "Latitud/longitud se recalculan al guardar para ubicar el punto en "
             "el Geoportal."
         )
-        co1, co2, co3 = st.columns(3)
+        co1, co2, co3, co4 = st.columns(4)
         with co1:
             utm_este = st.number_input(
                 "UTM Este", value=punto.get("utm_este") or 0.0,
@@ -606,6 +632,18 @@ def _render_editar(punto_id: str) -> None:
                 format="%.1f", key=f"edit_utm_n_{kp}",
             )
         with co3:
+            _zona_actual = (punto.get("utm_zona") or "19S").strip().upper()
+            _opts_zona = (
+                ZONAS_UTM_PERU if _zona_actual in ZONAS_UTM_PERU
+                else [_zona_actual] + ZONAS_UTM_PERU
+            )
+            utm_zona_sel = st.selectbox(
+                "Zona UTM", _opts_zona,
+                index=_opts_zona.index(_zona_actual),
+                key=f"edit_utm_z_{kp}",
+                help="Majes/Camaná/Ocoña: 18S · Chili/Colca/Quilca-Vítor: 19S.",
+            )
+        with co4:
             altitud = st.number_input(
                 "Altitud (msnm)", value=punto.get("altitud_msnm") or 0.0,
                 format="%.1f", key=f"edit_alt_{kp}",
@@ -740,7 +778,7 @@ def _render_editar(punto_id: str) -> None:
             "sistema_hidrico":      sistema_hidrico.strip() or None,
             "utm_este":             utm_este if utm_este != 0 else None,
             "utm_norte":            utm_norte if utm_norte != 0 else None,
-            "utm_zona":             "19S",
+            "utm_zona":             utm_zona_sel,
             "latitud":              latitud if latitud != 0 else None,
             "longitud":             longitud if longitud != 0 else None,
             "altitud_msnm":         altitud if altitud != 0 else None,
@@ -756,6 +794,24 @@ def _render_editar(punto_id: str) -> None:
             "dentro_zona_mezcla":      dentro_zm,
             "zona_mezcla_observacion": zm_obs,
         }
+
+        # Si hay UTM, lat/lon SIEMPRE se derivan de UTM + zona (los campos son
+        # "auto desde UTM"). Así un cambio de zona corrige de inmediato puntos
+        # mal ubicados y se bloquea guardar coordenadas que caen fuera del Perú.
+        if datos["utm_este"] and datos["utm_norte"]:
+            _lat, _lon = utm_a_latlon(datos["utm_este"], datos["utm_norte"], utm_zona_sel)
+            if _lat is not None and _lon is not None:
+                if _fuera_de_peru(_lat, _lon):
+                    st.error(
+                        f"Con la **Zona UTM {utm_zona_sel}** este punto cae FUERA del "
+                        f"Perú (lat {_lat:.4f}, lon {_lon:.4f}) — por eso aparece en "
+                        "Bolivia/Brasil. Cambia la **Zona UTM** y vuelve a guardar "
+                        "(Majes/Camaná/Ocoña suelen ser **18S**)."
+                    )
+                    return
+                datos["latitud"] = _lat
+                datos["longitud"] = _lon
+
         try:
             actualizar_punto(punto_id, datos)
             # Limpiar el session_state de los inputs del formulario para que
@@ -862,16 +918,23 @@ def _render_nuevo() -> None:
 
         section_header("Coordenadas", "map_pin")
         st.caption(
-            "Ingresa las coordenadas UTM (zona 19S, WGS84). Latitud/longitud "
-            "se calculan automáticamente al guardar para mostrar el punto en "
+            "Ingresa las coordenadas UTM (WGS84) y selecciona su **zona**. "
+            "Arequipa occidental (Majes, Camaná, Ocoña, Caravelí): **18S** · "
+            "Arequipa oriental (Chili, Colca, Quilca-Vítor): **19S**. "
+            "Latitud/longitud se calculan al guardar para ubicar el punto en "
             "el Geoportal."
         )
-        co1, co2, co3 = st.columns(3)
+        co1, co2, co3, co4 = st.columns(4)
         with co1:
             utm_este = st.number_input("UTM Este", value=0.0, format="%.1f")
         with co2:
             utm_norte = st.number_input("UTM Norte", value=0.0, format="%.1f")
         with co3:
+            utm_zona_sel = st.selectbox(
+                "Zona UTM", ZONAS_UTM_PERU, index=0,
+                help="Majes/Camaná/Ocoña: 18S · Chili/Colca/Quilca-Vítor: 19S.",
+            )
+        with co4:
             altitud = st.number_input("Altitud (msnm)", value=0.0, format="%.1f")
 
         co4, co5 = st.columns(2)
@@ -945,7 +1008,7 @@ def _render_nuevo() -> None:
             "sistema_hidrico":      n_sistema_hidrico.strip() or None,
             "utm_este":             utm_este if utm_este != 0 else None,
             "utm_norte":            utm_norte if utm_norte != 0 else None,
-            "utm_zona":             "19S",
+            "utm_zona":             utm_zona_sel,
             "latitud":              latitud if latitud != 0 else None,
             "longitud":             longitud if longitud != 0 else None,
             "altitud_msnm":         altitud if altitud != 0 else None,
@@ -959,6 +1022,22 @@ def _render_nuevo() -> None:
             "finalidad":            n_finalidad.strip() or None,
             "activo":               True,
         }
+
+        # lat/lon derivadas de UTM + zona; bloquear si caen fuera del Perú
+        # (zona equivocada → el punto aparecería en Bolivia/Brasil).
+        if datos["utm_este"] and datos["utm_norte"]:
+            _lat, _lon = utm_a_latlon(datos["utm_este"], datos["utm_norte"], utm_zona_sel)
+            if _lat is not None and _lon is not None:
+                if _fuera_de_peru(_lat, _lon):
+                    st.error(
+                        f"Con la **Zona UTM {utm_zona_sel}** este punto cae FUERA del "
+                        f"Perú (lat {_lat:.4f}, lon {_lon:.4f}). Verifica la **Zona UTM** "
+                        "(Majes/Camaná/Ocoña suelen ser **18S**) e inténtalo de nuevo."
+                    )
+                    return
+                datos["latitud"] = _lat
+                datos["longitud"] = _lon
+
         try:
             creado = crear_punto(datos)
             st.session_state["punto_creado_msg"] = (
