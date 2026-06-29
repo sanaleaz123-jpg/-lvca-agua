@@ -935,22 +935,22 @@ def _render_etiquetas_frascos(campana_id: str, puntos: list[dict]) -> None:
                 fila.get("ensayos") or []
             )
 
-    # Estado controlado de la matriz: se construye una sola vez por
-    # (campaña, modo, puntos, ensayos) y se persiste entre reruns. Pasar un
-    # DataFrame reconstruido en cada interacción hace que st.data_editor
-    # "rebote" casillas (revive las que desmarcaste al marcar otra); con estado
-    # persistido cada edición se acumula correctamente.
-    estado_key = f"etiq_matriz_estado_{campana_id}_{tipo_muestreo}"
-    meta_key   = estado_key + "_meta"
-    firma_key  = estado_key + "_firma"
+    # DataFrame base ESTABLE: se construye una sola vez por (campaña, modo,
+    # puntos, ensayos) y se cachea. Pasar siempre el MISMO objeto + un `key`
+    # por modo evita el "rebote" de st.data_editor (que revivía casillas al
+    # reconstruir el DataFrame en cada interacción). Las ediciones las gestiona
+    # el propio widget vía su `key`; aquí no se reasigna el DataFrame cacheado.
+    base_key  = f"etiq_matriz_df_{campana_id}_{tipo_muestreo}"
+    meta_key  = base_key + "_meta"
+    firma_key = base_key + "_firma"
     firma = tuple(p["id"] for p in puntos) + tuple(ensayos_disp)
     if st.session_state.get(firma_key) != firma:
         df0, meta0 = _matriz_ensayos_default(
             puntos, tipo_muestreo, ensayos_disp, seleccion_previa=prev_lookup
         )
-        st.session_state[estado_key] = df0
-        st.session_state[meta_key]   = meta0
-        st.session_state[firma_key]  = firma
+        st.session_state[base_key] = df0
+        st.session_state[meta_key] = meta0
+        st.session_state[firma_key] = firma
     meta = st.session_state[meta_key]
 
     col_cfg: dict = {
@@ -961,14 +961,13 @@ def _render_etiquetas_frascos(campana_id: str, puntos: list[dict]) -> None:
         col_cfg[e] = st.column_config.CheckboxColumn(_ENSAYO_ABREV.get(e, e), help=e)
 
     edited = st.data_editor(
-        st.session_state[estado_key],
+        st.session_state[base_key],
         column_config=col_cfg,
         hide_index=True,
         num_rows="fixed",
         use_container_width=True,
+        key=f"etiq_matriz_w_{campana_id}_{tipo_muestreo}",
     )
-    # Persistir el estado editado para el próximo rerun (evita el rebote).
-    st.session_state[estado_key] = edited
 
     # Filas completas de la matriz (incluye renglones sin marcar, para
     # persistir el estado exacto y que la cadena sepa qué NO se hace).
