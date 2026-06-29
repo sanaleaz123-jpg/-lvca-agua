@@ -56,6 +56,34 @@ ENSAYOS_PLANTILLA: list[dict] = [
 # Etiqueta S/P existente que se clona como base para los ensayos sintéticos.
 _BASE_SINTETICA = "Color"
 
+# Mapeo de cada ensayo (frasco/etiqueta) a los códigos de parámetro de la
+# cadena de custodia que cubre. Permite que la cadena marque "x" solo en los
+# parámetros realmente analizados por punto/profundidad (ver
+# services/cadena_custodia_service.py). Códigos en mayúsculas (P###).
+ENSAYO_A_PARAMS_CADENA: dict[str, list[str]] = {
+    "Color":                       ["P010"],                       # Color verdadero
+    "DBO5":                        ["P019"],
+    "Microcistina - LR":           ["P091"],                       # Microcistina LR
+    "Fitoplancton":                ["P120"],
+    "Clorofila A":                 ["P124"],
+    "Hierro y manganeso disuelto": ["P074", "P077"],               # Fe + Mn disuelto
+    "Fisicoquímicos y nutrientes": [
+        "P025", "P028", "P031", "P032", "P033", "P034",
+        "P036", "P038", "P041", "P042", "P050",
+    ],
+}
+
+
+def params_cadena_de_ensayos(ensayos) -> set[str]:
+    """
+    Códigos de parámetro de la cadena (P###, en mayúsculas) cubiertos por la
+    lista de `ensayos` seleccionados. Ensayos sin mapeo se ignoran.
+    """
+    codigos: set[str] = set()
+    for e in ensayos or []:
+        codigos.update(ENSAYO_A_PARAMS_CADENA.get(e, []))
+    return {c.upper() for c in codigos}
+
 # Modos válidos de muestreo (parámetro `tipo_muestreo`).
 MODO_SUPERFICIAL = "superficial"
 MODO_COLUMNA     = "columna"

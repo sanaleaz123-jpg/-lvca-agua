@@ -228,7 +228,7 @@ def get_datos_cadena(campana_id: str) -> dict:
         "id, codigo, fecha_muestreo, hora_recoleccion, tipo_muestra, "
         "estado, preservante, observaciones_campo, "
         "clima, caudal_estimado, nivel_agua, temperatura_transporte, "
-        "puntos_muestreo(codigo, nombre, tipo, cuenca, sistema_hidrico, "
+        "puntos_muestreo(id, codigo, nombre, tipo, cuenca, sistema_hidrico, "
         "  utm_este, utm_norte, utm_zona, altitud_msnm, "
         "  latitud, longitud)"
     )
@@ -360,6 +360,82 @@ def guardar_config_persistida(
         return True
     except Exception:
         return False
+
+
+def get_matriz_ensayos(campana_id: str) -> list[dict] | None:
+    """
+    Selección de ensayos por punto/profundidad guardada para la campaña (la
+    misma matriz de la pestaña de etiquetas). Lista de filas:
+        [{"punto_id": str, "prof": "S"|"M"|"F"|None, "ensayos": [...]}]
+    Retorna None si nunca se guardó. Se persiste dentro de la config de cadena
+    para reutilizar la tabla cadena_custodia_config (sin migración nueva).
+    """
+    cfg = get_config_persistida(campana_id) or {}
+    matriz = cfg.get("matriz_ensayos")
+    return matriz if isinstance(matriz, list) else None
+
+
+def guardar_matriz_ensayos(
+    campana_id: str,
+    filas: list[dict],
+    usuario_id: str | None = None,
+) -> bool:
+    """
+    Guarda/actualiza la matriz de ensayos por punto/profundidad sin pisar el
+    resto de la config de cadena. Retorna True si se persistió.
+    """
+    cfg = get_config_persistida(campana_id) or {}
+    cfg["matriz_ensayos"] = filas
+    return guardar_config_persistida(campana_id, cfg, usuario_id)
+
+
+def _matriz_lookup(campana_id: str) -> dict | None:
+    """
+    Construye {(punto_id, prof): set(codigos_param)} desde la matriz guardada,
+    expandiendo cada ensayo a sus parámetros de cadena. Retorna None si no hay
+    matriz guardada (en ese caso la cadena marca "x" en todos — compat).
+    """
+    matriz = get_matriz_ensayos(campana_id)
+    if not matriz:
+        return None
+    from services.etiquetas_service import params_cadena_de_ensayos
+    lookup: dict = {}
+    for fila in matriz:
+        key = (fila.get("punto_id"), fila.get("prof"))
+        lookup[key] = params_cadena_de_ensayos(fila.get("ensayos"))
+    return lookup
+
+
+def _codes_para_muestra(m: dict, lookup: dict | None) -> set[str] | None:
+    """
+    Códigos de parámetro a marcar para una muestra según la matriz. Retorna
+    None cuando no hay restricción (marcar todos los parámetros):
+      • lookup None (sin matriz guardada), o
+      • la combinación (punto, profundidad) no está en la matriz.
+    Tolera que "superficie" venga como None o "S".
+    """
+    if lookup is None:
+        return None
+    pid = (m.get("puntos_muestreo") or {}).get("id")
+    prof = m.get("profundidad_tipo")
+    if (pid, prof) in lookup:
+        return lookup[(pid, prof)]
+    if prof is None and (pid, "S") in lookup:
+        return lookup[(pid, "S")]
+    if prof == "S" and (pid, None) in lookup:
+        return lookup[(pid, None)]
+    return None  # no encontrado → no perder info: marcar todo
+
+
+def _marcar_lab(p: dict, codes: set[str] | None) -> bool:
+    """¿Se marca 'x' este parámetro de lab para la muestra? Extras (sin código)
+    y el caso sin restricción (codes None) siempre se marcan."""
+    if codes is None:
+        return True
+    cod = (p.get("codigo") or "").upper()
+    if not cod:
+        return True  # parámetro extra sin mapeo → marcar
+    return cod in codes
 
 
 def config_para_campana(campana_id: str) -> dict:
@@ -548,6 +624,10 @@ def generar_excel_cadena(campana_id: str, config: dict | None = None) -> bytes:
     # Conteo de botellas: igual para todas las muestras de la campaña.
     n_vidrio, n_plastico = _contar_botellas(lab_params, param_configs)
 
+    # Selección de ensayos por punto/profundidad (de la matriz de etiquetas).
+    # None → marcar "x" en todos los parámetros (comportamiento previo).
+    matriz_lookup = _matriz_lookup(campana_id)
+
     for hoja_idx, muestras_chunk in enumerate(chunks):
       _ws_actual[0] = hojas[hoja_idx]
       base_offset = hoja_idx * _SLOTS_POR_HOJA
@@ -627,10 +707,13 @@ def generar_excel_cadena(campana_id: str, config: dict | None = None) -> bytes:
         _set(r1, 24, float(n_vidrio))
         _set(r1, 25, float(n_plastico))
 
-        # Parámetros de laboratorio — "x" en todas las columnas (todas están
-        # seleccionadas por construcción de lab_params).
-        for i, _p in enumerate(lab_params):
-            _set(r1, _COL_LAB_START + i, "x")
+        # Parámetros de laboratorio — "x" solo en los ensayos seleccionados
+        # para esta muestra (punto + profundidad). Sin matriz guardada se
+        # marcan todos (compat).
+        codes_muestra = _codes_para_muestra(m, matriz_lookup)
+        for i, p in enumerate(lab_params):
+            if _marcar_lab(p, codes_muestra):
+                _set(r1, _COL_LAB_START + i, "x")
 
         # Parámetros de campo — valores numéricos con coma decimal (máx 7)
         for i, p in enumerate(campo_params):
@@ -750,6 +833,9 @@ def generar_pdf_cadena(campana_id: str, config: dict | None = None) -> bytes:
 
     # Conteo de botellas (V/P) — se calcula una vez, común a toda la cadena.
     n_vidrio, n_plastico = _contar_botellas(params_lab, param_configs)
+
+    # Selección de ensayos por punto/profundidad (matriz de etiquetas).
+    matriz_lookup = _matriz_lookup(campana_id)
 
     # Preservantes activos según selección (para el bloque PRESERVACIÓN del header)
     preservantes_usados = set(
@@ -1050,10 +1136,13 @@ def generar_pdf_cadena(campana_id: str, config: dict | None = None) -> bytes:
                 "Helvetica", 5, black, al)
             x += w
 
-        # Params lab — "x" en todas las columnas (solo aparecen los seleccionados)
-        for _p in params_lab:
+        # Params lab — "x" solo en los ensayos seleccionados para esta muestra
+        # (punto + profundidad). Sin matriz guardada se marcan todos (compat).
+        codes_muestra = _codes_para_muestra(m, matriz_lookup)
+        for p in params_lab:
             rect(x, y, lab_col_w, drh, bg)
-            txt(x + lab_col_w / 2, y + 1.8 * mm, "x", "Helvetica", 5, black, "c")
+            if _marcar_lab(p, codes_muestra):
+                txt(x + lab_col_w / 2, y + 1.8 * mm, "x", "Helvetica", 5, black, "c")
             x += lab_col_w
 
         # Params campo — valores

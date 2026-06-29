@@ -56,6 +56,10 @@ from services.etiquetas_service import (
     generar_etiquetas_campana,
     get_ensayos_disponibles,
 )
+from services.cadena_custodia_service import (
+    get_matriz_ensayos,
+    guardar_matriz_ensayos,
+)
 from services.parametro_registry import get_parametros_lab_cadena
 
 
@@ -821,12 +825,16 @@ def _marcado_default(ensayo: str, prof: str | None) -> bool:
 
 
 def _matriz_ensayos_default(
-    puntos: list[dict], tipo_muestreo: str, ensayos: list[str]
+    puntos: list[dict],
+    tipo_muestreo: str,
+    ensayos: list[str],
+    seleccion_previa: dict[tuple, set] | None = None,
 ) -> tuple[pd.DataFrame, list[tuple]]:
     """
     Construye el DataFrame inicial de la matriz punto × ensayo y la metadata
-    de filas (alineada por posición). Los ensayos vienen marcados por defecto
-    según la profundidad (ver `_DEFAULT_PROF_ENSAYO`); el analista ajusta.
+    de filas (alineada por posición). Si hay `seleccion_previa` guardada para
+    una fila (clave (punto_id, prof)), se usa esa; si no, se marca por defecto
+    según la profundidad (ver `_DEFAULT_PROF_ENSAYO`).
 
     El perfil por columna (S/M/F) solo aplica a cuerpos lénticos
     (embalse/laguna, ver TIPOS_COLUMNA):
@@ -839,25 +847,31 @@ def _matriz_ensayos_default(
     """
     filas: list[dict] = []
     meta:  list[tuple] = []
+    previa = seleccion_previa or {}
 
-    def _fila(etiqueta: str, prof: str | None, prof_label: str) -> dict:
+    def _fila(etiqueta: str, pid: str, prof: str | None, prof_label: str) -> dict:
         fila = {"Punto": etiqueta, "Prof.": prof_label}
+        guardada = previa.get((pid, prof))
         for e in ensayos:
-            fila[e] = _marcado_default(e, prof)
+            if guardada is not None:
+                fila[e] = e in guardada
+            else:
+                fila[e] = _marcado_default(e, prof)
         return fila
 
     for pt in puntos:
         etiqueta = f"{pt.get('codigo','')} — {pt.get('nombre','')}"
+        pid = pt["id"]
         es_lentic = (pt.get("tipo") or "").lower() in TIPOS_COLUMNA
 
         if tipo_muestreo == MODO_COLUMNA and es_lentic:
             for prof in PROFUNDIDADES_COLUMNA:
-                filas.append(_fila(etiqueta, prof, _PROF_LABELS[prof]))
-                meta.append((pt["id"], prof))
+                filas.append(_fila(etiqueta, pid, prof, _PROF_LABELS[prof]))
+                meta.append((pid, prof))
         else:
             # Agua superficial (modo superficial, o punto no léntico en columna).
-            filas.append(_fila(etiqueta, None, _PROF_LABELS["S"]))
-            meta.append((pt["id"], None))
+            filas.append(_fila(etiqueta, pid, None, _PROF_LABELS["S"]))
+            meta.append((pid, None))
 
     return pd.DataFrame(filas), meta
 
@@ -903,11 +917,22 @@ def _render_etiquetas_frascos(campana_id: str, puntos: list[dict]) -> None:
     ensayos_disp = get_ensayos_disponibles()
     st.caption(
         ":material/info: Marca qué ensayos lleva cada punto y profundidad. "
-        "Todo viene marcado: desmarca lo que no aplique. "
+        "Esta selección también define qué se marca en la **cadena de custodia**. "
         "Cada fila con al menos 1 ensayo genera una hoja (máx. 8 etiquetas)."
     )
 
-    df_default, meta = _matriz_ensayos_default(puntos, tipo_muestreo, ensayos_disp)
+    # Selección guardada previamente (compartida con la cadena de custodia).
+    matriz_previa = get_matriz_ensayos(campana_id)
+    prev_lookup: dict[tuple, set] = {}
+    if matriz_previa:
+        for fila in matriz_previa:
+            prev_lookup[(fila.get("punto_id"), fila.get("prof"))] = set(
+                fila.get("ensayos") or []
+            )
+
+    df_default, meta = _matriz_ensayos_default(
+        puntos, tipo_muestreo, ensayos_disp, seleccion_previa=prev_lookup
+    )
 
     col_cfg: dict = {
         "Punto": st.column_config.TextColumn("Punto", disabled=True, width="medium"),
@@ -927,14 +952,18 @@ def _render_etiquetas_frascos(campana_id: str, puntos: list[dict]) -> None:
         key=f"etiq_matriz_{campana_id}_{tipo_muestreo}",
     )
 
-    # Reconstruir las filas de selección (1 por renglón con ensayos marcados).
-    filas_seleccion: list[dict] = []
+    # Filas completas de la matriz (incluye renglones sin marcar, para
+    # persistir el estado exacto y que la cadena sepa qué NO se hace).
+    filas_todas: list[dict] = []
     for i, (pid, prof) in enumerate(meta):
         marcados = [e for e in ensayos_disp if bool(edited.iloc[i][e])]
-        if marcados:
-            filas_seleccion.append(
-                {"punto_id": pid, "prof": prof, "ensayos": marcados}
-            )
+        filas_todas.append({"punto_id": pid, "prof": prof, "ensayos": marcados})
+
+    # Solo los renglones con al menos 1 ensayo generan hoja.
+    filas_seleccion = [f for f in filas_todas if f["ensayos"]]
+
+    sesion = st.session_state.get("sesion")
+    uid = sesion.uid if sesion else None
 
     sel_resp = st.multiselect(
         "Muestreado por",
@@ -947,6 +976,21 @@ def _render_etiquetas_frascos(campana_id: str, puntos: list[dict]) -> None:
 
     n_hojas = len(filas_seleccion)
     n_etiq  = sum(len(f["ensayos"]) for f in filas_seleccion)
+
+    if st.button(
+        "Guardar selección para la cadena",
+        key=f"btn_save_matriz_{campana_id}",
+        icon=":material/save:",
+        help="Guarda esta matriz en la campaña; la cadena de custodia marcará "
+             "los parámetros según lo elegido aquí.",
+    ):
+        if guardar_matriz_ensayos(campana_id, filas_todas, usuario_id=uid):
+            st.success("Selección guardada. La cadena de custodia la usará.")
+        else:
+            st.warning(
+                "No se pudo guardar (¿migración 006 pendiente?). Las etiquetas "
+                "igual se generan, pero la cadena no reflejará esta selección."
+            )
 
     col_a, col_b = st.columns([1, 2])
     with col_a:
@@ -961,6 +1005,8 @@ def _render_etiquetas_frascos(campana_id: str, puntos: list[dict]) -> None:
         else:
             try:
                 with st.spinner("Generando documento..."):
+                    # Auto-guardar la selección para mantener la cadena en sync.
+                    guardar_matriz_ensayos(campana_id, filas_todas, usuario_id=uid)
                     docx_bytes = generar_etiquetas_campana(
                         campana_id=campana_id,
                         responsables=sel_resp,
