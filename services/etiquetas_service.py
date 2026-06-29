@@ -46,7 +46,15 @@ ENSAYOS_PLANTILLA: list[dict] = [
     {"nombre": "Clorofila A",                 "preservante": "S/P"},
     {"nombre": "Color",                       "preservante": "S/P"},
     {"nombre": "Fisicoquímicos y nutrientes", "preservante": "S/P"},
+    # Ensayos sin preservante añadidos por la plataforma (no pre-impresos en la
+    # plantilla): se sintetizan clonando una etiqueta S/P existente y se rotulan
+    # en azul como código visual de "sin preservar".
+    {"nombre": "DBO5",              "preservante": "S/P", "sintetico": True, "color": "0000FF"},
+    {"nombre": "Microcistina - LR", "preservante": "S/P", "sintetico": True, "color": "0000FF"},
 ]
+
+# Etiqueta S/P existente que se clona como base para los ensayos sintéticos.
+_BASE_SINTETICA = "Color"
 
 # Modos válidos de muestreo (parámetro `tipo_muestreo`).
 MODO_SUPERFICIAL = "superficial"
@@ -69,10 +77,16 @@ _TIPO_A_MATRIZ: dict[str, str] = {
 # Texto pre-impreso de "MUESTREADO POR" en la plantilla — a reemplazar.
 _MUESTREADO_POR_DEFAULT = "A. Llacho, A. Vilcapaza"
 
-# Posiciones (fila, col) dentro de la outer table 3×3 donde se ubican las
-# etiquetas (col 1 es separadora). Orden de lectura: izquierda→derecha,
-# arriba→abajo. Hay 6 posiciones disponibles; usamos hasta 5.
-_POSICIONES_ETIQUETAS = [(0, 0), (0, 2), (1, 0), (1, 2), (2, 0), (2, 2)]
+# Posiciones (fila, col) dentro de la outer table donde se ubican las etiquetas
+# (col 1 es separadora). Orden de lectura: izquierda→derecha, arriba→abajo.
+# La plantilla trae 3 filas (6 posiciones); cuando se requieren más de 6
+# etiquetas se clona una 4ª fila para llegar a 8 (ver _construir_hoja).
+_POSICIONES_ETIQUETAS = [
+    (0, 0), (0, 2),
+    (1, 0), (1, 2),
+    (2, 0), (2, 2),
+    (3, 0), (3, 2),
+]
 
 # Ruta a la plantilla (raíz del proyecto LVCA).
 _TEMPLATE_PATH = os.path.join(
@@ -299,11 +313,15 @@ def _construir_slots(
 
 def _extraer_etiqueta_templates(doc) -> dict[str, object]:
     """
-    Captura UNA etiqueta (elemento <w:tbl> outer del recuadro) por cada uno
-    de los 5 ensayos, recorriendo las tablas externas de la plantilla.
-    Retorna {nombre_ensayo → elemento XML clonable}.
+    Captura UNA etiqueta (elemento <w:tbl> outer del recuadro) por cada ensayo
+    pre-impreso en la plantilla, recorriendo sus tablas externas, y sintetiza
+    las etiquetas de los ensayos marcados `sintetico` (no pre-impresos) clonando
+    una etiqueta S/P base. Retorna {nombre_ensayo → elemento XML clonable}.
     """
-    nombres_esperados = {e["nombre"] for e in ENSAYOS_PLANTILLA}
+    # Solo los ensayos con caja pre-impresa se buscan en el XML de la plantilla.
+    nombres_preimpresos = {
+        e["nombre"] for e in ENSAYOS_PLANTILLA if not e.get("sintetico")
+    }
     capturados: dict[str, object] = {}
 
     for outer_table in doc.tables:
@@ -313,16 +331,62 @@ def _extraer_etiqueta_templates(doc) -> dict[str, object]:
                     continue
                 etiqueta_outer = cell.tables[0]   # 1x1 wrapper con borde
                 text_completo = etiqueta_outer._element.xml
-                for nombre in nombres_esperados:
+                for nombre in nombres_preimpresos:
                     if nombre in capturados:
                         continue
                     if nombre in text_completo:
                         capturados[nombre] = etiqueta_outer._element
                         break
-        if len(capturados) >= len(nombres_esperados):
+        if len(capturados) >= len(nombres_preimpresos):
             break
 
+    # Sintetizar las etiquetas no pre-impresas (DBO5, Microcistina - LR, …)
+    # clonando la etiqueta S/P base y re-rotulando el campo ENSAYO en color.
+    base = capturados.get(_BASE_SINTETICA)
+    if base is not None:
+        for e in ENSAYOS_PLANTILLA:
+            if not e.get("sintetico") or e["nombre"] in capturados:
+                continue
+            capturados[e["nombre"]] = _sintetizar_etiqueta(
+                base, e["nombre"], e.get("color", "0000FF")
+            )
+
     return capturados
+
+
+def _sintetizar_etiqueta(base_element, nombre: str, color_hex: str):
+    """
+    Clona una etiqueta base S/P y reescribe su campo ENSAYO (fila 5, celda 2)
+    con `nombre`, aplicándole color `color_hex`. El resto de la etiqueta —incluida
+    la casilla `S/P ( X )`— se conserva del clon.
+    """
+    nuevo = deepcopy(base_element)
+    tbl = _encontrar_tabla_campos(nuevo)
+    if tbl is not None:
+        rows = tbl.findall(qn("w:tr"))
+        if len(rows) >= 6:
+            tcs = rows[5].findall(qn("w:tc"))
+            if len(tcs) >= 3:
+                _set_paragrafo_directo(tcs[2], nombre)
+                _colorear_celda(tcs[2], color_hex)
+    return nuevo
+
+
+def _colorear_celda(tc, color_hex: str) -> None:
+    """
+    Aplica color de fuente `color_hex` (RRGGBB) a todos los runs <w:r> de la
+    celda, insertando o reemplazando <w:color> dentro de su <w:rPr>.
+    """
+    for r in tc.iter(qn("w:r")):
+        rPr = r.find(qn("w:rPr"))
+        if rPr is None:
+            rPr = OxmlElement("w:rPr")
+            r.insert(0, rPr)
+        color = rPr.find(qn("w:color"))
+        if color is None:
+            color = OxmlElement("w:color")
+            rPr.append(color)
+        color.set(qn("w:val"), color_hex)
 
 
 def _extraer_outer_template(doc):
@@ -374,6 +438,22 @@ def _construir_hoja(outer_template, etiqueta_templates, ensayos_a_incluir, valor
     """
     hoja = deepcopy(outer_template)
     rows = hoja.findall(qn("w:tr"))
+
+    # La plantilla trae 3 filas (6 posiciones). Si hacen falta más etiquetas,
+    # clonar la última fila —con sus celdas vacías— para habilitar la fila 4
+    # (posiciones (3,0) y (3,2)), permitiendo hasta 8 etiquetas por hoja.
+    filas_necesarias = max(
+        (ri for i, (ri, ci) in enumerate(_POSICIONES_ETIQUETAS)
+         if i < len(ensayos_a_incluir)),
+        default=0,
+    ) + 1
+    while len(rows) < filas_necesarias and rows:
+        nueva_fila = deepcopy(rows[-1])
+        for celda in nueva_fila.findall(qn("w:tc")):
+            if celda.find(qn("w:tbl")) is not None:
+                _vaciar_celda(celda)
+        hoja.append(nueva_fila)
+        rows = hoja.findall(qn("w:tr"))
 
     for i, (ri, ci) in enumerate(_POSICIONES_ETIQUETAS):
         if ri >= len(rows):

@@ -843,7 +843,9 @@ def _render_etiquetas_frascos(campana_id: str, puntos: list[dict]) -> None:
         options=ensayos_disp,
         default=ensayos_disp,
         key=f"etiq_ensayos_{campana_id}",
-        help="Cada ensayo genera una etiqueta con su preservante correspondiente.",
+        help="Cada ensayo genera una etiqueta con su preservante correspondiente. "
+             "DBO5 y Microcistina - LR van rotulados en azul (sin preservante). "
+             "Caben hasta 8 etiquetas por hoja.",
     )
 
     sel_resp = st.multiselect(
