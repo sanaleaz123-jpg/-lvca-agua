@@ -48,11 +48,14 @@ from services.linea_base_service import (
 )
 
 
-# Zonas UTM que cubren el territorio peruano (de oeste a este). Arequipa
-# (la región monitoreada) se reparte entre 18S — toda la franja occidental:
-# Majes, Camaná, Ocoña, Caravelí — y 19S — el sector oriental: Chili, Colca,
-# Quilca-Vítor. Guardar un punto del oeste como 19S lo manda a Bolivia/Brasil.
-ZONAS_UTM_PERU = ["19S", "18S", "17S"]
+# Zonas UTM que cubren la región monitoreada (Arequipa). El número es el huso
+# (18 = franja occidental: Majes, Camaná, Ocoña, Caravelí · 19 = oriental:
+# Chili, Colca, Quilca-Vítor) y la letra es la banda de latitud
+# (K: −24°…−16° · L: −16°…−8° · S = convención local "Sur"). La conversión
+# solo distingue Norte/Sur, así que K/L/S del mismo huso dan idéntico lat/lon;
+# la letra queda como registro de la banda. Guardar un punto del oeste con huso
+# 19 (en vez de 18) lo desplaza ~6° al este, a Bolivia/Brasil.
+ZONAS_UTM_PERU = ["19S", "19L", "19K", "18S", "18L", "18K"]
 
 # Bounding box generoso del Perú continental (WGS84). Sirve para detectar
 # puntos convertidos con la zona UTM equivocada: caen fuera (hacia el este, en
@@ -641,7 +644,11 @@ def _render_editar(punto_id: str) -> None:
                 "Zona UTM", _opts_zona,
                 index=_opts_zona.index(_zona_actual),
                 key=f"edit_utm_z_{kp}",
-                help="Majes/Camaná/Ocoña: 18S · Chili/Colca/Quilca-Vítor: 19S.",
+                help=(
+                    "El huso (18 ó 19) define la ubicación; la letra es la "
+                    "banda de latitud (K: −24°…−16° · L: −16°…−8° · S = Sur). "
+                    "Majes/Camaná/Ocoña → huso 18 · Chili/Colca/Quilca-Vítor → huso 19."
+                ),
             )
         with co4:
             altitud = st.number_input(
@@ -932,7 +939,11 @@ def _render_nuevo() -> None:
         with co3:
             utm_zona_sel = st.selectbox(
                 "Zona UTM", ZONAS_UTM_PERU, index=0,
-                help="Majes/Camaná/Ocoña: 18S · Chili/Colca/Quilca-Vítor: 19S.",
+                help=(
+                    "El huso (18 ó 19) define la ubicación; la letra es la "
+                    "banda de latitud (K: −24°…−16° · L: −16°…−8° · S = Sur). "
+                    "Majes/Camaná/Ocoña → huso 18 · Chili/Colca/Quilca-Vítor → huso 19."
+                ),
             )
         with co4:
             altitud = st.number_input("Altitud (msnm)", value=0.0, format="%.1f")
