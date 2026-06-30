@@ -340,7 +340,7 @@ small, .small, .stCaption, [data-testid="stCaption"] {
     background: #ffffff;
     border: 1px solid #eef2f6;
     border-radius: var(--lvca-radius-lg);
-    padding: 20px 24px;
+    padding: 14px 20px;
     box-shadow: var(--lvca-shadow-sm);
     transition: all var(--lvca-t) var(--lvca-ease);
 }
@@ -551,7 +551,7 @@ input:focus, textarea:focus, [data-baseweb="select"]:focus-within {
 [data-testid="stForm"] {
     border: 1px solid #eef2f6 !important;
     border-radius: var(--lvca-radius-md) !important;
-    padding: 24px !important;
+    padding: 18px !important;
     background: #ffffff !important;
     box-shadow: var(--lvca-shadow-xs);
 }
@@ -621,7 +621,7 @@ input:focus, textarea:focus, [data-baseweb="select"]:focus-within {
 /* ── Dividers — visibles sobre el fondo gris de la app ─────────────────── */
 hr {
     border-color: #dbe3ec !important;
-    margin: 1.5rem 0 !important;
+    margin: 0.85rem 0 !important;
     opacity: 0.9;
 }
 
@@ -631,7 +631,7 @@ hr {
     padding-bottom: 3rem !important;
 }
 [data-testid="stVerticalBlock"] > [data-testid="stVerticalBlock"] {
-    gap: 0.5rem;
+    gap: 0.3rem;
 }
 
 /* ── Cards — borde casi invisible, sin sombra base ──────────────────── */
@@ -639,7 +639,7 @@ hr {
     background: #ffffff;
     border: 1px solid #f1f5f9;
     border-radius: var(--lvca-radius-md);
-    padding: var(--lvca-space-5) var(--lvca-space-5);
+    padding: 18px 20px;
     text-align: center;
     transition: all var(--lvca-t) var(--lvca-ease);
     height: 100%;
@@ -704,7 +704,7 @@ hr {
     color: #0f172a;
     font-size: 1.05rem;
     font-weight: 700;
-    margin: 2.6rem 0 1rem 0;
+    margin: 1.6rem 0 0.65rem 0;
     padding-bottom: 10px;
     border-bottom: 1px solid var(--lvca-border);
     text-transform: uppercase;
@@ -742,7 +742,7 @@ hr {
     border-left: 3px solid #0D47A1;
     border-radius: 0 8px 8px 0;
     padding: 12px 16px;
-    margin: 8px 0;
+    margin: 5px 0;
     font-size: 0.88rem;
     color: #334155;
     box-shadow: var(--lvca-shadow-xs);
@@ -811,8 +811,8 @@ hr {
     background: #ffffff;
     border: 1px solid #eef0f2;
     border-radius: 10px;
-    padding: 16px 22px;
-    margin-bottom: 18px;
+    padding: 12px 18px;
+    margin-bottom: 12px;
     box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
 }
 .lvca-filter-bar label {
@@ -827,7 +827,7 @@ hr {
       en hover. Aplica a todas las st.tabs de la plataforma. ──────────── */
 [data-testid="stTabs"] {
     border-bottom: 1px solid #dbe3ec;
-    margin-bottom: 14px;
+    margin-bottom: 10px;
 }
 [data-testid="stTabs"] button[data-baseweb="tab"] {
     padding: 12px 20px !important;
@@ -1056,8 +1056,8 @@ hr {
     background: white;
     border: 1px solid #e2e8f0;
     border-radius: 12px;
-    padding: 18px 24px;
-    margin: 8px 0;
+    padding: 14px 20px;
+    margin: 6px 0;
 }
 .lvca-timeline-row {
     display: flex; align-items: center; justify-content: space-between;
@@ -1101,7 +1101,7 @@ hr {
 .lvca-inline-note {
     display: flex; align-items: flex-start; gap: 10px;
     padding: 10px 14px;
-    margin: 6px 0;
+    margin: 4px 0;
     border-radius: 8px;
     background: #ffffff;
     border: 1px solid #eef2f6;
@@ -1124,8 +1124,8 @@ hr {
     background: #ffffff;
     border: 1px solid #eef2f6;
     border-radius: var(--lvca-radius-lg);
-    padding: 20px 20px 18px 24px;
-    min-height: 150px;
+    padding: 14px 16px 13px 20px;
+    min-height: 120px;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
@@ -1484,11 +1484,11 @@ hr {
         radial-gradient(130% 150% at 100% 0%, rgba(10,147,150,0.07) 0%, rgba(10,147,150,0) 46%),
         linear-gradient(135deg, #ffffff 0%, #f3f8fd 100%);
     color: var(--lvca-text);
-    padding: 32px 36px 32px 40px;
+    padding: 22px 32px 22px 36px;
     border: 1px solid var(--lvca-border-soft);
     border-radius: var(--lvca-radius-lg);
     box-shadow: var(--lvca-shadow-sm);
-    margin-bottom: 30px;
+    margin-bottom: 18px;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -1540,7 +1540,7 @@ hr {
     background: #ffffff;
     border: 1px solid #eef2f6;
     border-radius: var(--lvca-radius-lg);
-    padding: 22px 22px 20px 24px;
+    padding: 16px 16px 14px 20px;
     box-shadow: var(--lvca-shadow-xs);
     transition: all var(--lvca-t) var(--lvca-ease);
     position: relative;
@@ -1584,7 +1584,7 @@ hr {
     font-weight: 800;
     color: #0f172a;
     letter-spacing: -0.035em;
-    margin-top: 12px;
+    margin-top: 8px;
     line-height: 1;
     font-variant-numeric: tabular-nums;
 }
@@ -1681,7 +1681,7 @@ textarea:focus-visible,
 .lvca-user-rol  { color: rgba(255,255,255,0.72) !important; }
 
 /* ── Respiración entre secciones ─────────────────────────────────────────── */
-.lvca-section-header { margin-top: 1.9rem !important; }
+.lvca-section-header { margin-top: 1.3rem !important; }
 
 /* ── Responsividad: tablet ───────────────────────────────────────────────── */
 @media (max-width: 820px) {
@@ -2033,8 +2033,8 @@ def stat_counters(items: list[dict], titulo: str = "") -> None:
         .lvca-stats-band {
             background: #0D47A1;
             border-radius: var(--lvca-radius-lg, 16px);
-            padding: 24px 28px;
-            margin: 4px 0 10px 0;
+            padding: 16px 22px;
+            margin: 4px 0 8px 0;
             box-shadow: var(--lvca-shadow-xs, 0 1px 2px rgba(15,23,42,0.05));
             position: relative;
             overflow: hidden;
@@ -2043,7 +2043,7 @@ def stat_counters(items: list[dict], titulo: str = "") -> None:
             color: rgba(255,255,255,0.78);
             font-size: 0.72rem; font-weight: 700;
             letter-spacing: 0.10em; text-transform: uppercase;
-            margin-bottom: 14px;
+            margin-bottom: 10px;
         }
         .lvca-stats-row {
             display: flex; flex-wrap: wrap; gap: 8px;
@@ -2146,10 +2146,10 @@ _TOP_NAV_CSS = """<style>
 
 /* Empujar el contenido de la página para que no quede oculto bajo el
    top-nav fijo. La altura depende del tamaño del label de usuario +
-   altura de los page_links. 108px es un buffer seguro; si el top-nav
-   quedara más compacto/alto, ajustar aquí. */
+   altura de los page_links. 94px es un buffer ajustado (el nav mide ~83px);
+   si el top-nav quedara más compacto/alto, ajustar aquí. */
 [data-testid="stMainBlockContainer"]:has(.st-key-lvca_top_nav) {
-    padding-top: 108px !important;
+    padding-top: 94px !important;
 }
 /* Línea 1: marca + usuario */
 .lvca-brand {
