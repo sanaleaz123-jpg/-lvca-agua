@@ -119,13 +119,13 @@ def _render_module_grid() -> None:
             flex-direction: column !important;
             align-items: center !important;
             justify-content: center !important;
-            gap: 12px !important;
-            padding: 20px 16px 18px 16px !important;
+            gap: 10px !important;
+            padding: 14px 16px 13px 16px !important;
             background: #ffffff !important;
             border: 1px solid #eef2f6 !important;
             border-radius: var(--lvca-radius-md, 12px) !important;
             text-align: center !important;
-            min-height: 128px !important;
+            min-height: 104px !important;
             box-shadow: var(--lvca-shadow-xs, 0 1px 2px rgba(15,23,42,0.05)) !important;
             transition: transform 0.18s cubic-bezier(0.4,0,0.2,1),
                         box-shadow 0.18s cubic-bezier(0.4,0,0.2,1),

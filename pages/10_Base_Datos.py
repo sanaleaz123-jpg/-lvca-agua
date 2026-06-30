@@ -395,7 +395,7 @@ def main() -> None:
             key="bd_categorias",
         )
     with fc6:
-        st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)
         mostrar_vacios = st.checkbox("Mostrar celdas vacías", value=True, key="bd_vacios")
     filter_bar_close()
 

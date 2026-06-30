@@ -356,7 +356,7 @@ def _render_informe_campana() -> None:
         sel = st.selectbox("Seleccionar campaña", list(opciones.keys()), key="inf_campana")
         campana_id = opciones[sel]
     with col_refresh:
-        st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)
         refresh = st.button(
             "Actualizar", key="btn_refresh_informe",
             icon=":material/refresh:", use_container_width=True,

@@ -109,8 +109,8 @@ def _pantalla_login() -> None:
         <style>
         [data-testid='stHeader'] { display: none !important; }
         [data-testid='stMainBlockContainer'] {
-            padding-top: 32px !important;
-            padding-bottom: 60px !important;
+            padding-top: 14px !important;
+            padding-bottom: 18px !important;
             background: var(--lvca-bg-app);
             max-width: 100% !important;
         }
@@ -188,15 +188,15 @@ def _pantalla_login() -> None:
             background: var(--lvca-bg-card);
             border: 1px solid var(--lvca-border-soft);
             border-radius: var(--lvca-radius-md);
-            padding: 14px 18px;
-            height: 110px;
+            padding: 10px 14px;
+            height: 76px;
             display: flex;
             align-items: center;
             justify-content: center;
             box-shadow: var(--lvca-shadow-xs);
         }
         .lvca-logo-frame img {
-            max-height: 82px;
+            max-height: 56px;
             max-width: 100%;
             object-fit: contain;
         }
@@ -218,12 +218,12 @@ def _pantalla_login() -> None:
                 """
                 <div style="position:relative; overflow:hidden;
                      background:var(--lvca-brand-azul-dark);
-                     color:white; padding:28px 28px 22px 28px; text-align:center;">
-                    <h1 style="margin:0; font-size:1.45rem; font-weight:700;
-                         color:#ffffff; letter-spacing:-0.02em; line-height:1.25;">
+                     color:white; padding:16px 28px 14px 28px; text-align:center;">
+                    <h1 style="margin:0; font-size:1.3rem; font-weight:700;
+                         color:#ffffff; letter-spacing:-0.02em; line-height:1.2;">
                         Laboratorio de Vigilancia<br>de Calidad de Agua
                     </h1>
-                    <p style="margin:12px 0 0 0; font-size:0.82rem;
+                    <p style="margin:7px 0 0 0; font-size:0.82rem;
                          color:rgba(255,255,255,0.92); font-weight:600;
                          letter-spacing:0.1em; text-transform:uppercase;">
                         AUTODEMA
@@ -241,7 +241,7 @@ def _pantalla_login() -> None:
                 st.markdown(
                     f"""
                     <div style="display:grid; grid-template-columns:1fr 1fr;
-                         gap:14px; margin:22px 0 4px 0;">
+                         gap:14px; margin:14px 0 2px 0;">
                         <div class="lvca-logo-frame">
                             <img src="{autodema_uri}" alt="PEIMS-AUTODEMA"/>
                         </div>
@@ -250,7 +250,7 @@ def _pantalla_login() -> None:
                         </div>
                     </div>
                     <div style="text-align:center; color:var(--lvca-brand-azul-mid); font-size:0.88rem;
-                         font-weight:600; margin:22px 0 8px 0; letter-spacing:-0.01em;">
+                         font-weight:600; margin:12px 0 6px 0; letter-spacing:-0.01em;">
                         Iniciar sesión
                     </div>
                     """,
@@ -288,8 +288,8 @@ def _pantalla_login() -> None:
                 # Pie del card
                 st.markdown(
                     f"""<div style='text-align:center; color:var(--lvca-text-faint);
-                         font-size:0.72rem; margin-top:16px;
-                         border-top:1px solid var(--lvca-border-soft); padding:12px 0 16px 0;'>
+                         font-size:0.72rem; margin-top:10px;
+                         border-top:1px solid var(--lvca-border-soft); padding:8px 0 8px 0;'>
                         {APP_ENTIDAD} · v{APP_VERSION}
                     </div>""",
                     unsafe_allow_html=True,

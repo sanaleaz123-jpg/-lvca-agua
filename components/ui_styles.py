@@ -340,7 +340,7 @@ small, .small, .stCaption, [data-testid="stCaption"] {
     background: #ffffff;
     border: 1px solid #eef2f6;
     border-radius: var(--lvca-radius-lg);
-    padding: 14px 20px;
+    padding: 11px 16px;
     box-shadow: var(--lvca-shadow-sm);
     transition: all var(--lvca-t) var(--lvca-ease);
 }
@@ -371,7 +371,7 @@ small, .small, .stCaption, [data-testid="stCaption"] {
 [data-testid="stTabs"] button[data-baseweb="tab"] {
     font-weight: 500;
     font-size: 0.88rem;
-    padding: 10px 20px;
+    padding: 8px 18px;
     border-radius: 8px 8px 0 0;
     transition: all 0.15s ease;
 }
@@ -413,7 +413,7 @@ small, .small, .stCaption, [data-testid="stCaption"] {
     border: 1px solid #eef2f6;
     border-radius: var(--lvca-radius-md);
     box-shadow: var(--lvca-shadow-xs);
-    padding: 10px 12px;
+    padding: 5px 8px;
 }
 
 /* st.table también — tarjeta blanca */
@@ -455,7 +455,7 @@ button[kind="secondary"] {
     font-size: 0.86rem !important;
     font-family: 'Inter', sans-serif !important;
     letter-spacing: 0.005em;
-    padding: 0.5rem 1rem !important;
+    padding: 0.4rem 0.9rem !important;
     transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1) !important;
     box-shadow: none;
 }
@@ -551,7 +551,7 @@ input:focus, textarea:focus, [data-baseweb="select"]:focus-within {
 [data-testid="stForm"] {
     border: 1px solid #eef2f6 !important;
     border-radius: var(--lvca-radius-md) !important;
-    padding: 18px !important;
+    padding: 12px 14px !important;
     background: #ffffff !important;
     box-shadow: var(--lvca-shadow-xs);
 }
@@ -566,8 +566,8 @@ input:focus, textarea:focus, [data-baseweb="select"]:focus-within {
     transition: all 0.15s ease;
 }
 [data-baseweb="input"] input {
-    padding-top: 0.55rem !important;
-    padding-bottom: 0.55rem !important;
+    padding-top: 0.4rem !important;
+    padding-bottom: 0.4rem !important;
 }
 [data-baseweb="input"] input:focus,
 [data-baseweb="textarea"] textarea:focus {
@@ -621,7 +621,7 @@ input:focus, textarea:focus, [data-baseweb="select"]:focus-within {
 /* ── Dividers — visibles sobre el fondo gris de la app ─────────────────── */
 hr {
     border-color: #dbe3ec !important;
-    margin: 0.85rem 0 !important;
+    margin: 0.5rem 0 !important;
     opacity: 0.9;
 }
 
@@ -646,12 +646,40 @@ hr {
     display: none !important;
 }
 
+/* ── Compactación de widgets de formulario ───────────────────────────────
+   Pega el label a su control y reduce el aire por campo. Es el mayor
+   ahorro de scroll en páginas con muchos campos (Puntos, Resultados,
+   Muestras). Solo espaciado; no toca el alto del control ni su lógica. */
+[data-testid="stWidgetLabel"] {
+    margin-bottom: 1px !important;
+}
+[data-testid="stWidgetLabel"] p {
+    line-height: 1.2 !important;
+}
+/* Dentro de formularios, gap mínimo entre campos. */
+[data-testid="stForm"] [data-testid="stVerticalBlock"] {
+    gap: 0.25rem !important;
+}
+/* Caption / texto de ayuda más pegado. */
+[data-testid="stCaptionContainer"] {
+    margin-top: 0 !important;
+    margin-bottom: 2px !important;
+}
+/* Expander: cabecera y contenido con menos relleno vertical. */
+[data-testid="stExpander"] summary {
+    padding-top: 0.45rem !important;
+    padding-bottom: 0.45rem !important;
+}
+[data-testid="stExpander"] [data-testid="stExpanderDetails"] {
+    padding-top: 0.25rem !important;
+}
+
 /* ── Cards — borde casi invisible, sin sombra base ──────────────────── */
 .lvca-card {
     background: #ffffff;
     border: 1px solid #f1f5f9;
     border-radius: var(--lvca-radius-md);
-    padding: 18px 20px;
+    padding: 13px 18px;
     text-align: center;
     transition: all var(--lvca-t) var(--lvca-ease);
     height: 100%;
@@ -716,8 +744,8 @@ hr {
     color: #0f172a;
     font-size: 1.05rem;
     font-weight: 700;
-    margin: 1.6rem 0 0.65rem 0;
-    padding-bottom: 10px;
+    margin: 0.9rem 0 0.4rem 0;
+    padding-bottom: 6px;
     border-bottom: 1px solid var(--lvca-border);
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -753,7 +781,7 @@ hr {
     border: 1px solid #eef2f6;
     border-left: 3px solid #0D47A1;
     border-radius: 0 8px 8px 0;
-    padding: 12px 16px;
+    padding: 8px 14px;
     margin: 5px 0;
     font-size: 0.88rem;
     color: #334155;
@@ -815,7 +843,7 @@ hr {
    como fallback por si cambia el data-testid en versiones futuras. */
 [data-testid="stMainBlockContainer"],
 .block-container {
-    padding-bottom: 56px !important;
+    padding-bottom: 36px !important;
 }
 
 /* ── Filter bar estilo SSDH: blanco con sombra sutil ──────────────────── */
@@ -823,8 +851,8 @@ hr {
     background: #ffffff;
     border: 1px solid #eef0f2;
     border-radius: 10px;
-    padding: 12px 18px;
-    margin-bottom: 12px;
+    padding: 8px 16px;
+    margin-bottom: 8px;
     box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
 }
 .lvca-filter-bar label {
@@ -842,7 +870,7 @@ hr {
     margin-bottom: 10px;
 }
 [data-testid="stTabs"] button[data-baseweb="tab"] {
-    padding: 12px 20px !important;
+    padding: 8px 18px !important;
     font-size: 0.88rem !important;
     font-weight: 500 !important;
     color: #64748b !important;
@@ -1496,11 +1524,11 @@ hr {
         radial-gradient(130% 150% at 100% 0%, rgba(10,147,150,0.07) 0%, rgba(10,147,150,0) 46%),
         linear-gradient(135deg, #ffffff 0%, #f3f8fd 100%);
     color: var(--lvca-text);
-    padding: 18px 32px 18px 36px;
+    padding: 12px 32px 12px 36px;
     border: 1px solid var(--lvca-border-soft);
     border-radius: var(--lvca-radius-lg);
     box-shadow: var(--lvca-shadow-sm);
-    margin-bottom: 14px;
+    margin-bottom: 12px;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -1527,7 +1555,7 @@ hr {
     line-height: 1.15;
 }
 .lvca-banner .lvca-banner-sub {
-    margin: 8px 0 0 0;
+    margin: 4px 0 0 0;
     font-size: 0.9rem;
     color: var(--lvca-text-muted);
     font-weight: 500;
@@ -1552,7 +1580,7 @@ hr {
     background: #ffffff;
     border: 1px solid #eef2f6;
     border-radius: var(--lvca-radius-lg);
-    padding: 16px 16px 14px 20px;
+    padding: 12px 16px 11px 20px;
     box-shadow: var(--lvca-shadow-xs);
     transition: all var(--lvca-t) var(--lvca-ease);
     position: relative;
@@ -1693,7 +1721,7 @@ textarea:focus-visible,
 .lvca-user-rol  { color: rgba(255,255,255,0.72) !important; }
 
 /* ── Respiración entre secciones ─────────────────────────────────────────── */
-.lvca-section-header { margin-top: 1.3rem !important; }
+.lvca-section-header { margin-top: 0.9rem !important; }
 
 /* ── Responsividad: tablet ───────────────────────────────────────────────── */
 @media (max-width: 820px) {
@@ -2045,7 +2073,7 @@ def stat_counters(items: list[dict], titulo: str = "") -> None:
         .lvca-stats-band {
             background: #0D47A1;
             border-radius: var(--lvca-radius-lg, 16px);
-            padding: 16px 22px;
+            padding: 10px 22px;
             margin: 4px 0 8px 0;
             box-shadow: var(--lvca-shadow-xs, 0 1px 2px rgba(15,23,42,0.05));
             position: relative;
@@ -2161,7 +2189,7 @@ _TOP_NAV_CSS = """<style>
    altura de los page_links. 94px es un buffer ajustado (el nav mide ~83px);
    si el top-nav quedara más compacto/alto, ajustar aquí. */
 [data-testid="stMainBlockContainer"]:has(.st-key-lvca_top_nav) {
-    padding-top: 94px !important;
+    padding-top: 86px !important;
 }
 /* Línea 1: marca + usuario */
 .lvca-brand {
