@@ -647,8 +647,8 @@ hr {
    Base de Datos = <style> + <div><table>). Solo se colapsan los contenedores
    cuyo markdown es exclusivamente <style>/<link>, nunca los que tienen tabla
    u otro elemento visible. */
-[data-testid="stElementContainer"]:has(> .stMarkdown > [data-testid="stMarkdownContainer"] > style):not(:has(> .stMarkdown > [data-testid="stMarkdownContainer"] > :not(style):not(link))),
-[data-testid="stElementContainer"]:has(> .stMarkdown > [data-testid="stMarkdownContainer"] > link):not(:has(> .stMarkdown > [data-testid="stMarkdownContainer"] > :not(style):not(link))) {
+[data-testid="stElementContainer"]:has([data-testid="stMarkdownContainer"] > style):not(:has([data-testid="stMarkdownContainer"] > :not(style):not(link))),
+[data-testid="stElementContainer"]:has([data-testid="stMarkdownContainer"] > link):not(:has([data-testid="stMarkdownContainer"] > :not(style):not(link))) {
     display: none !important;
 }
 
