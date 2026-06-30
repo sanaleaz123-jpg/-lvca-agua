@@ -635,14 +635,20 @@ hr {
     gap: 0.35rem;
 }
 
-/* Colapsar los contenedores que solo inyectan CSS/fuentes invisibles
+/* Colapsar los contenedores que SOLO inyectan CSS/fuentes invisibles
    (los st.markdown de <style>/<link> de aplicar_estilos, top_nav y footer).
    Cada uno dejaba un stElementContainer de altura 0 que IGUAL consumía el
    gap del stack vertical → ~80px de hueco fantasma sobre el banner de CADA
    página. El <style>/<link> sigue aplicando aunque su contenedor esté
-   display:none (las reglas CSS no dependen de que su <style> sea visible). */
-[data-testid="stElementContainer"]:has(> .stMarkdown style),
-[data-testid="stElementContainer"]:has(> .stMarkdown link) {
+   display:none (las reglas CSS no dependen de que su <style> sea visible).
+
+   IMPORTANTE: el :not(:has(...)) excluye los markdown que mezclan <style>
+   con contenido VISIBLE en el mismo st.markdown (p. ej. la tabla HTML de
+   Base de Datos = <style> + <div><table>). Solo se colapsan los contenedores
+   cuyo markdown es exclusivamente <style>/<link>, nunca los que tienen tabla
+   u otro elemento visible. */
+[data-testid="stElementContainer"]:has(> .stMarkdown > [data-testid="stMarkdownContainer"] > style):not(:has(> .stMarkdown > [data-testid="stMarkdownContainer"] > :not(style):not(link))),
+[data-testid="stElementContainer"]:has(> .stMarkdown > [data-testid="stMarkdownContainer"] > link):not(:has(> .stMarkdown > [data-testid="stMarkdownContainer"] > :not(style):not(link))) {
     display: none !important;
 }
 
