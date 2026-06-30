@@ -630,8 +630,20 @@ hr {
     padding-top: 2.5rem !important;
     padding-bottom: 3rem !important;
 }
+[data-testid="stMainBlockContainer"] > [data-testid="stVerticalBlock"],
 [data-testid="stVerticalBlock"] > [data-testid="stVerticalBlock"] {
-    gap: 0.3rem;
+    gap: 0.35rem;
+}
+
+/* Colapsar los contenedores que solo inyectan CSS/fuentes invisibles
+   (los st.markdown de <style>/<link> de aplicar_estilos, top_nav y footer).
+   Cada uno dejaba un stElementContainer de altura 0 que IGUAL consumía el
+   gap del stack vertical → ~80px de hueco fantasma sobre el banner de CADA
+   página. El <style>/<link> sigue aplicando aunque su contenedor esté
+   display:none (las reglas CSS no dependen de que su <style> sea visible). */
+[data-testid="stElementContainer"]:has(> .stMarkdown style),
+[data-testid="stElementContainer"]:has(> .stMarkdown link) {
+    display: none !important;
 }
 
 /* ── Cards — borde casi invisible, sin sombra base ──────────────────── */
@@ -1484,11 +1496,11 @@ hr {
         radial-gradient(130% 150% at 100% 0%, rgba(10,147,150,0.07) 0%, rgba(10,147,150,0) 46%),
         linear-gradient(135deg, #ffffff 0%, #f3f8fd 100%);
     color: var(--lvca-text);
-    padding: 22px 32px 22px 36px;
+    padding: 18px 32px 18px 36px;
     border: 1px solid var(--lvca-border-soft);
     border-radius: var(--lvca-radius-lg);
     box-shadow: var(--lvca-shadow-sm);
-    margin-bottom: 18px;
+    margin-bottom: 14px;
     display: flex;
     align-items: center;
     justify-content: space-between;
