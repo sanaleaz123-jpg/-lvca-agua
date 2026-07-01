@@ -225,7 +225,7 @@ def get_datos_cadena(campana_id: str) -> dict:
 
     # Muestras con punto (coordenadas UTM, cuenca, etc.)
     _select_muestras = (
-        "id, codigo, fecha_muestreo, hora_recoleccion, tipo_muestra, "
+        "id, codigo, fecha_muestreo, hora_recoleccion, created_at, tipo_muestra, "
         "estado, preservante, observaciones_campo, "
         "clima, caudal_estimado, nivel_agua, temperatura_transporte, "
         "puntos_muestreo(id, codigo, nombre, tipo, cuenca, sistema_hidrico, "
@@ -243,10 +243,22 @@ def get_datos_cadena(campana_id: str) -> dict:
         db.table("muestras")
         .select(_select_muestras)
         .eq("campana_id", campana_id)
-        .order("fecha_muestreo")
         .execute()
     )
     muestras = m_res.data or []
+
+    # Orden cronológico de colecta: fecha → hora → profundidad (S,M,F) → registro.
+    # Mismo criterio que renumerar_codigos_campana (muestra_service.py) para que las
+    # muestras colectadas primero aparezcan arriba en el Excel/PDF de la cadena.
+    _orden_prof = {"S": 0, "M": 1, "F": 2}
+    def _sort_key(m: dict) -> tuple:
+        return (
+            str(m.get("fecha_muestreo") or ""),
+            str(m.get("hora_recoleccion") or "00:00:00"),
+            _orden_prof.get(m.get("profundidad_tipo") or "", 9),
+            str(m.get("created_at") or ""),
+        )
+    muestras = sorted(muestras, key=_sort_key)
 
     # Mediciones in situ por muestra
     muestra_ids = [m["id"] for m in muestras]
