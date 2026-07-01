@@ -50,6 +50,7 @@ from services.fitoplancton_service import (
 )
 from components.fitoplancton_form import render_subseccion_fitoplancton
 from components.microcistina_form import render_panel_microcistina
+from components.microcistina_historial import render_historial_microcistina
 
 # Códigos de los parámetros agregados de fitoplancton — se renderizan con
 # semáforo OMS en lugar del veredicto ECA estándar (no hay ECA en la norma).
@@ -476,7 +477,14 @@ def main() -> None:
         _flujo_por_muestra()
 
     with tab_mc:
-        render_panel_microcistina(analista_id=_get_usuario_interno_id(sesion.uid))
+        sub_reg, sub_hist = st.tabs([
+            ":material/edit_note: Registrar",
+            ":material/history: Historial y comparación",
+        ])
+        with sub_reg:
+            render_panel_microcistina(analista_id=_get_usuario_interno_id(sesion.uid))
+        with sub_hist:
+            render_historial_microcistina()
 
 
 def _flujo_por_muestra() -> None:

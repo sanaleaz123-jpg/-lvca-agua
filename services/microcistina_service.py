@@ -14,6 +14,8 @@ Funciones públicas:
     get_corrida(campana_id)                    → placa ELISA ligada a la campaña (o None)
     tiene_resultados_microcistina(campana_id)  → bool (gate del reporte)
     estado_registro_microcistina(muestra_ids)  → {muestra_id: 'registrado'|'validado'}
+    listar_corridas()                          → historial de placas + estadísticas
+    get_muestras_de_corrida(corrida_id)        → muestras/resultados de una placa
     calcular_corrida(...)                       → cálculo en memoria (preview)
     guardar_corrida(campana_id, ...)           → guarda placa de una campaña (ingreso manual)
     guardar_corrida_importada(imp, asignaciones, ...) → guarda placa importada de Excel
@@ -304,6 +306,171 @@ def estado_registro_microcistina(muestra_ids: list[str]) -> dict[str, str]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Historial de corridas (placas) — listado, detalle y estadísticas para comparar
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _f(x) -> Optional[float]:
+    """float() tolerante: None/'' → None, valores no numéricos → None."""
+    if x is None or x == "":
+        return None
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return None
+
+
+def _corrida_es_valida(c: dict) -> bool:
+    """
+    ¿La corrida cumple los criterios CRÍTICos de aceptación? R² ≥ 0.98, control
+    dentro de nominal ± tolerancia y %CV del control ≤ cv_max. Espejo de los
+    criterios críticos del panel de validez (components/microcistina_form).
+    """
+    r2 = _f(c.get("r2"))
+    ctrl = _f(c.get("control_conc_prom"))
+    cv = _f(c.get("control_cv"))
+    nom = _f(c.get("qcs_nominal")) or 0.750
+    tol = _f(c.get("qcs_tolerancia")) or 0.185
+    cvmax = _f(c.get("cv_max")) or 15.0
+    if r2 is None or ctrl is None or cv is None:
+        return False
+    if r2 < 0.98:
+        return False
+    if not (nom - tol <= ctrl <= nom + tol):
+        return False
+    return cv <= cvmax
+
+
+@cached(ttl=120)
+def listar_corridas() -> list[dict]:
+    """
+    Lista TODAS las corridas ELISA (placas) con estadísticas agregadas, para el
+    historial y la comparación. Cada dict tiene los campos persistidos de la
+    corrida (curva, control, criterios QCS, lote, fecha, std_od…) más:
+      - n_muestras : nº de muestras con resultado de microcistina en la corrida
+      - n_validadas: nº de esas muestras ya validadas (firmadas)
+      - campanas   : etiquetas de campaña que toca la placa (código, orden alfa)
+      - es_valida  : bool (curva + control cumplen criterios de aceptación)
+    Ordenada por fecha_ensayo desc, luego created_at desc.
+    """
+    db = get_db()
+    try:
+        corridas = (
+            db.table("elisa_microcistina_corridas").select("*").execute().data
+        ) or []
+    except Exception:
+        return []
+    if not corridas:
+        return []
+
+    param_id = (get_param_microcistina() or {}).get("id")
+    res_por_corrida: dict[str, list] = {}
+    muestra_ids: set[str] = set()
+    if param_id:
+        try:
+            rr = (
+                db.table("resultados_laboratorio")
+                .select("corrida_id, muestra_id, validado")
+                .eq("parametro_id", param_id)
+                .not_.is_("corrida_id", "null")
+                .execute()
+            )
+            for r in (rr.data or []):
+                cid = r.get("corrida_id")
+                if cid:
+                    res_por_corrida.setdefault(cid, []).append(r)
+                    if r.get("muestra_id"):
+                        muestra_ids.add(r["muestra_id"])
+        except Exception:
+            pass
+
+    # muestra_id → etiqueta de campaña (código)
+    camp_por_muestra: dict[str, str] = {}
+    if muestra_ids:
+        try:
+            mr = (
+                db.table("muestras")
+                .select("id, campanas(codigo, nombre)")
+                .in_("id", list(muestra_ids))
+                .execute()
+            )
+            for m in (mr.data or []):
+                camp = m.get("campanas") or {}
+                camp_por_muestra[m["id"]] = camp.get("codigo") or camp.get("nombre") or "—"
+        except Exception:
+            pass
+
+    salida: list[dict] = []
+    for c in corridas:
+        rows = res_por_corrida.get(c["id"], [])
+        mids = {r["muestra_id"] for r in rows if r.get("muestra_id")}
+        val = {r["muestra_id"] for r in rows if r.get("validado") and r.get("muestra_id")}
+        camps = sorted({camp_por_muestra.get(mid, "—") for mid in mids})
+        c = dict(c)
+        c["n_muestras"] = len(mids)
+        c["n_validadas"] = len(val)
+        c["campanas"] = camps
+        c["es_valida"] = _corrida_es_valida(c)
+        salida.append(c)
+
+    salida.sort(
+        key=lambda x: (x.get("fecha_ensayo") or "", x.get("created_at") or ""),
+        reverse=True,
+    )
+    return salida
+
+
+@cached(ttl=120)
+def get_muestras_de_corrida(corrida_id: str) -> list[dict]:
+    """
+    Muestras/resultados de UNA corrida (para el detalle del historial). Devuelve
+    una fila por muestra con: campaña, punto, valor (µg/L), OD réplicas, %CV,
+    cualificador y si está validada. Ordenada por campaña y punto.
+    """
+    if not corrida_id:
+        return []
+    param_id = (get_param_microcistina() or {}).get("id")
+    if not param_id:
+        return []
+    db = get_db()
+    try:
+        rr = (
+            db.table("resultados_laboratorio")
+            .select(
+                "muestra_id, valor_numerico, od_1, od_2, cv_pct, cualificador, "
+                "validado, muestras(codigo, fecha_muestreo, profundidad_tipo, "
+                "campanas(codigo, nombre), puntos_muestreo(codigo, nombre))"
+            )
+            .eq("parametro_id", param_id)
+            .eq("corrida_id", corrida_id)
+            .execute()
+        )
+    except Exception:
+        return []
+    out: list[dict] = []
+    for r in (rr.data or []):
+        m = r.get("muestras") or {}
+        camp = m.get("campanas") or {}
+        p = m.get("puntos_muestreo") or {}
+        prof = m.get("profundidad_tipo")
+        nivel = f" · {_PROF_NOMBRES.get(prof, prof)}" if prof else ""
+        out.append({
+            "muestra_id": r.get("muestra_id"),
+            "campana": camp.get("codigo") or camp.get("nombre") or "—",
+            "punto": p.get("codigo") or "—",
+            "muestra": f"{p.get('codigo', '?')}{nivel}",
+            "fecha": (m.get("fecha_muestreo") or "")[:10],
+            "valor_ugL": _f(r.get("valor_numerico")),
+            "od_1": _f(r.get("od_1")),
+            "od_2": _f(r.get("od_2")),
+            "cv_pct": _f(r.get("cv_pct")),
+            "cualificador": r.get("cualificador"),
+            "validado": bool(r.get("validado")),
+        })
+    out.sort(key=lambda x: (x["campana"], x["muestra"]))
+    return out
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Cálculo en memoria (preview)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -364,8 +531,8 @@ def _corrida_row(
     }
 
 
-def _persistir_corrida(db, row: dict, corrida_id: Optional[str]) -> str:
-    """Inserta o actualiza la corrida; devuelve su id."""
+def _persistir_corrida(db, row: dict, corrida_id: Optional[str]) -> Optional[str]:
+    """Inserta o actualiza la corrida; devuelve su id (None si el insert no lo devuelve)."""
     if corrida_id:
         db.table("elisa_microcistina_corridas").update(row).eq("id", corrida_id).execute()
         return corrida_id
@@ -425,6 +592,11 @@ def guardar_corrida(
         observaciones=observaciones, campana_id=campana_id,
     )
     corrida_id = _persistir_corrida(db, row, existente.get("id"))
+    if not corrida_id:
+        raise RuntimeError(
+            "No se pudo guardar la corrida (la base de datos no devolvió su id). "
+            "No se registraron resultados para evitar datos huérfanos."
+        )
 
     fecha = fecha_ensayo or datetime.utcnow().date().isoformat()
     validados = _ids_validados(db, list(muestras_od.keys()), param_id)
@@ -471,6 +643,11 @@ def guardar_corrida_importada(
     if imp.control_conc_2 is not None:
         row["control_conc_2"] = imp.control_conc_2
     corrida_id = _persistir_corrida(db, row, None)
+    if not corrida_id:
+        raise RuntimeError(
+            "No se pudo crear la corrida (la base de datos no devolvió su id). "
+            "No se registraron resultados para evitar datos huérfanos."
+        )
 
     fecha = fecha_ensayo or datetime.utcnow().date().isoformat()
     muestra_ids = [mid for mid in asignaciones.values() if mid]
