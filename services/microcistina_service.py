@@ -13,6 +13,7 @@ Funciones públicas:
     get_muestras_para_asignar()               → muestras de todas las campañas (mapeo import)
     get_corrida(campana_id)                    → placa ELISA ligada a la campaña (o None)
     tiene_resultados_microcistina(campana_id)  → bool (gate del reporte)
+    estado_registro_microcistina(muestra_ids)  → {muestra_id: 'registrado'|'validado'}
     calcular_corrida(...)                       → cálculo en memoria (preview)
     guardar_corrida(campana_id, ...)           → guarda placa de una campaña (ingreso manual)
     guardar_corrida_importada(imp, asignaciones, ...) → guarda placa importada de Excel
@@ -265,6 +266,41 @@ def tiene_resultados_microcistina(campana_id: str) -> bool:
     """True si la campaña tiene una placa ELISA con curva ajustada."""
     corrida = get_corrida(campana_id)
     return bool(corrida and corrida.get("param_a") is not None)
+
+
+def estado_registro_microcistina(muestra_ids: list[str]) -> dict[str, str]:
+    """
+    Para cada muestra_id dado, indica si YA tiene resultado de microcistina en la
+    BD: ``"validado"`` (firmado) o ``"registrado"`` (guardado sin validar). Las
+    muestras sin resultado simplemente no aparecen en el dict.
+
+    Consulta fresca (sin caché) para reflejar el estado justo después de
+    registrar. Úsalo para marcar con un check las muestras ya registradas en el
+    panel ELISA.
+    """
+    ids = [m for m in (muestra_ids or []) if m]
+    if not ids:
+        return {}
+    param_id = (get_param_microcistina() or {}).get("id")
+    if not param_id:
+        return {}
+    db = get_db()
+    try:
+        res = (
+            db.table("resultados_laboratorio")
+            .select("muestra_id, validado")
+            .in_("muestra_id", ids)
+            .eq("parametro_id", param_id)
+            .execute()
+        )
+    except Exception:
+        return {}
+    estado: dict[str, str] = {}
+    for r in (res.data or []):
+        mid = r.get("muestra_id")
+        if mid:
+            estado[mid] = "validado" if r.get("validado") else "registrado"
+    return estado
 
 
 # ─────────────────────────────────────────────────────────────────────────────

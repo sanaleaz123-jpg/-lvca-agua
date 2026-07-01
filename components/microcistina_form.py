@@ -29,6 +29,7 @@ from services.microcistina_import import (
     parse_placa_excel,
 )
 from services.microcistina_service import (
+    estado_registro_microcistina,
     get_muestras_agrupadas_por_campana,
     get_param_microcistina,
     guardar_corrida_importada,
@@ -274,10 +275,43 @@ def _render_resultado(imp, analista_id: Optional[str]) -> None:
             f"resultados por debajo del L.C.M. se reportan como "
             f"**< {_fmt_mg(lcm_mg)} mg/L** (se muestra entre paréntesis el valor calculado)."
         )
-    h1, h2, h3 = st.columns([1.7, 1.3, 1.6])
+    # Estado de registro (check por muestra): resuelve la asignación vigente de
+    # cada fila desde session_state y consulta en la BD, en UNA sola llamada,
+    # cuáles muestras ya tienen resultado de microcistina. Tras registrar (y el
+    # rerun), la consulta ve los nuevos resultados y el check aparece solo.
+    def _asignacion_vigente(i: int) -> Optional[str]:
+        camp_label = st.session_state.get(f"mc_camp_{i}")
+        cid_ = camp_opts.get(camp_label) if camp_label else None
+        if not cid_ or cid_ not in grupos:
+            return None
+        mues_label = st.session_state.get(f"mc_mues_{i}")
+        return {mm["label"]: mm["id"]
+                for mm in grupos[cid_]["muestras"]}.get(mues_label)
+
+    ids_vigentes = [_asignacion_vigente(i) for i in range(len(imp.muestras))]
+    estado_reg = estado_registro_microcistina([m for m in ids_vigentes if m])
+    n_reg = sum(1 for mid in ids_vigentes if estado_reg.get(mid))
+    if n_reg:
+        st.caption(
+            f"✅ {n_reg} de {len(imp.muestras)} muestra(s) de la placa ya "
+            "están registradas en la base de datos."
+        )
+
+    def _check_html(estado: Optional[str]) -> str:
+        if estado == "validado":
+            return ("<div style='text-align:center;font-size:1.15rem' "
+                    "title='Registrada y validada (firmada)'>✅🔒</div>")
+        if estado == "registrado":
+            return ("<div style='text-align:center;font-size:1.15rem' "
+                    "title='Registrada'>✅</div>")
+        return ("<div style='text-align:center;color:#c7cdd6' "
+                "title='Sin registrar'>—</div>")
+
+    h1, h2, h3, h4 = st.columns([1.6, 1.25, 1.55, 0.5])
     h1.caption("Muestra de la placa (valor final)")
     h2.caption("Campaña")
     h3.caption("Estación / muestra")
+    h4.caption("Registro")
 
     eca_ug = 1.0   # DS 004-2017 Cat A2 / OMS: Microcistina LR = 1 µg/L
     lcm_ug = float(lcm) if lcm is not None else None
@@ -304,7 +338,7 @@ def _render_resultado(imp, analista_id: Optional[str]) -> None:
                 chip = chip_eca_html("excede", label=f"Excede +{pct:.0f}%")
             else:
                 chip = chip_eca_html("cumple")
-        c1, c2, c3 = st.columns([1.7, 1.3, 1.6])
+        c1, c2, c3, c4 = st.columns([1.6, 1.25, 1.55, 0.5])
         c1.markdown(
             f"**{m.label}** — {valor} ({valor_ug})<br>"
             f"<small>OD {m.od_1:g}/{m.od_2:g} · %CV {m.cv_pct:.1f}{extra}</small><br>"
@@ -325,6 +359,12 @@ def _render_resultado(imp, analista_id: Optional[str]) -> None:
             c3.selectbox("Estación", ["— (elige campaña primero)"],
                          key=f"mc_mues_{idx}", disabled=True, label_visibility="collapsed")
             asignaciones[idx] = None
+
+        # Check de verificación: ✅ si la muestra asignada ya tiene resultado
+        # de microcistina registrado (🔒 además si está validada/firmada).
+        mid_asig = asignaciones[idx]
+        c4.markdown(_check_html(estado_reg.get(mid_asig) if mid_asig else None),
+                    unsafe_allow_html=True)
 
     elegidas = [v for v in asignaciones.values() if v]
     n_asig = len(elegidas)
