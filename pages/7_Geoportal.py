@@ -1226,7 +1226,7 @@ def _render_dashboard(puntos: list[dict]) -> None:
     # Bullets para la tarjeta amarilla (cumplen): hasta 3 puntos con mejor IC.
     cumplen_top = sorted(
         [p for p in puntos if p["estado"] == "cumple"],
-        key=lambda x: x.get("indice_cumplimiento", 0),
+        key=lambda x: x.get("indice_cumplimiento") or 0,
         reverse=True,
     )[:3]
     bullets_cumplen = [p["codigo"] for p in cumplen_top] if cumplen_top else None
@@ -1234,7 +1234,7 @@ def _render_dashboard(puntos: list[dict]) -> None:
     # Bullets para la tarjeta roja (excedencias): hasta 3 puntos con más excedencias.
     criticos = sorted(
         [p for p in puntos if p["estado"] == "excedencia"],
-        key=lambda x: x.get("n_excedencias", 0),
+        key=lambda x: x.get("n_excedencias") or 0,
         reverse=True,
     )
     bullets_exc = [
