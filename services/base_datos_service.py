@@ -260,8 +260,15 @@ def get_limites_eca_todos() -> dict[tuple[str, str], dict]:
     return limites
 
 
-def actualizar_resultado(resultado_id: str, valor: float | None) -> None:
-    """Actualiza el valor numérico de un resultado existente. Registra el cambio."""
+def actualizar_resultado(
+    resultado_id: str, valor: float | None, usuario_id: str | None = None
+) -> None:
+    """Actualiza el valor numérico de un resultado existente. Registra el cambio.
+
+    `usuario_id` (opcional) queda registrado en la auditoría para dejar constancia
+    de quién hizo la edición. La escritura va a la misma tabla que consumen
+    Resultados e Informes, por lo que el cambio se refleja en toda la plataforma.
+    """
     db = get_db()
 
     # Leer valor anterior para auditoría
@@ -288,21 +295,39 @@ def actualizar_resultado(resultado_id: str, valor: float | None) -> None:
             campo=f"valor_numerico ({param_cod})",
             valor_anterior=str(val_ant) if val_ant is not None else None,
             valor_nuevo=str(valor) if valor is not None else None,
+            usuario_id=usuario_id,
         )
 
     _invalidar_cache()
 
 
-def crear_resultado(muestra_id: str, parametro_id: str, valor: float) -> dict:
-    """Crea un nuevo resultado de laboratorio."""
+def crear_resultado(
+    muestra_id: str, parametro_id: str, valor: float, usuario_id: str | None = None
+) -> dict:
+    """Crea un nuevo resultado de laboratorio y registra el alta en auditoría."""
     db = get_db()
     res = db.table("resultados_laboratorio").insert({
         "muestra_id": muestra_id,
         "parametro_id": parametro_id,
         "valor_numerico": valor,
     }).execute()
+    nuevo = res.data[0] if res.data else {}
+
+    try:
+        registrar_cambio(
+            tabla="resultados_laboratorio",
+            registro_id=str(nuevo.get("id", "")),
+            accion="crear",
+            campo="valor_numerico",
+            valor_anterior=None,
+            valor_nuevo=str(valor) if valor is not None else None,
+            usuario_id=usuario_id,
+        )
+    except Exception:
+        logger.debug("No se pudo auditar la creación de un resultado.", exc_info=True)
+
     _invalidar_cache()
-    return res.data[0]
+    return nuevo
 
 
 @cached(ttl=300, grupo="referencia")

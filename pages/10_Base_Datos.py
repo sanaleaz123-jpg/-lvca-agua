@@ -39,6 +39,11 @@ from services.parametro_registry import (
 from components.ui_styles import aplicar_estilos, page_header, top_nav
 from services.resultado_service import get_campanas
 from services.punto_service import get_puntos
+from services.muestra_service import actualizar_muestra
+from services.audit_service import registrar_cambios_multiples
+from services.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 def _es_admin() -> bool:
@@ -104,21 +109,30 @@ def _colorear_celda(val, eca_id, param_codigo, limites):
 _BD_TABLE_CSS = """
 <style>
   .bd-table-wrap {
-    overflow-x: auto;
-    max-height: 720px;
+    overflow: auto;
+    max-height: 72vh;
+    position: relative;
     border: 1px solid var(--lvca-border);
     border-radius: var(--lvca-radius-md);
     margin-bottom: 0.75rem;
     box-shadow: var(--lvca-shadow-xs);
+    scrollbar-width: thin;
   }
   table.bd-table {
-    border-collapse: collapse;
+    border-collapse: separate;
+    border-spacing: 0;
     font-size: 12px;
     width: max-content;
     min-width: 100%;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     font-variant-numeric: tabular-nums;
   }
+  /* box-sizing explícito: los offsets `left` de las columnas congeladas asumen
+     que el ancho fijado (min/max-width) incluye el padding. Streamlit no aplica
+     un reset border-box global, así que se fuerza aquí para que el apilado de
+     las columnas fijas cuadre exactamente. */
+  table.bd-table th,
+  table.bd-table td { box-sizing: border-box; }
   table.bd-table thead th {
     position: sticky;
     top: 0;
@@ -133,7 +147,7 @@ _BD_TABLE_CSS = """
     border-bottom: 1px solid var(--lvca-border);
     text-align: center;
     white-space: nowrap;
-    z-index: 2;
+    z-index: 3;
   }
   table.bd-table tbody td {
     padding: 5px 10px;
@@ -146,12 +160,39 @@ _BD_TABLE_CSS = """
   }
   table.bd-table tbody td.text { text-align: left; }
   table.bd-table tbody tr:nth-child(even) td { background: #fcfdfe; }
-  table.bd-table tbody tr:hover td { background: var(--lvca-border-soft); }
+  table.bd-table tbody tr:hover td { background: #eef2f7; }
   table.bd-table td.exceed {
     background: #fee2e2 !important;
     color: #b91c1c;
     font-weight: 700;
   }
+
+  /* ── Columnas identificadoras congeladas (freeze panes tipo Excel) ──
+     Se fijan las primeras columnas estables: Fecha, Hora, Cód. Punto y Punto,
+     con anchura fija para que el desplazamiento horizontal no oculte la
+     estación. Fondo sólido para que el contenido que pasa por debajo no se
+     transparente. */
+  table.bd-table th.freeze,
+  table.bd-table td.freeze {
+    position: sticky;
+    z-index: 2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  table.bd-table thead th.freeze { z-index: 4; white-space: normal; line-height: 1.15; }
+  table.bd-table tbody td.freeze { background: var(--lvca-bg-card); }
+  table.bd-table tbody tr:nth-child(even) td.freeze { background: #fcfdfe; }
+  table.bd-table tbody tr:hover td.freeze { background: #eef2f7; }
+  /* Anchos (border-box, incluyen padding) y offsets left acumulados:
+     0 · 92 · 92+62=154 · 154+106=260. */
+  .bd-table .f0 { left: 0;     min-width: 92px;  max-width: 92px;  }
+  .bd-table .f1 { left: 92px;  min-width: 62px;  max-width: 62px;  }
+  .bd-table .f2 { left: 154px; min-width: 106px; max-width: 106px; }
+  .bd-table .f3 {
+    left: 260px; min-width: 176px; max-width: 176px;
+    box-shadow: 6px 0 6px -4px rgba(15, 23, 42, 0.14);
+  }
+
   table.bd-table tr.bd-sep td {
     background: #fef3c7 !important;
     color: #92400e;
@@ -163,8 +204,20 @@ _BD_TABLE_CSS = """
     border-bottom: 1px solid #fde68a;
     text-align: left;
   }
+  /* La etiqueta de campaña permanece visible al desplazarse a la derecha. */
+  table.bd-table tr.bd-sep .bd-sep-label {
+    position: sticky;
+    left: 12px;
+    display: inline-block;
+  }
 </style>
 """
+
+# Columnas identificadoras que se congelan a la izquierda (orden = prefijo real
+# de la tabla). Son las que SIEMPRE están presentes, por lo que el índice de
+# congelado es estable aunque se oculten "Código Lab." o "Profundidad".
+_FREEZE_COLS = ["Fecha", "Hora", "Código Punto", "Punto"]
+_FREEZE_INDEX = {name: i for i, name in enumerate(_FREEZE_COLS)}
 
 
 def _fmt_valor(val, fmt: str) -> str:
@@ -222,8 +275,13 @@ def _render_tabla_por_campana(
     text_cols = {"Fecha", "Hora", "Código Punto", "Punto", "Código Muestra",
                  "Código Lab.", "Cuenca", "Tipo", "ECA"}
 
-    # Cabecera
-    thead = "".join(f"<th>{escape(c)}</th>" for c in columnas)
+    # Cabecera (con clases de congelado en las columnas identificadoras)
+    thead_cells = []
+    for c in columnas:
+        fi = _FREEZE_INDEX.get(c)
+        cls = f' class="freeze f{fi}"' if fi is not None else ""
+        thead_cells.append(f"<th{cls}>{escape(c)}</th>")
+    thead = "".join(thead_cells)
 
     # Cuerpo: agrupar filas consecutivas que comparten campana_id.
     body_parts: list[str] = []
@@ -235,7 +293,8 @@ def _render_tabla_por_campana(
         if campana_key != ultimo_campana_key:
             label = escape(_etiqueta_campana(d))
             body_parts.append(
-                f'<tr class="bd-sep"><td colspan="{n_cols}">{label}</td></tr>'
+                f'<tr class="bd-sep"><td colspan="{n_cols}">'
+                f'<span class="bd-sep-label">{label}</span></td></tr>'
             )
             ultimo_campana_key = campana_key
 
@@ -245,6 +304,8 @@ def _render_tabla_por_campana(
         for col in columnas:
             raw = fila[col]
             cod = label_to_codigo.get(col)
+            fi = _FREEZE_INDEX.get(col)
+            clases: list[str] = []
             if cod is not None:
                 fmt = formato_codigo.get(cod, _FORMATO_FALLBACK)
                 es_num = raw is not None and not (isinstance(raw, float) and pd.isna(raw))
@@ -259,12 +320,10 @@ def _render_tabla_por_campana(
                     # Por debajo del Límite de Cuantificación: se reporta como
                     # '< LCM' (no cuantificable) y nunca excede el ECA.
                     txt = f"< {_fmt_valor(lcm, fmt)}"
-                    cls = ""
                 else:
                     txt = _fmt_valor(raw, fmt)
-                    exceed = es_num and _excede_eca(raw, eca_id, cod, limites)
-                    cls = " class=\"exceed\"" if exceed else ""
-                celdas.append(f"<td{cls}>{escape(txt)}</td>")
+                    if es_num and _excede_eca(raw, eca_id, cod, limites):
+                        clases.append("exceed")
             else:
                 if raw is None or (isinstance(raw, float) and pd.isna(raw)):
                     txt = ""
@@ -275,8 +334,15 @@ def _render_tabla_por_campana(
                         txt = str(raw)
                 else:
                     txt = str(raw)
-                cls = " class=\"text\"" if col in text_cols else ""
-                celdas.append(f"<td{cls}>{escape(txt)}</td>")
+                if col in text_cols:
+                    clases.append("text")
+            titulo = ""
+            if fi is not None:
+                clases.extend(("freeze", f"f{fi}"))
+                if txt:
+                    titulo = f' title="{escape(str(txt))}"'
+            cls = f' class="{" ".join(clases)}"' if clases else ""
+            celdas.append(f"<td{cls}{titulo}>{escape(txt)}</td>")
         body_parts.append("<tr>" + "".join(celdas) + "</tr>")
 
     return (
@@ -291,10 +357,178 @@ def _render_tabla_por_campana(
 
 @st.cache_data(show_spinner=False)
 def _df_a_csv(df: pd.DataFrame) -> bytes:
-    """Serializa el DataFrame a CSV (UTF-8), cacheado por contenido. Evita
-    re-serializar el conjunto completo en cada rerun (paginación, filtros de
-    presentación), ya que st.download_button evalúa su argumento `data` siempre."""
-    return df.to_csv(index=False).encode("utf-8")
+    """Serializa el DataFrame a CSV, cacheado por contenido. Evita re-serializar
+    el conjunto completo en cada rerun (paginación, filtros de presentación), ya
+    que st.download_button evalúa su argumento `data` siempre.
+
+    Se codifica en UTF-8 **con BOM** (utf-8-sig) para que Excel abra el archivo
+    con las tildes y la ñ correctas (sin BOM Excel asume Latin-1 y muestra
+    caracteres corruptos como 'Ã³' o 'Ã±')."""
+    return df.to_csv(index=False).encode("utf-8-sig")
+
+
+# ── Exportación a Excel (.xlsx) con formato legible ──────────────────────────
+
+def _num_format_excel(fmt: str) -> str:
+    """Traduce un format string de Python (%.2f) al formato numérico de Excel."""
+    mapa = {"%.1f": "0.0", "%.2f": "0.00", "%.3f": "0.000", "%.4f": "0.0000"}
+    if fmt in mapa:
+        return mapa[fmt]
+    if "g" in (fmt or "").lower():
+        return "0.####"
+    return "0.00"
+
+
+def _construir_xlsx(
+    df: pd.DataFrame,
+    datos: list[dict],
+    columnas_visibles: list[tuple[str, str]],
+    formato_codigo: dict,
+    limites: dict,
+    lcm_codigo: dict | None = None,
+) -> bytes:
+    """Genera un .xlsx con formato legible que replica la vista en pantalla:
+    encabezado destacado, anchos de columna adecuados, separadores amarillos por
+    campaña, celdas de excedencia en rojo, '< LCM' para no cuantificables y panel
+    congelado (encabezado + columnas identificadoras). Al ser .xlsx nativo, las
+    tildes y la ñ se ven siempre correctas."""
+    from io import BytesIO
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    columnas = list(df.columns)
+    label_to_codigo = {label: cod for cod, label in columnas_visibles}
+    text_cols = {"Fecha", "Hora", "Código Punto", "Punto", "Código Muestra",
+                 "Código Lab.", "Cuenca", "Tipo", "ECA"}
+    n_cols = len(columnas)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Base de Datos"
+
+    header_font = Font(name="Calibri", bold=True, size=10, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="1E3A5F")
+    header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    sep_font = Font(name="Calibri", bold=True, size=10, color="7C4A03")
+    sep_fill = PatternFill("solid", fgColor="FDE68A")
+    exceed_fill = PatternFill("solid", fgColor="FEE2E2")
+    exceed_font = Font(name="Calibri", bold=True, size=10, color="B91C1C")
+    normal_font = Font(name="Calibri", size=10)
+    left_align = Alignment(horizontal="left", vertical="center")
+    right_align = Alignment(horizontal="right", vertical="center")
+    thin = Side(style="thin", color="E2E8F0")
+    borde = Border(bottom=thin)
+
+    # Encabezado
+    for j, col in enumerate(columnas, start=1):
+        c = ws.cell(row=1, column=j, value=col)
+        c.font = header_font
+        c.fill = header_fill
+        c.alignment = header_align
+        c.border = borde
+    ws.row_dimensions[1].height = 30
+
+    row_idx = 2
+    ultimo_campana_key = object()
+    for i, d in enumerate(datos):
+        campana_key = d.get("campana_id") or d.get("campana_codigo") or "__sin__"
+        if campana_key != ultimo_campana_key:
+            ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=n_cols)
+            sc = ws.cell(row=row_idx, column=1, value=_etiqueta_campana(d))
+            sc.font = sep_font
+            sc.alignment = left_align
+            for j in range(1, n_cols + 1):
+                ws.cell(row=row_idx, column=j).fill = sep_fill
+            ws.row_dimensions[row_idx].height = 18
+            row_idx += 1
+            ultimo_campana_key = campana_key
+
+        eca_id = d.get("eca_id")
+        fila = df.iloc[i]
+        for j, col in enumerate(columnas, start=1):
+            raw = fila[col]
+            cod = label_to_codigo.get(col)
+            cell = ws.cell(row=row_idx, column=j)
+            cell.font = normal_font
+            cell.border = borde
+            if cod is not None:
+                es_num = raw is not None and not (isinstance(raw, float) and pd.isna(raw))
+                lcm = (lcm_codigo or {}).get(cod)
+                bajo_lcm = False
+                if es_num and lcm is not None:
+                    try:
+                        bajo_lcm = float(raw) < lcm
+                    except (TypeError, ValueError):
+                        bajo_lcm = False
+                cell.alignment = right_align
+                if bajo_lcm:
+                    cell.value = f"< {_fmt_valor(lcm, formato_codigo.get(cod, _FORMATO_FALLBACK))}"
+                elif es_num:
+                    cell.value = float(raw)
+                    cell.number_format = _num_format_excel(
+                        formato_codigo.get(cod, _FORMATO_FALLBACK)
+                    )
+                    if _excede_eca(raw, eca_id, cod, limites):
+                        cell.fill = exceed_fill
+                        cell.font = exceed_font
+            else:
+                if raw is None or (isinstance(raw, float) and pd.isna(raw)):
+                    cell.value = None
+                elif col == "Profundidad (m)":
+                    try:
+                        cell.value = float(raw)
+                        cell.number_format = "0.00"
+                    except (TypeError, ValueError):
+                        cell.value = str(raw)
+                    cell.alignment = right_align
+                else:
+                    cell.value = str(raw)
+                    cell.alignment = left_align if col in text_cols else right_align
+        row_idx += 1
+
+    # Anchos de columna: base por tipo + ajuste al contenido real (con tope),
+    # para que los valores y nombres de estación se lean sin quedar cortados.
+    for j, col in enumerate(columnas, start=1):
+        cod = label_to_codigo.get(col)
+        if cod is not None:
+            base = 12
+        elif col == "Punto":
+            base = 26
+        elif col in ("Código Muestra", "Código Lab.", "Cuenca"):
+            base = 16
+        else:
+            base = 11
+        try:
+            max_data = max((len(str(v)) for v in df[col] if v is not None), default=0)
+        except Exception:
+            max_data = 0
+        w = max(base, len(str(col)) + 2, min(38, max_data + 2))
+        ws.column_dimensions[get_column_letter(j)].width = w
+
+    # Congelar encabezado + columnas identificadoras (hasta 'Punto' inclusive).
+    # No se aplica auto_filter: la hoja intercala filas de separador fusionadas
+    # por campaña y un autofiltro sobre ellas se comporta de forma inconsistente.
+    freeze_col = 1
+    for k, col in enumerate(columnas, start=1):
+        if col == "Punto":
+            freeze_col = k + 1
+            break
+    # Coordenada como texto (no la celda): la fila 2 suele ser un separador de
+    # campaña fusionado y ws.cell() devolvería un MergedCell no admitido aquí.
+    ws.freeze_panes = f"{get_column_letter(freeze_col)}2"
+
+    out = BytesIO()
+    wb.save(out)
+    return out.getvalue()
+
+
+@st.cache_data(show_spinner=False)
+def _xlsx_cacheado(sig: str, _df, _datos, _columnas_visibles, _formato_codigo, _limites, _lcm):
+    """Envuelve _construir_xlsx con caché por `sig` (firma de filtros + conteos).
+    Los argumentos con guion bajo no se hashean; se limpia explícitamente tras
+    cada edición para no servir un Excel obsoleto."""
+    return _construir_xlsx(_df, _datos, _columnas_visibles, _formato_codigo, _limites, _lcm)
 
 
 @st.cache_data(show_spinner=False)
@@ -318,6 +552,246 @@ def _metricas_bd(campana_id, punto_ids, fecha_inicio, fecha_fin, categorias):
         if d.get(cod) is not None and _excede_eca(d[cod], d.get("eca_id"), cod, limites)
     )
     return n_val, n_exc
+
+
+# ── Edición en cuadrícula (compartida por la vista inline y la pestaña) ───────
+
+# Metadatos editables de una muestra: (etiqueta visible, clave en `datos`,
+# columna real en la tabla `muestras`, tipo).
+_META_EDITABLES = [
+    ("Hora",       "hora",                "hora_recoleccion",  "text"),
+    ("Prof. (m)",  "profundidad",         "profundidad_valor", "num"),
+    ("Cód. Lab.",  "codigo_laboratorio",  "codigo_laboratorio", "text"),
+    ("Clima",      "clima",               "clima",             "text"),
+    ("Nivel agua", "nivel_agua",          "nivel_agua",        "text"),
+]
+
+_ID_COLS_EDITOR = ["Fecha", "Código Punto", "Punto", "Código Muestra", "ECA"]
+
+
+def _es_vacio(x) -> bool:
+    return x is None or x == "" or (isinstance(x, float) and pd.isna(x))
+
+
+def _celda_distinta_num(old, new) -> bool:
+    """True si el valor numérico de la celda cambió (tolerante a None/NaN)."""
+    o_e, n_e = _es_vacio(old), _es_vacio(new)
+    if o_e and n_e:
+        return False
+    if o_e != n_e:
+        return True
+    try:
+        return abs(float(old) - float(new)) > 1e-9
+    except (TypeError, ValueError):
+        return str(old) != str(new)
+
+
+def _sanitizar_formato_number(fmt: str) -> str:
+    """st.column_config.NumberColumn no soporta de forma fiable %g → usar %.4f."""
+    if not fmt or "g" in fmt.lower():
+        return "%.4f"
+    return fmt
+
+
+def _usuario_id_actual() -> str | None:
+    """Identificador del usuario para la auditoría (id interno si es resoluble,
+    si no el uid de Auth). audit_log.usuario_id es TEXT, así que cualquiera vale."""
+    sesion = st.session_state.get("sesion")
+    uid = getattr(sesion, "uid", None) if sesion else None
+    if not uid:
+        return None
+    try:
+        from services.resultado_service import _get_usuario_interno_id
+        interno = _get_usuario_interno_id(uid)
+        if interno:
+            return interno
+    except Exception:
+        pass
+    return uid
+
+
+def _limpiar_caches_pagina() -> None:
+    """Limpia las cachés st.cache_data locales de la página que dependen de los
+    datos editados, para que vista, métricas y descargas reflejen los cambios
+    inmediatamente (el backend ya invalidó las cachés @cached del servicio)."""
+    for fn in (_metricas_bd, _df_a_csv, _xlsx_cacheado):
+        try:
+            fn.clear()
+        except Exception:
+            logger.warning("No se pudo limpiar la caché de página %s tras editar; "
+                           "podrían quedar datos obsoletos hasta el próximo TTL.",
+                           getattr(fn, "__name__", fn), exc_info=True)
+
+
+def _render_grid_editor(
+    datos_subset: list[dict],
+    columnas_visibles: list[tuple[str, str]],
+    formato_codigo: dict,
+    limites: dict,
+    param_map: dict,
+    key_prefix: str,
+) -> None:
+    """Cuadrícula editable (tipo Excel) para un conjunto de muestras.
+
+    Columnas identificadoras bloqueadas; metadatos y valores de parámetros
+    editables. Al guardar, cada cambio se persiste vía el servicio (misma tabla
+    que Resultados e Informes) y se audita. Reutilizada por la edición inline de
+    la vista y por la pestaña "Edición de datos" (filtrada por campaña)."""
+    if not datos_subset:
+        st.info("No hay muestras para editar en esta selección.")
+        return
+
+    # ── Construir el DataFrame editable ──────────────────────────────────
+    filas = []
+    for d in datos_subset:
+        fila = {
+            "Fecha": d.get("fecha", ""),
+            "Código Punto": d.get("punto_codigo", ""),
+            "Punto": d.get("punto_nombre", ""),
+            "Código Muestra": d.get("codigo_muestra", ""),
+            "ECA": d.get("eca_codigo", ""),
+            "Hora": d.get("hora", "") or "",
+            "Prof. (m)": d.get("profundidad"),
+            "Cód. Lab.": d.get("codigo_laboratorio", "") or "",
+            "Clima": d.get("clima", "") or "",
+            "Nivel agua": d.get("nivel_agua", "") or "",
+        }
+        for cod, label in columnas_visibles:
+            fila[label] = d.get(cod)
+        filas.append(fila)
+
+    df_edit = pd.DataFrame(filas)
+    # Forzar dtype numérico en columnas numéricas (evita quejas de NumberColumn).
+    for _c in ["Prof. (m)"] + [label for _cod, label in columnas_visibles]:
+        if _c in df_edit.columns:
+            df_edit[_c] = pd.to_numeric(df_edit[_c], errors="coerce")
+
+    # ── Configuración de columnas ────────────────────────────────────────
+    cfg = {
+        "Fecha": st.column_config.TextColumn("Fecha", disabled=True, width="small"),
+        "Código Punto": st.column_config.TextColumn("Cód. Punto", disabled=True, width="small"),
+        "Punto": st.column_config.TextColumn("Punto", disabled=True, width="medium"),
+        "Código Muestra": st.column_config.TextColumn("Cód. Muestra", disabled=True, width="small"),
+        "ECA": st.column_config.TextColumn("ECA", disabled=True, width="small"),
+        "Hora": st.column_config.TextColumn("Hora", help="HH:MM"),
+        "Prof. (m)": st.column_config.NumberColumn("Prof. (m)", format="%.2f",
+                                                    help="Profundidad de muestreo (m)"),
+        "Cód. Lab.": st.column_config.TextColumn("Cód. Lab."),
+        "Clima": st.column_config.TextColumn("Clima"),
+        "Nivel agua": st.column_config.TextColumn("Nivel agua"),
+    }
+    for cod, label in columnas_visibles:
+        cfg[label] = st.column_config.NumberColumn(
+            label, format=_sanitizar_formato_number(formato_codigo.get(cod, _FORMATO_FALLBACK))
+        )
+
+    edited = st.data_editor(
+        df_edit,
+        column_config=cfg,
+        hide_index=True,
+        num_rows="fixed",
+        use_container_width=True,
+        height=min(600, 90 + 35 * len(df_edit)),
+        key=f"{key_prefix}_editor",
+    )
+
+    c1, c2 = st.columns([1.2, 3.8])
+    with c1:
+        guardar = st.button(
+            "Guardar cambios", type="primary", key=f"{key_prefix}_guardar",
+            icon=":material/save:", use_container_width=True,
+        )
+    with c2:
+        st.caption("Edita las celdas y pulsa **Guardar cambios**. Los valores y "
+                   "metadatos se actualizan en **Resultados** e **Informes** al instante.")
+
+    if not guardar:
+        return
+
+    uid = _usuario_id_actual()
+    n_val = 0
+    n_meta = 0
+    errores: list[str] = []
+
+    for i, d in enumerate(datos_subset):
+        cod_muestra = d.get("codigo_muestra", "?")
+
+        # 1) Metadatos de la muestra
+        meta_upd: dict = {}
+        cambios_aud: dict = {}
+        for lbl, dkey, bdfield, tipo in _META_EDITABLES:
+            if lbl not in edited.columns:
+                continue
+            old = d.get(dkey)
+            new = edited.at[i, lbl]
+            if tipo == "num":
+                if _celda_distinta_num(old, new):
+                    val = None if _es_vacio(new) else float(new)
+                    meta_upd[bdfield] = val
+                    cambios_aud[bdfield] = (str(old) if old is not None else None,
+                                            str(val) if val is not None else None)
+            else:
+                old_s = "" if _es_vacio(old) else str(old).strip()
+                new_s = "" if _es_vacio(new) else str(new).strip()
+                if old_s != new_s:
+                    meta_upd[bdfield] = new_s or None
+                    cambios_aud[bdfield] = (old_s or None, new_s or None)
+        if meta_upd:
+            try:
+                actualizar_muestra(d["muestra_id"], meta_upd)
+                registrar_cambios_multiples("muestras", d["muestra_id"], "editar",
+                                            cambios_aud, usuario_id=uid)
+                n_meta += 1
+            except Exception as e:
+                errores.append(f"{cod_muestra} (metadatos): {e}")
+
+        # 2) Valores de parámetros
+        resultado_ids = d.get("_resultado_ids", {})
+        for cod, label in columnas_visibles:
+            if label not in edited.columns:
+                continue
+            old = d.get(cod)
+            new = edited.at[i, label]
+            if not _celda_distinta_num(old, new):
+                continue
+            new_val = None
+            if not _es_vacio(new):
+                try:
+                    new_val = float(new)
+                except (TypeError, ValueError):
+                    new_val = None
+            try:
+                info = resultado_ids.get(cod)
+                if info:
+                    actualizar_resultado(info["resultado_id"], new_val, usuario_id=uid)
+                elif new_val is not None:
+                    pid = param_map.get(cod)
+                    if not pid:
+                        errores.append(f"{cod_muestra}/{cod}: parámetro sin id")
+                        continue
+                    crear_resultado(d["muestra_id"], pid, new_val, usuario_id=uid)
+                else:
+                    continue  # se vació una celda que ya estaba vacía
+                n_val += 1
+            except Exception as e:
+                errores.append(f"{cod_muestra}/{cod}: {e}")
+
+    for err in errores:
+        st.error(f"Error al guardar {err}")
+
+    if n_val or n_meta:
+        _limpiar_caches_pagina()
+        # Contador de versión: garantiza que la firma del Excel/CSV cacheado
+        # cambie tras cada guardado, aunque el conteo de valores no varíe y
+        # aunque un .clear() fallara silenciosamente.
+        st.session_state["bd_data_version"] = st.session_state.get("bd_data_version", 0) + 1
+        st.success(
+            f"Guardado: {n_val} valor(es) y {n_meta} muestra(s) con metadatos "
+            "actualizados. Los cambios ya se reflejan en Resultados e Informes."
+        )
+        st.rerun()
+    elif not errores:
+        st.info("No se detectaron cambios.")
 
 
 @require_rol("visitante")
@@ -547,13 +1021,23 @@ def main() -> None:
 
     # ── Tab Vista ───────────────────────────────────────────────────────
     with tab_vista:
+        editar_inline = False
+        if es_admin:
+            editar_inline = st.toggle(
+                "Editar en la tabla",
+                key="bd_editar_inline",
+                help="Edita directamente los valores y metadatos de los registros "
+                     "visibles. Los cambios se guardan en Resultados e Informes.",
+            )
+
         st.markdown(f"**{n_muestras} registros** · {n_puntos} puntos · "
                     f"Las celdas en **rojo** exceden su ECA respectivo")
 
         # Paginación del render: con muchos registros, construir la tabla HTML
         # completa genera un DOM enorme y vuelve lenta la página. Mostramos solo
-        # una página de filas; las métricas (arriba) y el CSV (abajo) siguen
-        # cubriendo el conjunto completo. Con pocos registros no se pagina.
+        # una página de filas; las métricas (arriba) y las descargas (abajo)
+        # siguen cubriendo el conjunto completo. Con pocos registros no se pagina.
+        pagina = 1
         total_filas = len(datos)
         if total_filas > _FILAS_POR_PAGINA:
             n_paginas = (total_filas + _FILAS_POR_PAGINA - 1) // _FILAS_POR_PAGINA
@@ -569,7 +1053,7 @@ def main() -> None:
             with pcol2:
                 st.caption(
                     f"Mostrando registros {inicio + 1:,}–{fin:,} de {total_filas:,}. "
-                    "Descarga el CSV para el conjunto completo."
+                    "Las descargas incluyen el conjunto completo."
                 )
             datos_vista = datos[inicio:fin]
             df_vista = df.iloc[inicio:fin]
@@ -577,120 +1061,121 @@ def main() -> None:
             datos_vista = datos
             df_vista = df
 
-        html_table = _render_tabla_por_campana(
-            df=df_vista,
-            datos=datos_vista,
-            columnas_visibles=columnas_visibles,
-            formato_codigo=formato_codigo,
-            limites=limites,
-            lcm_codigo=lcm_codigo,
-        )
-        st.markdown(html_table, unsafe_allow_html=True)
+        if editar_inline:
+            st.caption("✏️ Editando los registros de esta página. Cambia de página "
+                       "o ajusta los filtros para editar otras muestras. Desactiva "
+                       "el interruptor para volver a la vista con colores.")
+            if not columnas_visibles:
+                st.info("No hay parámetros seleccionados (revisa **Categorías a "
+                        "mostrar** arriba). Puedes editar los metadatos de la muestra.")
+            _render_grid_editor(
+                datos_subset=datos_vista,
+                columnas_visibles=columnas_visibles,
+                formato_codigo=formato_codigo,
+                limites=limites,
+                param_map=get_parametros_map(),
+                key_prefix=f"bd_inline_p{pagina}",
+            )
+        else:
+            html_table = _render_tabla_por_campana(
+                df=df_vista,
+                datos=datos_vista,
+                columnas_visibles=columnas_visibles,
+                formato_codigo=formato_codigo,
+                limites=limites,
+                lcm_codigo=lcm_codigo,
+            )
+            st.markdown(html_table, unsafe_allow_html=True)
 
-        # Botón de descarga (siempre el conjunto completo filtrado)
-        csv = _df_a_csv(df)
-        st.download_button(
-            "Descargar CSV",
-            csv,
-            f"base_datos_lvca_{date.today()}.csv",
-            "text/csv",
-            key="bd_download",
-        )
+        # ── Descargas (siempre el conjunto completo filtrado) ────────────
+        sig = (f"{campana_id}|{punto_ids_filtro}|{fecha_inicio}|{fecha_fin}|"
+               f"{tuple(categoria_filtro)}|{n_muestras}|{n_valores}|{n_excedencias}|"
+               f"v{st.session_state.get('bd_data_version', 0)}")
+        dl1, dl2, _dsp = st.columns([1.1, 1.1, 2.8])
+        with dl1:
+            try:
+                xlsx_bytes = _xlsx_cacheado(
+                    sig, df, datos, columnas_visibles, formato_codigo, limites, lcm_codigo,
+                )
+                st.download_button(
+                    "Descargar Excel",
+                    xlsx_bytes,
+                    f"base_datos_lvca_{date.today()}.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="bd_download_xlsx",
+                    icon=":material/download:",
+                    use_container_width=True,
+                )
+            except Exception as e:
+                st.caption(f"No se pudo generar el Excel: {type(e).__name__}: {e}")
+        with dl2:
+            st.download_button(
+                "Descargar CSV",
+                _df_a_csv(df),
+                f"base_datos_lvca_{date.today()}.csv",
+                "text/csv",
+                key="bd_download",
+                icon=":material/table_view:",
+                use_container_width=True,
+            )
 
-    # ── Tab Edición (solo admin) ────────────────────────────────────────
+    # ── Tab Edición (solo admin): cuadrícula por campaña ────────────────
     if tab_edicion is not None:
         with tab_edicion:
-            st.markdown("Selecciona una muestra para editar sus valores.")
+            st.markdown(
+                "Elige una **campaña** para editar todas sus muestras en una "
+                "cuadrícula tipo Excel. Los cambios en valores y metadatos se "
+                "reflejan automáticamente en **Resultados** e **Informes**."
+            )
 
-            # Selector de muestra
-            opciones_muestra = {
-                f"{d['fecha']} · {d['punto_codigo']} — {d['punto_nombre']} ({d['codigo_muestra']})": i
-                for i, d in enumerate(datos)
-            }
-            sel_muestra = st.selectbox("Muestra", list(opciones_muestra.keys()), key="bd_sel_muestra")
-            idx_muestra = opciones_muestra[sel_muestra]
-            muestra = datos[idx_muestra]
+            campanas_ed = get_campanas()
+            if not campanas_ed:
+                st.info("No hay campañas disponibles para editar.")
+            else:
+                op_ed = {f"{c['codigo']} — {c['nombre']}": c["id"] for c in campanas_ed}
+                claves_ed = list(op_ed.keys())
 
-            st.markdown(f"**ECA aplicable:** {muestra['eca_codigo']}")
+                # Preseleccionar la campaña elegida en el filtro superior, si la hay.
+                idx_def = 0
+                if campana_id:
+                    for _pos, _k in enumerate(claves_ed):
+                        if op_ed[_k] == campana_id:
+                            idx_def = _pos
+                            break
 
-            # Formulario de edición
-            with st.form("form_editar_resultados"):
-                st.markdown("### Resultados por parámetro")
+                sel_ed = st.selectbox(
+                    "Campaña a editar", claves_ed, index=idx_def, key="bd_ed_camp",
+                    help="Escribe para buscar. Se cargarán todas las muestras de la campaña.",
+                )
+                camp_ed_id = op_ed[sel_ed]
 
-                # Dividir en columnas por categoría
-                cambios = {}
+                with st.spinner("Cargando muestras de la campaña..."):
+                    datos_ed = get_datos_consolidados(campana_id=camp_ed_id)
 
-                for cat_nombre, cat_codigos in cat_params.items():
-                    if cat_nombre not in categoria_filtro:
-                        continue
+                datos_ed = sorted(
+                    datos_ed,
+                    key=lambda d: (d.get("fecha") or "", d.get("punto_codigo") or "",
+                                   d.get("codigo_muestra") or ""),
+                )
 
-                    st.markdown(f"**{cat_nombre}**")
-                    cols = st.columns(min(4, len(cat_codigos)))
-
-                    params_cat = [(c, l) for c, l in columnas_visibles if c in cat_codigos]
-                    for i, (cod, label) in enumerate(params_cat):
-                        col = cols[i % len(cols)]
-                        val_actual = muestra.get(cod)
-                        excede = _excede_eca(val_actual, muestra.get("eca_id"), cod, limites)
-
-                        # Mostrar límite ECA como ayuda
-                        lim = limites.get((muestra.get("eca_id"), cod))
-                        help_txt = ""
-                        if lim:
-                            parts = []
-                            if lim.get("valor_minimo") is not None:
-                                parts.append(f"mín: {lim['valor_minimo']}")
-                            if lim.get("valor_maximo") is not None:
-                                parts.append(f"máx: {lim['valor_maximo']}")
-                            help_txt = f"ECA: {', '.join(parts)}"
-                            if excede:
-                                help_txt = "EXCEDE — " + help_txt
-
-                        with col:
-                            nuevo_val = st.number_input(
-                                f"{':red[:material/error:] ' if excede else ''}{label}",
-                                value=float(val_actual) if val_actual is not None else None,
-                                format=formato_codigo.get(cod, _FORMATO_FALLBACK),
-                                help=help_txt or None,
-                                key=f"edit_{cod}_{idx_muestra}",
-                                step=None,
-                            )
-
-                            # Detectar cambio
-                            if val_actual is not None and nuevo_val is not None:
-                                if abs(nuevo_val - val_actual) > 1e-10:
-                                    cambios[cod] = nuevo_val
-                            elif val_actual is None and nuevo_val is not None:
-                                cambios[cod] = nuevo_val
-
-                submitted = st.form_submit_button("Guardar cambios", type="primary")
-
-            if submitted and cambios:
-                param_map = get_parametros_map()
-                resultado_ids = muestra.get("_resultado_ids", {})
-                n_ok = 0
-
-                for cod, nuevo_val in cambios.items():
-                    info = resultado_ids.get(cod)
-                    try:
-                        if info:
-                            # Actualizar existente
-                            actualizar_resultado(info["resultado_id"], nuevo_val)
-                        else:
-                            # Crear nuevo
-                            pid = param_map.get(cod)
-                            if pid:
-                                crear_resultado(muestra["muestra_id"], pid, nuevo_val)
-                        n_ok += 1
-                    except Exception as e:
-                        st.error(f"Error al guardar {cod}: {e}")
-
-                if n_ok > 0:
-                    st.success(f"Se guardaron {n_ok} cambio(s) correctamente.")
-                    st.rerun()
-
-            elif submitted and not cambios:
-                st.info("No se detectaron cambios.")
+                if not datos_ed:
+                    st.info("Esta campaña no tiene muestras registradas.")
+                elif not columnas_visibles:
+                    st.warning("Selecciona al menos una categoría en los filtros de "
+                               "arriba para ver los parámetros editables.")
+                else:
+                    st.caption(
+                        f"{len(datos_ed)} muestra(s) · {len(columnas_visibles)} "
+                        "parámetro(s) según las categorías seleccionadas arriba."
+                    )
+                    _render_grid_editor(
+                        datos_subset=datos_ed,
+                        columnas_visibles=columnas_visibles,
+                        formato_codigo=formato_codigo,
+                        limites=limites,
+                        param_map=get_parametros_map(),
+                        key_prefix=f"bd_ed_{camp_ed_id}",
+                    )
 
 
 main()
