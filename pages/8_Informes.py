@@ -3,7 +3,8 @@ pages/8_Informes.py
 Generación de informes y exportación de datos.
 
 Secciones:
-    Tab 1 — Informe por campaña: resumen, excedencias, descarga PDF/Excel
+    Tab 1 — Informe por campaña: resumen, excedencias, Reportes de Ensayo
+            (Parámetros Fisicoquímicos / Fitoplancton / Microcistina) y envío por correo
     Tab 2 — Informe por punto: historial temporal, descarga Excel
 
 Acceso mínimo: visualizador.
@@ -29,9 +30,7 @@ from components.ui_styles import (
 from services.informe_service import (
     get_resumen_campana,
     get_resumen_punto,
-    generar_excel_campana,
     generar_excel_punto,
-    generar_pdf_campana,
 )
 from services.reporte_hidrobiologico_service import tiene_analisis_hidrobiologico
 from services.reporte_fitoplancton_service import (
@@ -70,21 +69,20 @@ def _chip_estado_html(estado: str, motivo: str = "") -> str:
 # Centro de informes — generación cacheada + tarjetas + envío por correo
 # ─────────────────────────────────────────────────────────────────────────────
 
-_MIME_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-_MIME_PDF = "application/pdf"
 _MIME_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 
 # Generación cacheada (evita re-generar en cada interacción de la página).
 # Se limpia con el botón "Actualizar". Los .docx se cachean por overrides.
 @st.cache_data(ttl=600, show_spinner=False)
-def _gen_excel(cid: str) -> bytes:
-    return generar_excel_campana(cid)
-
-
-@st.cache_data(ttl=600, show_spinner=False)
-def _gen_pdf(cid: str) -> bytes:
-    return generar_pdf_campana(cid)
+def _gen_fisicoquimico(cid: str) -> bytes:
+    # TODO: Informe de Parámetros Fisicoquímicos — pendiente de la plantilla.
+    # Cuando se defina el modelo, implementarlo en
+    # services/reporte_fisicoquimico_service.py, llamarlo aquí (ver _gen_fito /
+    # _gen_micro como referencia) y poner "disp": True en _catalogo_reportes.
+    raise NotImplementedError(
+        "El informe de Parámetros Fisicoquímicos está en preparación."
+    )
 
 
 @st.cache_data(ttl=600, show_spinner=False)
@@ -98,7 +96,7 @@ def _gen_micro(cid: str, ov_items: tuple) -> bytes:
 
 
 def _limpiar_cache_generacion() -> None:
-    for fn in (_gen_excel, _gen_pdf, _gen_fito, _gen_micro):
+    for fn in (_gen_fisicoquimico, _gen_fito, _gen_micro):
         try:
             fn.clear()
         except Exception:
@@ -153,12 +151,11 @@ def _catalogo_reportes(campana, campana_id, hay_hidrobio, hay_micro, ov_fito, ov
     fito_items = tuple(sorted(ov_fito.items()))
     micro_items = tuple(sorted(ov_micro.items()))
     return [
-        {"key": "excel", "titulo": "Excel", "icono": ":material/table_chart:", "disp": True, "motivo": "",
-         "file": f"informe_{cod}.xlsx", "mime": _MIME_XLSX,
-         "gen": lambda: _gen_excel(campana_id)},
-        {"key": "pdf", "titulo": "PDF", "icono": ":material/picture_as_pdf:", "disp": True, "motivo": "",
-         "file": f"informe_{cod}.pdf", "mime": _MIME_PDF,
-         "gen": lambda: _gen_pdf(campana_id)},
+        {"key": "fisicoquimico", "titulo": "Parámetros Fisicoquímicos",
+         "icono": ":material/water_drop:", "disp": False,
+         "motivo": "En preparación — se habilitará al definir la plantilla del informe.",
+         "file": f"Reporte_Fisicoquimico_{cod}.docx", "mime": _MIME_DOCX,
+         "gen": lambda: _gen_fisicoquimico(campana_id)},
         {"key": "fito", "titulo": "Fitoplancton", "icono": ":material/biotech:", "disp": hay_hidrobio,
          "motivo": "Carga un análisis en Resultados → Hidrobiológico",
          "file": f"Reporte_Fitoplancton_{cod}.docx", "mime": _MIME_DOCX,
