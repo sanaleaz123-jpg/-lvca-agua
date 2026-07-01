@@ -235,6 +235,29 @@ def _mapa_taxonomia() -> dict[str, tuple]:
     return mapa
 
 
+def especie_dominante_campana(campana_id: str) -> Optional[dict]:
+    """
+    Especie de fitoplancton dominante de la campaña: la de mayor densidad
+    (cel/mL ``cel_ml_equiv`` sumada sobre todas las estaciones), con su familia
+    taxonómica. Retorna {"especie", "familia", "cel_ml"} o None si la campaña
+    no tiene datos de fitoplancton. Reutiliza la misma carga y cálculo que el
+    reporte oficial (_cargar_estaciones / _cel_de_valor / _mapa_taxonomia).
+    """
+    _campana, estaciones = _cargar_estaciones(campana_id)
+    acum: dict[str, float] = {}
+    for est in estaciones:
+        doc = est.get("datos_fitoplancton") or {}
+        for _filo, especies in (doc.get("resultados") or {}).items():
+            for esp, val in (especies or {}).items():
+                acum[esp] = acum.get(esp, 0.0) + _cel_de_valor(val)
+    acum = {k: v for k, v in acum.items() if v > 0}
+    if not acum:
+        return None
+    esp = max(acum, key=acum.get)
+    familia = _mapa_taxonomia().get(esp, (None, None, None, None))[3]
+    return {"especie": esp, "familia": familia, "cel_ml": acum[esp]}
+
+
 def _orden_division(division: str) -> int:
     try:
         return ORDEN_FILOS.index(division)

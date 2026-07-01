@@ -31,10 +31,12 @@ from services.informe_service import (
     get_resumen_campana,
     get_resumen_punto,
     generar_excel_punto,
+    construir_resumen_correo,
 )
 from services.reporte_hidrobiologico_service import tiene_analisis_hidrobiologico
 from services.reporte_fitoplancton_service import (
     generar_docx_fitoplancton_campana,
+    especie_dominante_campana,
     DEFAULTS as FITO_DEFAULTS,
 )
 from services.microcistina_service import tiene_resultados_microcistina
@@ -93,6 +95,15 @@ def _gen_fito(cid: str, ov_items: tuple) -> bytes:
 @st.cache_data(ttl=600, show_spinner=False)
 def _gen_micro(cid: str, ov_items: tuple) -> bytes:
     return generar_docx_microcistina_campana(cid, dict(ov_items))
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _especie_dominante(cid: str):
+    """Especie dominante de fitoplancton (cacheada) para el resumen del correo."""
+    try:
+        return especie_dominante_campana(cid)
+    except Exception:
+        return None
 
 
 def _limpiar_cache_generacion() -> None:
@@ -190,7 +201,7 @@ def _render_tarjetas_informes(reportes) -> None:
                     st.caption(r["motivo"])
 
 
-def _render_envio_correo(campana, campana_id, reportes) -> None:
+def _render_envio_correo(campana, campana_id, reportes, resumen) -> None:
     """Panel de envío de informes por correo (libreta + adjuntos + mensaje)."""
     section_header("Enviar informes por correo", "upload")
 
@@ -250,10 +261,12 @@ def _render_envio_correo(campana, campana_id, reportes) -> None:
 
     # Asunto y cuerpo (automáticos y editables).
     asunto_def = f"Informe LVCA — {campana['codigo']} ({campana.get('nombre', '')})"
+    resumen_txt = construir_resumen_correo(resumen, _especie_dominante(campana_id))
     cuerpo_def = (
         "Estimados,\n\n"
         f"Adjuntamos los informes correspondientes a la campaña "
         f"{campana['codigo']} — {campana.get('nombre', '')}.\n\n"
+        f"{resumen_txt}\n\n"
         "Saludos cordiales,\n"
         "Laboratorio de Vigilancia de Calidad del Agua (LVCA) — AUTODEMA"
     )
@@ -523,7 +536,7 @@ def _render_informe_campana() -> None:
     _render_tarjetas_informes(reportes)
 
     st.divider()
-    _render_envio_correo(campana, campana_id, reportes)
+    _render_envio_correo(campana, campana_id, reportes, resumen)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

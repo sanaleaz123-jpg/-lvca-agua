@@ -268,6 +268,130 @@ def get_resumen_campana(campana_id: str) -> dict:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Cuadro-resumen automático para el cuerpo del correo
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Microcistina LR se evalúa como el parámetro P091 con el mismo motor ECA
+# (límite por categoría). En el resumen va en su propio bloque.
+_COD_MICROCISTINA = "P091"
+_TOPE_EXCEDENCIAS = 10  # máximo de excedencias listadas por bloque en el correo
+
+
+def _fmt_num(v) -> str:
+    """Número compacto: entero sin decimales; el resto con dígitos significativos."""
+    if v is None:
+        return "—"
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return str(v)
+    return str(int(f)) if f == int(f) else f"{f:g}"
+
+
+def _linea_excedencia(e: dict) -> str:
+    """
+    Viñeta legible de una excedencia. Distingue dos tipos:
+      - Numérica (``valor_comparado`` presente): muestra el valor comparado y la
+        dirección segura respecto al límite (máximo o mínimo) que realmente usó
+        el motor de cumplimiento.
+      - Cualitativa u otra (``valor_comparado`` None, p. ej. 'Presencia' donde el
+        ECA exige ausencia): usa el ``motivo`` del motor, que ya es correcto — NO
+        se inventa una comparación numérica.
+    """
+    from services.cumplimiento_service import EstadoECA
+
+    param = e.get("parametro_nombre", "")
+    punto = (e.get("punto_codigo") or "").strip()
+    nombre_pt = (e.get("punto_nombre") or "").strip()
+    lugar = f"{punto} ({nombre_pt})" if nombre_pt else (punto or "—")
+    art6 = (" (con excepción Art. 6 aprobada)"
+            if e.get("estado_eca") == EstadoECA.EXCEDE_EXCEPCION_ART6 else "")
+
+    val_comp = e.get("valor_comparado")
+    emax = e.get("eca_rango_max")
+    emin = e.get("eca_rango_min")
+
+    if val_comp is not None:
+        unidad = (e.get("unidad_comparada") or e.get("unidad") or "").strip()
+        try:
+            v = float(val_comp)
+        except (TypeError, ValueError):
+            v = None
+        if emin is not None and v is not None and v < float(emin):
+            ref = f"está por debajo del mínimo ECA de {_fmt_num(emin)} {unidad}".rstrip()
+        elif emax is not None:
+            ref = f"supera el máximo ECA de {_fmt_num(emax)} {unidad}".rstrip()
+        elif emin is not None:
+            ref = f"está por debajo del mínimo ECA de {_fmt_num(emin)} {unidad}".rstrip()
+        else:
+            ref = "supera el ECA"
+        cuerpo = f"{_fmt_num(val_comp)} {unidad} — {ref}".replace("  ", " ")
+    else:
+        cuerpo = (e.get("motivo") or "supera el ECA").strip().rstrip(".")
+
+    return f"- {param} en {lugar}: {cuerpo}{art6}."
+
+
+def _bloque_excedencias(lineas: list[str], items: list[dict]) -> None:
+    for e in items[:_TOPE_EXCEDENCIAS]:
+        lineas.append(_linea_excedencia(e))
+    if len(items) > _TOPE_EXCEDENCIAS:
+        lineas.append(f"  … y {len(items) - _TOPE_EXCEDENCIAS} más (ver informe adjunto).")
+
+
+def construir_resumen_correo(resumen: dict, especie_dom: Optional[dict] = None) -> str:
+    """
+    Cuadro-resumen en texto plano para el cuerpo del correo de informes:
+      - Titular de estado general.
+      - Parámetros fisicoquímicos que superan el ECA (excluye microcistina).
+      - Microcistina que supera su límite según su categoría (P091).
+      - Especie dominante de fitoplancton, con su familia entre paréntesis.
+    Si un bloque no tiene novedades, muestra una línea tranquilizadora.
+    Texto plano puro (el correo se envía sin HTML): sin columnas ni tabulaciones.
+    """
+    excedencias = resumen.get("excedencias", []) or []
+    fq = [e for e in excedencias if e.get("parametro_codigo") != _COD_MICROCISTINA]
+    mc = [e for e in excedencias if e.get("parametro_codigo") == _COD_MICROCISTINA]
+    total = len(excedencias)
+
+    lineas: list[str] = []
+    if total == 0:
+        lineas.append("Estado general: todos los parámetros evaluados cumplen el ECA.")
+    else:
+        lineas.append(
+            f"Estado general: {total} parámetro(s) superan el ECA; los demás cumplen."
+        )
+    lineas.append("")
+    lineas.append("=== RESUMEN DE RESULTADOS ===")
+    lineas.append("")
+
+    if fq:
+        lineas.append(f"Parámetros fisicoquímicos que superan el ECA ({len(fq)}):")
+        _bloque_excedencias(lineas, fq)
+    else:
+        lineas.append("Parámetros fisicoquímicos: todos dentro del ECA.")
+    lineas.append("")
+
+    if mc:
+        n_pts = len({e.get("punto_codigo") for e in mc})
+        lineas.append(f"Microcistina: {n_pts} punto(s) superan su límite de categoría:")
+        _bloque_excedencias(lineas, mc)
+    else:
+        lineas.append("Microcistina: dentro del ECA en todos los puntos evaluados.")
+    lineas.append("")
+
+    if especie_dom and especie_dom.get("especie"):
+        esp = especie_dom["especie"]
+        fam = especie_dom.get("familia")
+        etiqueta = f"{esp} ({fam})" if fam else esp
+        lineas.append(f"Fitoplancton — especie dominante: {etiqueta}.")
+    else:
+        lineas.append("Fitoplancton — sin datos de fitoplancton en esta campaña.")
+
+    return "\n".join(lineas)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Historial de un punto
 # ─────────────────────────────────────────────────────────────────────────────
 
