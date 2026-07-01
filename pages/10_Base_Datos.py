@@ -184,12 +184,13 @@ _BD_TABLE_CSS = """
   table.bd-table tbody tr:nth-child(even) td.freeze { background: #fcfdfe; }
   table.bd-table tbody tr:hover td.freeze { background: #eef2f7; }
   /* Anchos (border-box, incluyen padding) y offsets left acumulados:
-     0 · 92 · 92+62=154 · 154+106=260. */
-  .bd-table .f0 { left: 0;     min-width: 92px;  max-width: 92px;  }
-  .bd-table .f1 { left: 92px;  min-width: 62px;  max-width: 62px;  }
-  .bd-table .f2 { left: 154px; min-width: 106px; max-width: 106px; }
+     0 · 112 · 112+60=172 · 172+106=278. La columna Fecha (f0) es lo bastante
+     ancha para mostrar la fecha ISO completa (2026-03-15) sin recortarla. */
+  .bd-table .f0 { left: 0;     min-width: 112px; max-width: 112px; }
+  .bd-table .f1 { left: 112px; min-width: 60px;  max-width: 60px;  }
+  .bd-table .f2 { left: 172px; min-width: 106px; max-width: 106px; }
   .bd-table .f3 {
-    left: 260px; min-width: 176px; max-width: 176px;
+    left: 278px; min-width: 176px; max-width: 176px;
     box-shadow: 6px 0 6px -4px rgba(15, 23, 42, 0.14);
   }
 
