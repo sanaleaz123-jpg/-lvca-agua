@@ -48,6 +48,7 @@ from services.taxonomia_fitoplancton_service import ORDEN_FILOS, get_taxonomia
 # Reutilizamos los helpers de formato del reporte hidrobiológico.
 from services.reporte_hidrobiologico_service import (
     _apply_table_borders,
+    _repetir_cabecera,
     _shade_cell,
     _write_cell,
     tiene_analisis_hidrobiologico,  # re-export para la UI
@@ -505,6 +506,7 @@ def _seccion_informacion(document, estaciones: list[dict]) -> None:
     tabla = document.add_table(rows=1, cols=len(encabezados))
     tabla.autofit = True
     _apply_table_borders(tabla)
+    _repetir_cabecera(tabla)
     for i, h in enumerate(encabezados):
         _write_cell(tabla.rows[0].cells[i], h, bold=True,
                     align=WD_PARAGRAPH_ALIGNMENT.CENTER, font_color="FFFFFF", font_size=8.5)
@@ -539,6 +541,7 @@ def _tabla_resultados_chunk(document, filas_especie: list[dict],
     tabla = document.add_table(rows=1, cols=n_cols)
     tabla.autofit = True
     _apply_table_borders(tabla)
+    _repetir_cabecera(tabla)
 
     hdr = tabla.rows[0].cells
     for i, h in enumerate(cols_tax):
@@ -584,6 +587,7 @@ def _tabla_comunitarios_chunk(document, estaciones: list[dict],
     tabla = document.add_table(rows=1, cols=1 + len(sub))
     tabla.autofit = True
     _apply_table_borders(tabla)
+    _repetir_cabecera(tabla)
     hdr = tabla.rows[0].cells
     _write_cell(hdr[0], "Parámetro comunitario", bold=True, font_color="FFFFFF", font_size=8.5)
     _shade_cell(hdr[0], "404040")

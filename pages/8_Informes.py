@@ -44,6 +44,7 @@ from services.reporte_microcistina_service import (
     generar_docx_microcistina_campana,
     DEFAULTS as MC_DEFAULTS,
 )
+from services.pdf_service import docx_a_pdf
 from services.resultado_service import get_campanas, _get_usuario_interno_id
 from services.punto_service import get_puntos
 from services.cumplimiento_service import EstadoECA
@@ -71,7 +72,9 @@ def _chip_estado_html(estado: str, motivo: str = "") -> str:
 # Centro de informes — generación cacheada + tarjetas + envío por correo
 # ─────────────────────────────────────────────────────────────────────────────
 
-_MIME_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+# Los Reportes de Ensayo (.docx) se convierten a PDF antes de descargar/enviar,
+# por lo que el MIME que ve el usuario es siempre PDF (ver docx_a_pdf).
+_MIME_PDF = "application/pdf"
 
 
 # Generación cacheada (evita re-generar en cada interacción de la página).
@@ -89,12 +92,14 @@ def _gen_fisicoquimico(cid: str) -> bytes:
 
 @st.cache_data(ttl=600, show_spinner=False)
 def _gen_fito(cid: str, ov_items: tuple) -> bytes:
-    return generar_docx_fitoplancton_campana(cid, dict(ov_items))
+    # Se genera el .docx oficial y se convierte a PDF (formato idéntico).
+    return docx_a_pdf(generar_docx_fitoplancton_campana(cid, dict(ov_items)))
 
 
 @st.cache_data(ttl=600, show_spinner=False)
 def _gen_micro(cid: str, ov_items: tuple) -> bytes:
-    return generar_docx_microcistina_campana(cid, dict(ov_items))
+    # Se rellena la plantilla oficial (.docx) y se convierte a PDF.
+    return docx_a_pdf(generar_docx_microcistina_campana(cid, dict(ov_items)))
 
 
 @st.cache_data(ttl=600, show_spinner=False)
@@ -165,15 +170,15 @@ def _catalogo_reportes(campana, campana_id, hay_hidrobio, hay_micro, ov_fito, ov
         {"key": "fisicoquimico", "titulo": "Parámetros Fisicoquímicos",
          "icono": ":material/water_drop:", "disp": False,
          "motivo": "En preparación — se habilitará al definir la plantilla del informe.",
-         "file": f"Reporte_Fisicoquimico_{cod}.docx", "mime": _MIME_DOCX,
+         "file": f"Reporte_Fisicoquimico_{cod}.pdf", "mime": _MIME_PDF,
          "gen": lambda: _gen_fisicoquimico(campana_id)},
         {"key": "fito", "titulo": "Fitoplancton", "icono": ":material/biotech:", "disp": hay_hidrobio,
          "motivo": "Carga un análisis en Resultados → Hidrobiológico",
-         "file": f"Reporte_Fitoplancton_{cod}.docx", "mime": _MIME_DOCX,
+         "file": f"Reporte_Fitoplancton_{cod}.pdf", "mime": _MIME_PDF,
          "gen": lambda: _gen_fito(campana_id, fito_items)},
         {"key": "micro", "titulo": "Microcistina", "icono": ":material/science:", "disp": hay_micro,
          "motivo": "Calcula una corrida ELISA en Microcistina (ELISA)",
-         "file": f"Reporte_Microcistina_{cod}.docx", "mime": _MIME_DOCX,
+         "file": f"Reporte_Microcistina_{cod}.pdf", "mime": _MIME_PDF,
          "gen": lambda: _gen_micro(campana_id, micro_items)},
     ]
 

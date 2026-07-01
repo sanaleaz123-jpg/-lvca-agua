@@ -71,6 +71,19 @@ def _apply_table_borders(table) -> None:
     tbl_pr.append(borders)
 
 
+def _repetir_cabecera(table, n_filas: int = 1) -> None:
+    """
+    Marca las primeras ``n_filas`` como fila(s) de encabezado que se REPITEN al
+    inicio de cada página cuando la tabla se parte (w:tblHeader). Mantiene las
+    tablas legibles y alineadas al exportar a PDF / imprimir.
+    """
+    for row in table.rows[:n_filas]:
+        tr_pr = row._tr.get_or_add_trPr()
+        th = OxmlElement("w:tblHeader")
+        th.set(qn("w:val"), "true")
+        tr_pr.append(th)
+
+
 def _write_cell(
     cell,
     text: str,
