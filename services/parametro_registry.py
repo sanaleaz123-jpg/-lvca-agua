@@ -242,6 +242,26 @@ def get_codigos_parametros() -> list[str]:
 
 
 @cached(ttl=300, grupo="referencia")
+def get_lcm_por_codigo() -> dict[str, float]:
+    """
+    {codigo: lcm} de los parámetros activos con Límite de Cuantificación del
+    Método definido. Sirve para reportar los valores por debajo del LCM como
+    '< LCM' (no cuantificables) en vez del número calculado — p. ej. microcistina
+    (P091) con LCM 0.05 µg/L.
+    """
+    out: dict[str, float] = {}
+    for p in get_parametros_activos():
+        cod = p.get("codigo")
+        lcm = p.get("lcm")
+        if cod and lcm is not None:
+            try:
+                out[cod] = float(lcm)
+            except (TypeError, ValueError):
+                pass
+    return out
+
+
+@cached(ttl=300, grupo="referencia")
 def get_cat_params() -> dict[str, list[str]]:
     """
     Reemplazo dinámico de ``cat_params``.

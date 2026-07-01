@@ -34,6 +34,7 @@ from services.parametro_registry import (
     get_columnas_parametros,
     get_codigos_parametros,
     get_cat_params,
+    get_lcm_por_codigo,
 )
 from components.ui_styles import aplicar_estilos, page_header, top_nav
 from services.resultado_service import get_campanas
@@ -206,6 +207,7 @@ def _render_tabla_por_campana(
     columnas_visibles: list[tuple[str, str]],
     formato_codigo: dict,
     limites: dict,
+    lcm_codigo: dict | None = None,
 ) -> str:
     """
     Renderiza la base de datos como tabla HTML con separadores amarillos
@@ -245,13 +247,23 @@ def _render_tabla_por_campana(
             cod = label_to_codigo.get(col)
             if cod is not None:
                 fmt = formato_codigo.get(cod, _FORMATO_FALLBACK)
-                txt = _fmt_valor(raw, fmt)
-                exceed = (
-                    raw is not None
-                    and not (isinstance(raw, float) and pd.isna(raw))
-                    and _excede_eca(raw, eca_id, cod, limites)
-                )
-                cls = " class=\"exceed\"" if exceed else ""
+                es_num = raw is not None and not (isinstance(raw, float) and pd.isna(raw))
+                lcm = (lcm_codigo or {}).get(cod)
+                bajo_lcm = False
+                if es_num and lcm is not None:
+                    try:
+                        bajo_lcm = float(raw) < lcm
+                    except (TypeError, ValueError):
+                        bajo_lcm = False
+                if bajo_lcm:
+                    # Por debajo del Límite de Cuantificación: se reporta como
+                    # '< LCM' (no cuantificable) y nunca excede el ECA.
+                    txt = f"< {_fmt_valor(lcm, fmt)}"
+                    cls = ""
+                else:
+                    txt = _fmt_valor(raw, fmt)
+                    exceed = es_num and _excede_eca(raw, eca_id, cod, limites)
+                    cls = " class=\"exceed\"" if exceed else ""
                 celdas.append(f"<td{cls}>{escape(txt)}</td>")
             else:
                 if raw is None or (isinstance(raw, float) and pd.isna(raw)):
@@ -432,6 +444,7 @@ def main() -> None:
     cat_params = get_cat_params()
     COLUMNAS_PARAMETROS = get_columnas_parametros()
     formato_codigo = _formato_por_codigo(cat_params)
+    lcm_codigo = get_lcm_por_codigo()
 
     codigos_visibles = []
     for cat in categoria_filtro:
@@ -570,6 +583,7 @@ def main() -> None:
             columnas_visibles=columnas_visibles,
             formato_codigo=formato_codigo,
             limites=limites,
+            lcm_codigo=lcm_codigo,
         )
         st.markdown(html_table, unsafe_allow_html=True)
 
