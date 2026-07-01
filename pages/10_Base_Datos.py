@@ -656,36 +656,13 @@ def _render_grid_editor(
     editables. Al guardar, cada cambio se persiste vía el servicio (misma tabla
     que Resultados e Informes) y se audita. Reutilizada por la edición inline de
     la vista y por la pestaña "Edición de datos" (filtrada por campaña)."""
+    from html import escape
+
     if not datos_subset:
         st.info("No hay muestras para editar en esta selección.")
         return
 
-    # ── Construir el DataFrame editable ──────────────────────────────────
-    filas = []
-    for d in datos_subset:
-        fila = {
-            "Fecha": d.get("fecha", ""),
-            "Código Punto": d.get("punto_codigo", ""),
-            "Punto": d.get("punto_nombre", ""),
-            "Código Muestra": d.get("codigo_muestra", ""),
-            "ECA": d.get("eca_codigo", ""),
-            "Hora": d.get("hora", "") or "",
-            "Prof. (m)": d.get("profundidad"),
-            "Cód. Lab.": d.get("codigo_laboratorio", "") or "",
-            "Clima": d.get("clima", "") or "",
-            "Nivel agua": d.get("nivel_agua", "") or "",
-        }
-        for cod, label in columnas_visibles:
-            fila[label] = d.get(cod)
-        filas.append(fila)
-
-    df_edit = pd.DataFrame(filas)
-    # Forzar dtype numérico en columnas numéricas (evita quejas de NumberColumn).
-    for _c in ["Prof. (m)"] + [label for _cod, label in columnas_visibles]:
-        if _c in df_edit.columns:
-            df_edit[_c] = pd.to_numeric(df_edit[_c], errors="coerce")
-
-    # ── Configuración de columnas ────────────────────────────────────────
+    # ── Configuración de columnas (común a todos los bloques) ────────────
     cfg = {
         "Fecha": st.column_config.TextColumn("Fecha", disabled=True, width="small"),
         "Código Punto": st.column_config.TextColumn("Cód. Punto", disabled=True, width="small"),
@@ -704,15 +681,63 @@ def _render_grid_editor(
             label, format=_sanitizar_formato_number(formato_codigo.get(cod, _FORMATO_FALLBACK))
         )
 
-    edited = st.data_editor(
-        df_edit,
-        column_config=cfg,
-        hide_index=True,
-        num_rows="fixed",
-        use_container_width=True,
-        height=min(600, 90 + 35 * len(df_edit)),
-        key=f"{key_prefix}_editor",
-    )
+    def _build_df(sub: list[dict]) -> pd.DataFrame:
+        filas = []
+        for d in sub:
+            fila = {
+                "Fecha": d.get("fecha", ""),
+                "Código Punto": d.get("punto_codigo", ""),
+                "Punto": d.get("punto_nombre", ""),
+                "Código Muestra": d.get("codigo_muestra", ""),
+                "ECA": d.get("eca_codigo", ""),
+                "Hora": d.get("hora", "") or "",
+                "Prof. (m)": d.get("profundidad"),
+                "Cód. Lab.": d.get("codigo_laboratorio", "") or "",
+                "Clima": d.get("clima", "") or "",
+                "Nivel agua": d.get("nivel_agua", "") or "",
+            }
+            for cod, label in columnas_visibles:
+                fila[label] = d.get(cod)
+            filas.append(fila)
+        df_e = pd.DataFrame(filas)
+        # Forzar dtype numérico en columnas numéricas (evita quejas de NumberColumn).
+        for _c in ["Prof. (m)"] + [label for _cod, label in columnas_visibles]:
+            if _c in df_e.columns:
+                df_e[_c] = pd.to_numeric(df_e[_c], errors="coerce")
+        return df_e
+
+    # ── Agrupar por campaña (los datos ya vienen ordenados por campaña) ──
+    # Cada bloque lleva una banda amarilla con MES · CÓDIGO, igual que los
+    # separadores de la vista de consulta, para diferenciar mejor al editar.
+    grupos: list[tuple[str, list[int]]] = []
+    ultimo = object()
+    for i, d in enumerate(datos_subset):
+        k = d.get("campana_id") or d.get("campana_codigo") or "__sin__"
+        if k != ultimo:
+            grupos.append((_etiqueta_campana(d), []))
+            ultimo = k
+        grupos[-1][1].append(i)
+
+    _sep_style = ("background:#fef3c7;color:#92400e;font-weight:700;"
+                  "text-transform:uppercase;letter-spacing:.5px;padding:7px 12px;"
+                  "border-top:2px solid #F59E0B;border-bottom:1px solid #fde68a;"
+                  "border-radius:6px 6px 0 0;font-size:.78rem;margin:.6rem 0 -.3rem;")
+
+    editores: list[tuple[list[int], pd.DataFrame]] = []
+    for gi, (label, idxs) in enumerate(grupos):
+        st.markdown(f"<div style='{_sep_style}'>{escape(label)}</div>",
+                    unsafe_allow_html=True)
+        sub = [datos_subset[i] for i in idxs]
+        edited = st.data_editor(
+            _build_df(sub),
+            column_config=cfg,
+            hide_index=True,
+            num_rows="fixed",
+            use_container_width=True,
+            height=min(520, 80 + 35 * len(sub)),
+            key=f"{key_prefix}_g{gi}_editor",
+        )
+        editores.append((idxs, edited))
 
     c1, c2 = st.columns([1.2, 3.8])
     with c1:
@@ -732,68 +757,70 @@ def _render_grid_editor(
     n_meta = 0
     errores: list[str] = []
 
-    for i, d in enumerate(datos_subset):
-        cod_muestra = d.get("codigo_muestra", "?")
+    for idxs, edited in editores:
+        for r, gi in enumerate(idxs):
+            d = datos_subset[gi]
+            cod_muestra = d.get("codigo_muestra", "?")
 
-        # 1) Metadatos de la muestra
-        meta_upd: dict = {}
-        cambios_aud: dict = {}
-        for lbl, dkey, bdfield, tipo in _META_EDITABLES:
-            if lbl not in edited.columns:
-                continue
-            old = d.get(dkey)
-            new = edited.at[i, lbl]
-            if tipo == "num":
-                if _celda_distinta_num(old, new):
-                    val = None if _es_vacio(new) else float(new)
-                    meta_upd[bdfield] = val
-                    cambios_aud[bdfield] = (str(old) if old is not None else None,
-                                            str(val) if val is not None else None)
-            else:
-                old_s = "" if _es_vacio(old) else str(old).strip()
-                new_s = "" if _es_vacio(new) else str(new).strip()
-                if old_s != new_s:
-                    meta_upd[bdfield] = new_s or None
-                    cambios_aud[bdfield] = (old_s or None, new_s or None)
-        if meta_upd:
-            try:
-                actualizar_muestra(d["muestra_id"], meta_upd)
-                registrar_cambios_multiples("muestras", d["muestra_id"], "editar",
-                                            cambios_aud, usuario_id=uid)
-                n_meta += 1
-            except Exception as e:
-                errores.append(f"{cod_muestra} (metadatos): {e}")
-
-        # 2) Valores de parámetros
-        resultado_ids = d.get("_resultado_ids", {})
-        for cod, label in columnas_visibles:
-            if label not in edited.columns:
-                continue
-            old = d.get(cod)
-            new = edited.at[i, label]
-            if not _celda_distinta_num(old, new):
-                continue
-            new_val = None
-            if not _es_vacio(new):
-                try:
-                    new_val = float(new)
-                except (TypeError, ValueError):
-                    new_val = None
-            try:
-                info = resultado_ids.get(cod)
-                if info:
-                    actualizar_resultado(info["resultado_id"], new_val, usuario_id=uid)
-                elif new_val is not None:
-                    pid = param_map.get(cod)
-                    if not pid:
-                        errores.append(f"{cod_muestra}/{cod}: parámetro sin id")
-                        continue
-                    crear_resultado(d["muestra_id"], pid, new_val, usuario_id=uid)
+            # 1) Metadatos de la muestra
+            meta_upd: dict = {}
+            cambios_aud: dict = {}
+            for lbl, dkey, bdfield, tipo in _META_EDITABLES:
+                if lbl not in edited.columns:
+                    continue
+                old = d.get(dkey)
+                new = edited.at[r, lbl]
+                if tipo == "num":
+                    if _celda_distinta_num(old, new):
+                        val = None if _es_vacio(new) else float(new)
+                        meta_upd[bdfield] = val
+                        cambios_aud[bdfield] = (str(old) if old is not None else None,
+                                                str(val) if val is not None else None)
                 else:
-                    continue  # se vació una celda que ya estaba vacía
-                n_val += 1
-            except Exception as e:
-                errores.append(f"{cod_muestra}/{cod}: {e}")
+                    old_s = "" if _es_vacio(old) else str(old).strip()
+                    new_s = "" if _es_vacio(new) else str(new).strip()
+                    if old_s != new_s:
+                        meta_upd[bdfield] = new_s or None
+                        cambios_aud[bdfield] = (old_s or None, new_s or None)
+            if meta_upd:
+                try:
+                    actualizar_muestra(d["muestra_id"], meta_upd)
+                    registrar_cambios_multiples("muestras", d["muestra_id"], "editar",
+                                                cambios_aud, usuario_id=uid)
+                    n_meta += 1
+                except Exception as e:
+                    errores.append(f"{cod_muestra} (metadatos): {e}")
+
+            # 2) Valores de parámetros
+            resultado_ids = d.get("_resultado_ids", {})
+            for cod, label in columnas_visibles:
+                if label not in edited.columns:
+                    continue
+                old = d.get(cod)
+                new = edited.at[r, label]
+                if not _celda_distinta_num(old, new):
+                    continue
+                new_val = None
+                if not _es_vacio(new):
+                    try:
+                        new_val = float(new)
+                    except (TypeError, ValueError):
+                        new_val = None
+                try:
+                    info = resultado_ids.get(cod)
+                    if info:
+                        actualizar_resultado(info["resultado_id"], new_val, usuario_id=uid)
+                    elif new_val is not None:
+                        pid = param_map.get(cod)
+                        if not pid:
+                            errores.append(f"{cod_muestra}/{cod}: parámetro sin id")
+                            continue
+                        crear_resultado(d["muestra_id"], pid, new_val, usuario_id=uid)
+                    else:
+                        continue  # se vació una celda que ya estaba vacía
+                    n_val += 1
+                except Exception as e:
+                    errores.append(f"{cod_muestra}/{cod}: {e}")
 
     for err in errores:
         st.error(f"Error al guardar {err}")
