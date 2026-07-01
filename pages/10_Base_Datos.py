@@ -233,6 +233,24 @@ def _fmt_valor(val, fmt: str) -> str:
         return str(val)
 
 
+def _hora_a_minutos(h) -> int:
+    """Convierte una hora 'HH:MM' a minutos desde medianoche, para ordenar
+    cronológicamente. Las muestras sin hora (o con formato no reconocible) se
+    ordenan al final del día, no al principio."""
+    if not h:
+        return 24 * 60 + 1  # sin hora → al final del día
+    s = str(h).strip()
+    try:
+        partes = s.split(":")
+        hh = int(partes[0])
+        mm = int(partes[1]) if len(partes) > 1 else 0
+        if 0 <= hh <= 23 and 0 <= mm <= 59:
+            return hh * 60 + mm
+    except (ValueError, IndexError):
+        pass
+    return 24 * 60 + 2  # formato raro → después incluso de las sin hora
+
+
 _MES_ES = {
     1: "ENERO", 2: "FEBRERO", 3: "MARZO", 4: "ABRIL", 5: "MAYO", 6: "JUNIO",
     7: "JULIO", 8: "AGOSTO", 9: "SETIEMBRE", 10: "OCTUBRE", 11: "NOVIEMBRE", 12: "DICIEMBRE",
@@ -965,10 +983,11 @@ def main() -> None:
             ir_a("informes", campana_id=campana_id)
 
     # ── Construir DataFrame para mostrar ────────────────────────────────
-    # Orden cronológico ascendente para que los separadores amarillos por
-    # campaña sigan el mismo orden del Excel (FEBRERO → MARZO → ABRIL …).
-    # IMPORTANTE: agrupar primero por campaña (fecha_inicio + código), si no,
-    # campañas del mismo mes se intercalan y generan separadores repetidos.
+    # Orden cronológico ascendente. Se agrupa PRIMERO por campaña (fecha_inicio
+    # + código) para que los separadores amarillos no se repitan; dentro de cada
+    # campaña las muestras van por fecha y luego por HORA de recolección (las más
+    # tempranas primero), con el código como desempate. Así, al editar la hora de
+    # una muestra, esta se reubica cronológicamente de forma automática.
     datos = sorted(
         datos,
         key=lambda d: (
@@ -976,6 +995,7 @@ def main() -> None:
             d.get("campana_codigo") or "",
             d.get("campana_id") or "",
             d.get("fecha") or "",
+            _hora_a_minutos(d.get("hora")),
             d.get("punto_codigo") or "",
             d.get("codigo_muestra") or "",
         ),
@@ -1155,8 +1175,8 @@ def main() -> None:
 
                 datos_ed = sorted(
                     datos_ed,
-                    key=lambda d: (d.get("fecha") or "", d.get("punto_codigo") or "",
-                                   d.get("codigo_muestra") or ""),
+                    key=lambda d: (d.get("fecha") or "", _hora_a_minutos(d.get("hora")),
+                                   d.get("punto_codigo") or "", d.get("codigo_muestra") or ""),
                 )
 
                 if not datos_ed:
