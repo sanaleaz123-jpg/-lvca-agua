@@ -1427,7 +1427,7 @@ def _construir_mapa(
         zoom_start=zoom or MAPA_ZOOM,
         tiles=None,
         prefer_canvas=True,
-        max_zoom=22,         # permite hacer zoom muy cerca
+        max_zoom=21,         # permite hacer zoom muy cerca
         min_zoom=5,
     )
 
@@ -1442,24 +1442,24 @@ def _construir_mapa(
     folium.TileLayer(
         "CartoDB positron",
         name="Mapa claro",
-        max_native_zoom=20, max_zoom=22,
+        max_native_zoom=20, max_zoom=21,
     ).add_to(m)
     folium.TileLayer(
         "OpenStreetMap",
         name="Calles",
-        max_native_zoom=19, max_zoom=22,
+        max_native_zoom=19, max_zoom=21,
     ).add_to(m)
-    # Esri World Imagery: cobertura limitada en zonas altiplánicas remotas.
-    # En la cuenca Chili-Quilca (Aguada Blanca, Pampa de Arrieros, etc.) no
-    # hay imagen satelital de alta resolución más allá de zoom 17. Limitamos
-    # max_native_zoom y max_zoom para que Leaflet repita el último tile válido
-    # en lugar de pedir tiles inexistentes (que vienen como "Map data not yet
-    # available").
+    # Esri World Imagery (Maxar Vivid). Sirve tiles nativos hasta ~z19 en la
+    # zona de Arequipa/altiplano (antes lo limitábamos a 17 por precaución, lo
+    # que restaba nitidez sin motivo). Regla anti-blanco: max_native_zoom < max_zoom
+    # y max_zoom == max_zoom del mapa (21). Así, al pasar de z19 Leaflet sobre-
+    # escala el último tile válido en vez de quedar EN BLANCO (bug anterior:
+    # la capa tenía max_zoom=19 < 22 del mapa → sin tiles entre z20-22).
     folium.TileLayer(
         tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-        attr="Esri",
+        attr="Tiles © Esri — Source: Esri, Maxar, Earthstar Geographics y la comunidad de usuarios GIS",
         name="Satélite",
-        max_native_zoom=17, max_zoom=19,
+        max_native_zoom=19, max_zoom=21,
     ).add_to(m)
     # Capa Topográfico removida — el satélite + calles cubren los casos de uso
     # y reduce la carga visual del control de capas.
@@ -1502,6 +1502,11 @@ def _construir_mapa(
         border-radius: 12px !important;
         width: 38px !important; height: 38px !important;
         background-size: 20px 20px !important;
+        transition: box-shadow .15s ease, transform .15s ease;
+    }
+    .leaflet-control-layers-toggle:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 6px 16px rgba(15,23,42,0.12), 0 1px 3px rgba(15,23,42,0.06) !important;
     }
     .leaflet-control-layers-expanded {
         padding: 12px 14px 12px 12px !important;
@@ -1540,6 +1545,7 @@ def _construir_mapa(
         line-height: 32px !important;
         color: #0D47A1 !important;
         border-bottom: 1px solid #eef2f6 !important;
+        transition: background-color .15s ease, color .15s ease !important;
     }
     .leaflet-bar a:hover { background: #f1f5f9 !important; }
     .leaflet-bar a.leaflet-disabled { color: #cbd5e1 !important; }
@@ -2532,6 +2538,7 @@ def _firma_sync_mapa() -> tuple:
 @st.fragment
 def _fragmento_mapa(puntos_con_coords: list[dict], opciones_punto: dict) -> None:
     """Columna izquierda: buscador + filtros del mapa + Folium + clicks."""
+    import folium
     from streamlit_folium import st_folium
 
     # ── Buscador de punto (zoom-to) — estilo Visor Geohidro del ANA ──────
@@ -2603,26 +2610,68 @@ def _fragmento_mapa(puntos_con_coords: list[dict], opciones_punto: dict) -> None
                 use_container_width=True,
             )
 
-    # ── Enfoque del mapa: en Modo Punto, centrar en el punto activo ──
-    centro = zoom_sel = punto_sel_id = None
+    # ── Mapa base cacheado por firma de contenido ───────────────────────
+    # Fluidez: NO reconstruimos el mapa al seleccionar un punto. El mapa base
+    # se cachea por (cuenca + solo_exc + puntos renderizados). Seleccionar o
+    # buscar un punto reutiliza el MISMO objeto Folium (su HTML es estable →
+    # st_folium NO re-monta el iframe) y solo panea vía center/zoom + dibuja el
+    # anillo como feature_group sobre el mapa vivo. Esto elimina el parpadeo en
+    # blanco al hacer click/buscar. El mapa solo se reconstruye cuando cambia el
+    # conjunto de puntos o los filtros (acción deliberada y poco frecuente).
+    firma_mapa = (
+        cuenca_sel, solo_exc,
+        tuple(
+            (
+                p["id"], p.get("estado"),
+                p.get("n_excedencias"), p.get("n_parametros_evaluados"),
+                p.get("indice_cumplimiento"),
+            )
+            for p in pts_mapa
+        ),
+    )
+    _cache = st.session_state.get("_geo_mapa_cache")
+    if not _cache or _cache[0] != firma_mapa:
+        mapa = _construir_mapa(
+            pts_mapa, solo_excedencias=solo_exc,
+            centro=None, zoom=None, punto_sel_id=None,
+        )
+        st.session_state["_geo_mapa_cache"] = (firma_mapa, mapa)
+    else:
+        mapa = _cache[1]
+
+    # ── Enfoque del mapa: en Modo Punto, panear al punto activo ──────────
+    # center/zoom mueven el mapa VIVO (sin reconstruir tiles); el anillo se pasa
+    # como feature_group para que aparezca sin re-montar el iframe.
+    centro = zoom_sel = None
+    fg_sel = None
     if st.session_state.get("geo_modo") == "punto":
         _lbl_sel = st.session_state.get("geo_punto")
         _p_sel = opciones_punto.get(_lbl_sel) if _lbl_sel else None
         if _p_sel:
-            centro = [_p_sel["latitud"], _p_sel["longitud"]]
-            zoom_sel = 13
-            punto_sel_id = _p_sel.get("id")
+            _pid = _p_sel.get("id")
+            # Centrar UNA sola vez por selección: no secuestrar el zoom/pan
+            # manual del usuario en reruns posteriores (cambiar tab, parámetro…).
+            if st.session_state.get("_geo_centrado_en") != _pid:
+                centro = (_p_sel["latitud"], _p_sel["longitud"])
+                zoom_sel = 13
+                st.session_state["_geo_centrado_en"] = _pid
+            fg_sel = folium.FeatureGroup(name="seleccion")
+            folium.CircleMarker(
+                location=[_p_sel["latitud"], _p_sel["longitud"]],
+                radius=26, color="#0D47A1", weight=3,
+                fill=False, dash_array="6,4",
+                tooltip=f"Punto seleccionado: {_p_sel['codigo']}",
+            ).add_to(fg_sel)
+    else:
+        st.session_state.pop("_geo_centrado_en", None)
 
-    mapa = _construir_mapa(
-        pts_mapa,
-        solo_excedencias=solo_exc,
-        centro=centro,
-        zoom=zoom_sel,
-        punto_sel_id=punto_sel_id,
-    )
     map_data = st_folium(
-        mapa, use_container_width=True, height=540,
+        mapa, use_container_width=True, height=640,
         returned_objects=["last_object_clicked"],
+        key="geo_mapa",
+        center=centro,
+        zoom=zoom_sel,
+        feature_group_to_add=fg_sel,
     )
     n_visibles = sum(
         1 for p in pts_mapa

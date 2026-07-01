@@ -1518,6 +1518,16 @@ hr {
     flex-direction: row !important;
     gap: 10px !important;
 }
+/* Marco del visor Folium: mismo lenguaje que las tarjetas del portal
+   (esquinas redondeadas + borde sutil + sombra suave). El <iframe> del mapa
+   vive en el documento padre (no dentro del iframe Leaflet), por eso se
+   estiliza aquí y no en _MAP_CONTROLS_CSS. En el geoportal el único iframe
+   de nivel superior es el mapa, así que el selector no afecta otros elementos. */
+[data-testid="stMainBlockContainer"]:has(.lvca-geo-vista-integrada) iframe {
+    border-radius: 14px !important;
+    border: 1px solid #e2e8f0 !important;
+    box-shadow: 0 4px 14px rgba(15,23,42,0.08), 0 1px 3px rgba(15,23,42,0.05) !important;
+}
 
 /* ── Banner de página (page_header + login) ─────────────────────────────
    Minimalista refinado: encabezado claro sobre tarjeta blanca, título en
