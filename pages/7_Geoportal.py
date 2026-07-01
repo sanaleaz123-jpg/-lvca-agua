@@ -1409,7 +1409,6 @@ def _construir_mapa(
     solo_excedencias: bool,
     centro: list[float] | None = None,
     zoom: int | None = None,
-    punto_sel_id: str | None = None,
 ):
     """
     Mapa Folium con cuencas, red hídrica, puntos y alertas OMS de
@@ -1417,7 +1416,8 @@ def _construir_mapa(
     cromática de los marcadores (mismo IC, dos canales visuales).
 
     centro/zoom permiten enfocar el mapa (ej. al punto seleccionado en
-    Modo Punto). punto_sel_id dibuja un anillo de selección sobre ese punto.
+    Modo Punto). La selección del punto activo se dibuja aparte, vía un
+    FeatureGroup pasado a st_folium (feature_group_to_add).
     """
     import folium
     from folium.plugins import MiniMap, Fullscreen, MeasureControl
@@ -1828,22 +1828,6 @@ def _construir_mapa(
         "n_puntos_con_analisis": n_puntos_cyano,
         "error": cyano_error,
     }
-
-    # Anillo de selección sobre el punto activo en Modo Punto — referencia
-    # visual de cuál punto está cargado en el panel lateral.
-    if punto_sel_id:
-        for p in pts_filtrados:
-            if p.get("id") == punto_sel_id:
-                folium.CircleMarker(
-                    location=[p["latitud"], p["longitud"]],
-                    radius=26,
-                    color="#0D47A1",
-                    weight=3,
-                    fill=False,
-                    dash_array="6,4",
-                    tooltip=f"Punto seleccionado: {p['codigo']}",
-                ).add_to(m)
-                break
 
     # Lector de coordenadas UTM WGS84 zona 19S bajo el cursor — los técnicos
     # de campo trabajan con UTM, no con lat/lon. Conversión Transverse
@@ -2680,7 +2664,7 @@ def _fragmento_mapa(puntos_con_coords: list[dict], opciones_punto: dict) -> None
     # capas GeoJSON pesadas ya están cacheadas con @st.cache_data.
     mapa = _construir_mapa(
         pts_mapa, solo_excedencias=solo_exc,
-        centro=None, zoom=None, punto_sel_id=None,
+        centro=None, zoom=None,
     )
 
     # ── Enfoque del mapa: en Modo Punto, panear al punto activo ──────────
