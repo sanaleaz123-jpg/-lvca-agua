@@ -89,7 +89,7 @@ def get_muestras_microcistina(campana_id: str) -> list[dict]:
         db.table("muestras")
         .select(
             "id, codigo, fecha_muestreo, hora_recoleccion, punto_muestreo_id, "
-            "puntos_muestreo(id, codigo, nombre, descripcion, utm_este, utm_norte)"
+            "puntos_muestreo(id, codigo, nombre, descripcion, cuenca, utm_este, utm_norte)"
         )
         .eq("campana_id", campana_id)
         .order("fecha_muestreo")

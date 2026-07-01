@@ -146,6 +146,57 @@ def _es_qc(t) -> bool:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Procedencia: sistemas hídricos regulados por AUTODEMA
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _sistema_de_cuenca(cuenca: str) -> tuple[str, bool]:
+    """
+    Clasifica la cuenca de un punto para el campo Procedencia.
+    Devuelve (nombre, es_regulado): las cuencas del sistema AUTODEMA devuelven
+    ('Chili'|'Colca', True); cualquier otra, (nombre_de_cuenca, False).
+    Cuencas canónicas: 'Quilca-Chili-Vitor' (sistema Chili) y 'Colca-Camaná'
+    (sistema Colca) — ver services/punto_service.CUENCAS_CANONICAS.
+    """
+    s = _norm(cuenca)
+    if "CHILI" in s:
+        return "Chili", True
+    if "COLCA" in s:
+        return "Colca", True
+    return (cuenca or "").strip(), False
+
+
+def _procedencia_sistema(puntos: list[dict]) -> str:
+    """
+    Texto de procedencia según la cuenca de los puntos del reporte:
+      - solo Chili  → 'Sistema Chili regulado'
+      - solo Colca  → 'Sistema Colca regulado'
+      - ambos       → 'Sistemas Chili regulado y Colca regulado'
+    Los puntos fuera del sistema regulado aportan el nombre de su cuenca tal cual.
+    """
+    regulados: list[str] = []
+    otras: list[str] = []
+    for p in puntos:
+        cuenca = (p.get("cuenca") or "").strip()
+        if not cuenca:
+            continue
+        nombre, reg = _sistema_de_cuenca(cuenca)
+        if reg:
+            if nombre not in regulados:
+                regulados.append(nombre)
+        elif nombre and nombre not in otras:
+            otras.append(nombre)
+
+    regulados.sort(key=lambda n: {"Chili": 0, "Colca": 1}.get(n, 9))
+    partes: list[str] = []
+    if len(regulados) == 1:
+        partes.append(f"Sistema {regulados[0]} regulado")
+    elif len(regulados) >= 2:
+        partes.append("Sistemas " + " y ".join(f"{n} regulado" for n in regulados))
+    partes.extend(otras)
+    return "; ".join(partes) if partes else "Sistema Chili o Colca regulado"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Ensamblado de datos
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -237,11 +288,8 @@ def _assemble(campana_id: str, overrides: dict) -> dict:
             "cv": m.get("cv_pct"),
         })
 
-    # Procedencia / proyecto por defecto.
-    procedencia = overrides.get("procedencia")
-    if not procedencia and puntos:
-        descs = [p.get("descripcion") or p.get("nombre") for p in puntos if p.get("descripcion") or p.get("nombre")]
-        procedencia = max(set(descs), key=descs.count) if descs else campana.get("nombre", "")
+    # Procedencia: sistema regulado (Chili/Colca) según la cuenca de los puntos.
+    procedencia = overrides.get("procedencia") or _procedencia_sistema(puntos)
     proyecto = overrides.get("proyecto") or campana.get("nombre", "")
 
     return {
@@ -370,7 +418,8 @@ def _fill_parrafos(doc, datos: dict) -> None:
     meta = datos["meta"]
     filas = datos["filas"]
     cv_max = datos["cv_max"]
-    lote = datos["corrida"].get("kit_lote") or "ABRAXIS/SAES"
+    corrida = datos["corrida"]
+    lote = corrida.get("kit_lote") or "ABRAXIS/SAES"
 
     # %CV de duplicados por muestra.
     partes = [f"{f['punto_codigo']}: {_fmt_num(f['cv'], 2)}%" for f in filas if f.get("cv") is not None]
@@ -392,6 +441,14 @@ def _fill_parrafos(doc, datos: dict) -> None:
         obs_linea = (
             "Observación: todas las muestras presentaron %CV de duplicados dentro del "
             f"criterio establecido por el fabricante (≤ {_fmt_num(cv_max, 0)}%)."
+        )
+
+    # Validez de la curva de calibración de la corrida (R² del ajuste 4PL).
+    r2 = corrida.get("r2")
+    if r2 is not None:
+        obs_linea += (
+            " La curva de calibración 4PL de la corrida presentó un coeficiente de "
+            f"determinación R² = {_fmt_num(r2, 5)} (criterio de aceptación ≥ 0.98)."
         )
 
     for p in doc.paragraphs:
