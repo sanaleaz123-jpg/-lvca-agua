@@ -484,7 +484,9 @@ def main() -> None:
         with sub_reg:
             render_panel_microcistina(analista_id=_get_usuario_interno_id(sesion.uid))
         with sub_hist:
-            render_historial_microcistina()
+            render_historial_microcistina(
+                analista_id=_get_usuario_interno_id(sesion.uid)
+            )
 
 
 def _flujo_por_muestra() -> None:

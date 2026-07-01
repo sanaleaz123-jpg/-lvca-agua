@@ -16,6 +16,7 @@ Funciones públicas:
     estado_registro_microcistina(muestra_ids)  → {muestra_id: 'registrado'|'validado'}
     listar_corridas()                          → historial de placas + estadísticas
     get_muestras_de_corrida(corrida_id)        → muestras/resultados de una placa
+    eliminar_corrida(corrida_id, ...)          → borra la placa y sus resultados
     calcular_corrida(...)                       → cálculo en memoria (preview)
     guardar_corrida(campana_id, ...)           → guarda placa de una campaña (ingreso manual)
     guardar_corrida_importada(imp, asignaciones, ...) → guarda placa importada de Excel
@@ -468,6 +469,71 @@ def get_muestras_de_corrida(corrida_id: str) -> list[dict]:
         })
     out.sort(key=lambda x: (x["campana"], x["muestra"]))
     return out
+
+
+def eliminar_corrida(
+    corrida_id: str, *, forzar: bool = False, usuario_id: Optional[str] = None
+) -> dict:
+    """
+    Elimina una corrida (placa) ELISA y los resultados de microcistina que
+    produjo (los borra por completo: la muestra queda como si no se hubiera
+    analizado). No toca resultados de otros parámetros.
+
+    Seguridad: si la corrida tiene resultados VALIDADOS (firmados) NO se elimina
+    salvo forzar=True, para proteger registros oficiales. Requiere rol analista_lab
+    (lo aplica también RLS a nivel de BD). Registra el borrado en el audit_log.
+
+    Devuelve: {"resultados_eliminados": int, "validados": int}.
+    """
+    if not corrida_id:
+        raise ValueError("Se requiere el id de la corrida.")
+    db = get_db()
+    param_id = (get_param_microcistina() or {}).get("id")
+
+    n_total = 0
+    n_val = 0
+    if param_id:
+        try:
+            rr = (
+                db.table("resultados_laboratorio")
+                .select("id, validado")
+                .eq("parametro_id", param_id)
+                .eq("corrida_id", corrida_id)
+                .execute()
+            )
+            rows = rr.data or []
+            n_total = len(rows)
+            n_val = sum(1 for r in rows if r.get("validado"))
+        except Exception:
+            pass
+
+    if n_val and not forzar:
+        raise ValueError(
+            f"La corrida tiene {n_val} resultado(s) validado(s) (firmados). "
+            "Anula la validación antes de eliminarla."
+        )
+
+    # Orden importante: borrar primero los resultados (por corrida_id) y luego la
+    # corrida. Si se borrara la corrida primero, la FK ON DELETE SET NULL dejaría
+    # corrida_id=NULL y ya no podríamos localizarlos.
+    if param_id:
+        db.table("resultados_laboratorio").delete().eq(
+            "parametro_id", param_id
+        ).eq("corrida_id", corrida_id).execute()
+    db.table("elisa_microcistina_corridas").delete().eq("id", corrida_id).execute()
+
+    _invalidar_cache()
+    try:
+        from services.audit_service import registrar_cambio
+        registrar_cambio(
+            tabla="elisa_microcistina_corridas", registro_id=corrida_id,
+            accion="eliminar",
+            valor_anterior=f"resultados={n_total}, validados={n_val}",
+            usuario_id=usuario_id,
+        )
+    except Exception:
+        pass
+    return {"resultados_eliminados": n_total, "validados": n_val}
 
 
 # ─────────────────────────────────────────────────────────────────────────────

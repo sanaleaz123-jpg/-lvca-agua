@@ -25,6 +25,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from components.nav_context import rol_alcanza
 from components.ui_styles import (
     COLORS,
     LVCA_COLORWAY,
@@ -33,7 +34,11 @@ from components.ui_styles import (
     style_eca_dataframe,
 )
 from services.elisa_microcistina import STD_CONC_UGL
-from services.microcistina_service import get_muestras_de_corrida, listar_corridas
+from services.microcistina_service import (
+    eliminar_corrida,
+    get_muestras_de_corrida,
+    listar_corridas,
+)
 
 # Colores de estado de la corrida (espejo de los pills .lvca-pill-*).
 _ESTADO_COLORS = {
@@ -139,7 +144,7 @@ def _badge_validez(ok: bool) -> str:
 # Entrada pública
 # ─────────────────────────────────────────────────────────────────────────────
 
-def render_historial_microcistina() -> None:
+def render_historial_microcistina(analista_id: Optional[str] = None) -> None:
     """Panel de historial y comparación de corridas ELISA (montado como sub-pestaña)."""
     corridas = listar_corridas()
     if not corridas:
@@ -162,7 +167,7 @@ def render_historial_microcistina() -> None:
     with t_lista:
         _tab_lista(corridas)
     with t_det:
-        _tab_detalle(mapa)
+        _tab_detalle(mapa, analista_id)
     with t_comp:
         _tab_comparar(mapa)
     with t_tend:
@@ -218,7 +223,7 @@ def _tab_lista(corridas: list[dict]) -> None:
 # Pestaña: Detalle de una corrida
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _tab_detalle(mapa: dict[str, dict]) -> None:
+def _tab_detalle(mapa: dict[str, dict], analista_id: Optional[str] = None) -> None:
     sel = st.selectbox("Elige una corrida", list(mapa.keys()), key="mc_hist_det_sel")
     c = mapa[sel]
 
@@ -255,32 +260,78 @@ def _tab_detalle(mapa: dict[str, dict]) -> None:
 
     st.markdown("##### Muestras de esta corrida")
     muestras = get_muestras_de_corrida(c["id"])
+    n_val = sum(1 for m in muestras if m.get("validado"))
     if not muestras:
         st.caption("Esta corrida no tiene muestras asignadas.")
-        return
-    filas = []
-    for m in muestras:
-        ug = m.get("valor_ugL")
-        filas.append({
-            "Campaña": m.get("campana") or "—",
-            "Muestra": m.get("muestra") or "—",
-            "Fecha": _fecha(m.get("fecha")),
-            "Valor µg/L": ug,
-            "Valor mg/L": (ug / 1000.0) if ug is not None else None,
-            "OD 1": m.get("od_1"),
-            "OD 2": m.get("od_2"),
-            "%CV": m.get("cv_pct"),
-            "Cualif.": m.get("cualificador") or "",
-            "Estado": "Validada" if m.get("validado") else "Registrada",
-        })
-    dfm = pd.DataFrame(filas)
-    stm = style_eca_dataframe(dfm, state_col="Estado", state_colors=_ESTADO_COLORS)
-    stm = stm.format(
-        {"Valor µg/L": "{:.4f}", "Valor mg/L": "{:.6f}", "OD 1": "{:g}",
-         "OD 2": "{:g}", "%CV": "{:.1f}"},
-        na_rep="—",
-    )
-    st.dataframe(stm, hide_index=True, use_container_width=True)
+    else:
+        filas = []
+        for m in muestras:
+            ug = m.get("valor_ugL")
+            filas.append({
+                "Campaña": m.get("campana") or "—",
+                "Muestra": m.get("muestra") or "—",
+                "Fecha": _fecha(m.get("fecha")),
+                "Valor µg/L": ug,
+                "Valor mg/L": (ug / 1000.0) if ug is not None else None,
+                "OD 1": m.get("od_1"),
+                "OD 2": m.get("od_2"),
+                "%CV": m.get("cv_pct"),
+                "Cualif.": m.get("cualificador") or "",
+                "Estado": "Validada" if m.get("validado") else "Registrada",
+            })
+        dfm = pd.DataFrame(filas)
+        stm = style_eca_dataframe(dfm, state_col="Estado", state_colors=_ESTADO_COLORS)
+        stm = stm.format(
+            {"Valor µg/L": "{:.4f}", "Valor mg/L": "{:.6f}", "OD 1": "{:g}",
+             "OD 2": "{:g}", "%CV": "{:.1f}"},
+            na_rep="—",
+        )
+        st.dataframe(stm, hide_index=True, use_container_width=True)
+
+    _zona_eliminar(c, len(muestras), n_val, analista_id)
+
+
+def _zona_eliminar(c: dict, n_muestras: int, n_val: int, analista_id: Optional[str]) -> None:
+    """Zona de borrado de la corrida (solo analista_lab+, con confirmación)."""
+    if not rol_alcanza("analista_lab"):
+        return  # solo analista de laboratorio / administrador puede eliminar
+
+    with st.expander("Eliminar esta corrida", icon=":material/delete:"):
+        st.markdown(
+            f"Se eliminarán **la corrida** (curva y control) y sus **{n_muestras} "
+            "resultado(s)** de muestra. Las muestras quedarán como si no se hubieran "
+            "analizado. **Esta acción no se puede deshacer.**"
+        )
+        if n_val:
+            st.warning(
+                f"Esta corrida tiene {n_val} resultado(s) validado(s) (firmados). "
+                "Anula la validación de esas muestras antes de poder eliminarla."
+            )
+            return
+
+        ok = st.checkbox(
+            f"Confirmo que quiero eliminar esta corrida y sus {n_muestras} resultado(s).",
+            key=f"mc_hist_del_chk_{c['id']}",
+        )
+        st.markdown('<div class="lvca-danger">', unsafe_allow_html=True)
+        pulsado = st.button(
+            "Eliminar corrida", type="primary", disabled=not ok,
+            key=f"mc_hist_del_btn_{c['id']}",
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
+        if pulsado:
+            try:
+                res = eliminar_corrida(c["id"], usuario_id=analista_id)
+                # Los selectores guardan la etiqueta de la corrida borrada; se
+                # limpian para que no apunten a una opción inexistente tras el rerun.
+                for k in ("mc_hist_det_sel", "mc_hist_cmp_sel"):
+                    st.session_state.pop(k, None)
+                st.success(
+                    f"Corrida eliminada ({res['resultados_eliminados']} resultado(s) borrados)."
+                )
+                st.rerun()
+            except Exception as exc:
+                st.error(f"No se pudo eliminar: {exc}")
 
 
 def _plot_curva_detalle(c: dict, par) -> None:
