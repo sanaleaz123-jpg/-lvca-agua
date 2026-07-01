@@ -35,6 +35,7 @@ CONTACTOS: list[dict] = [
     {"nombre": "Ana Lucia Paz Alcazar",                                       "correo": "apaz@autodema.gob.pe",             "entidad": "AUTODEMA"},
     {"nombre": "Laboratorio de Vigilancia de la Calidad del Agua AUTODEMA",   "correo": "lvca.vigilancia@autodema.gob.pe",  "entidad": "AUTODEMA"},
     {"nombre": "Eliana Fani Colque Pocco",                                    "correo": "ecolque@sedapar.com.pe",           "entidad": "SEDAPAR"},
+    {"nombre": "Adrian Llacho Huarza",                                        "correo": "sanaleaz123@gmail.com",            "entidad": "AUTODEMA"},
 ]
 
 
