@@ -1528,6 +1528,28 @@ hr {
     border: 1px solid #e2e8f0 !important;
     box-shadow: 0 4px 14px rgba(15,23,42,0.08), 0 1px 3px rgba(15,23,42,0.05) !important;
 }
+/* Skeleton del visor: mientras el componente monta y cargan los tiles, el
+   contenedor del mapa muestra un shimmer suave (en vez de un salto en blanco)
+   y reserva la altura del mapa para que el layout no salte. El <iframe>, ya
+   opaco, lo tapa en cuanto Leaflet pinta. */
+@keyframes lvca-geo-shimmer {
+    0%   { background-position: -700px 0; }
+    100% { background-position: 700px 0; }
+}
+[data-testid="stMainBlockContainer"]:has(.lvca-geo-vista-integrada) [data-testid="stElementContainer"]:has(iframe) {
+    min-height: 680px;
+    border-radius: 14px;
+    background: linear-gradient(100deg, #eef2f7 20%, #f6f9fc 45%, #eef2f7 70%);
+    background-size: 1400px 100%;
+    animation: lvca-geo-shimmer 1.7s linear infinite;
+}
+/* Barra de filtros del mapa alineada verticalmente: el toggle, el selectbox de
+   cuenca y el popover Exportar tienen distinta altura de línea base. El ancla
+   .lvca-geo-filtros no ocupa espacio; alinea la fila de columnas siguiente. */
+[data-testid="stElementContainer"]:has(.lvca-geo-filtros) { display: none !important; }
+[data-testid="stElementContainer"]:has(.lvca-geo-filtros) + [data-testid="stHorizontalBlock"] {
+    align-items: center !important;
+}
 
 /* ── Banner de página (page_header + login) ─────────────────────────────
    Minimalista refinado: encabezado claro sobre tarjeta blanca, título en

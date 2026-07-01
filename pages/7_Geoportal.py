@@ -1489,7 +1489,10 @@ def _construir_mapa(
     # orden de creación de los controles.
     _MAP_CONTROLS_CSS = """
     <style>
-    .leaflet-container { font-family: 'Inter','Segoe UI',sans-serif; }
+    .leaflet-container {
+        font-family: 'Inter','Segoe UI',sans-serif;
+        background: #eaeef3;  /* fondo suave mientras cargan los tiles (no gris) */
+    }
     /* Panel de capas */
     .leaflet-control-layers {
         border: 1px solid #e2e8f0 !important;
@@ -1554,6 +1557,29 @@ def _construir_mapa(
         background: rgba(255,255,255,0.78) !important;
         border-radius: 6px 0 0 0 !important;
         font-size: 10px !important; color: #94a3b8 !important;
+    }
+    /* Marcador de selección con pulso. Se usa un DivIcon (DOM) en vez de un
+       CircleMarker sobre canvas, que no es animable por CSS. Un anillo estático
+       con halo blanco + un pulso que se expande y desvanece. */
+    .lvca-sel-divicon { background: transparent !important; border: none !important; }
+    .lvca-sel-mark { position: relative; width: 52px; height: 52px; }
+    .lvca-sel-ring, .lvca-sel-pulse {
+        position: absolute; left: 50%; top: 50%;
+        width: 44px; height: 44px; margin: -22px 0 0 -22px;
+        border-radius: 50%; pointer-events: none;
+    }
+    .lvca-sel-ring {
+        border: 3px solid #0D47A1;
+        box-shadow: 0 0 0 2px rgba(255,255,255,0.9);
+    }
+    .lvca-sel-pulse {
+        border: 3px solid #1565C0;
+        animation: lvca-sel-pulse 1.6s ease-out infinite;
+    }
+    @keyframes lvca-sel-pulse {
+        0%   { transform: scale(0.6);  opacity: 0.85; }
+        80%  { transform: scale(1.55); opacity: 0; }
+        100% { transform: scale(1.55); opacity: 0; }
     }
     </style>
     """
@@ -1711,11 +1737,11 @@ def _construir_mapa(
         folium.CircleMarker(
             location=[lat, lon],
             radius=radius,
-            color="#333",
-            weight=1.5,
+            color="#1e293b",
+            weight=2,
             fill=True,
             fill_color=color_hex,
-            fill_opacity=0.85,
+            fill_opacity=0.9,
             tooltip=f"{p['codigo']} — {p['nombre']} ({estado.replace('_',' ')})",
             popup=folium.Popup(popup_html, max_width=340, lazy=True),
         ).add_to(fg_puntos)
@@ -1748,7 +1774,10 @@ def _construir_mapa(
             f"{titulo} ({n_puntos_cyano})"
             if n_puntos_cyano else f"{titulo} (sin análisis)"
         )
-        fg = folium.FeatureGroup(name=label, show=True)
+        # 1999 (cél/mL) visible por defecto; 2021 (biovolumen, anillo exterior
+        # punteado) arranca apagado para no saturar el mapa con dos anillos por
+        # punto. Ambos siguen activables desde el control de capas.
+        fg = folium.FeatureGroup(name=label, show=(version == "1999"))
         for p in pts_filtrados:
             alerta = alertas_cyano.get(p["id"])
             if not alerta:
@@ -1780,7 +1809,8 @@ def _construir_mapa(
                 location=[p["latitud"], p["longitud"]],
                 radius=18 if version == "1999" else 22,
                 color=nivel_info.get("color_borde", "#6c757d"),
-                weight=3,
+                weight=2,
+                opacity=0.75,
                 fill=False,
                 dash_array=None if version == "1999" else "5,5",
                 tooltip=tooltip,
@@ -1900,6 +1930,26 @@ def _construir_mapa(
         </div>
         <span id="lvca-legend-caret" style="color:#94a3b8;
              font-size:10px; margin-left:12px;">&#9656;</span>
+      </div>
+      <!-- Chips de estado ECA SIEMPRE visibles: la clave de lectura del
+           semáforo no queda oculta tras el click. El detalle (OMS, capas,
+           sin datos) sigue en el cuerpo colapsable. -->
+      <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">
+        <span style="display:inline-flex; align-items:center; gap:5px;
+             background:#f8fafc; border:1px solid #eef2f6; border-radius:999px;
+             padding:3px 9px; font-size:10.5px; font-weight:600; color:#334155;">
+          <span style="width:9px; height:9px; border-radius:50%;
+               background:#10B981; box-shadow:0 0 0 1px #047857 inset;"></span>Cumple</span>
+        <span style="display:inline-flex; align-items:center; gap:5px;
+             background:#f8fafc; border:1px solid #eef2f6; border-radius:999px;
+             padding:3px 9px; font-size:10.5px; font-weight:600; color:#334155;">
+          <span style="width:9px; height:9px; border-radius:50%;
+               background:#F59E0B; box-shadow:0 0 0 1px #B45309 inset;"></span>Leve</span>
+        <span style="display:inline-flex; align-items:center; gap:5px;
+             background:#f8fafc; border:1px solid #eef2f6; border-radius:999px;
+             padding:3px 9px; font-size:10.5px; font-weight:600; color:#334155;">
+          <span style="width:9px; height:9px; border-radius:50%;
+               background:#EF4444; box-shadow:0 0 0 1px #B91C1C inset;"></span>Severo</span>
       </div>
       <div id="lvca-legend-body" style="margin-top:8px; color:#334155;
            display:none;">
@@ -2544,7 +2594,7 @@ def _fragmento_mapa(puntos_con_coords: list[dict], opciones_punto: dict) -> None
     # ── Buscador de punto (zoom-to) — estilo Visor Geohidro del ANA ──────
     # Seleccionar un punto centra el mapa en él (Modo Punto) y sincroniza la
     # sidebar, igual que un click en el marcador.
-    _PLACEHOLDER_BUSCAR = "🔍  Buscar punto de monitoreo…"
+    _PLACEHOLDER_BUSCAR = "Buscar punto de monitoreo…"
     labels_busqueda = list(opciones_punto.keys())
     sel_buscar = st.selectbox(
         "Buscar punto de monitoreo",
@@ -2563,6 +2613,9 @@ def _fragmento_mapa(puntos_con_coords: list[dict], opciones_punto: dict) -> None
         st.rerun()  # scope app: sidebar y mapa se sincronizan
 
     # ── Filtros del mapa + exportación ───────────────────────────────
+    # Ancla para alinear verticalmente la barra de filtros (toggle + selectbox
+    # + popover tienen distinta altura de línea base). CSS en ui_styles.
+    st.markdown('<div class="lvca-geo-filtros"></div>', unsafe_allow_html=True)
     fc1, fc2, fc3 = st.columns([2.4, 2.4, 1.4])
     with fc1:
         solo_exc = st.toggle(
@@ -2656,32 +2709,45 @@ def _fragmento_mapa(puntos_con_coords: list[dict], opciones_punto: dict) -> None
                 zoom_sel = 13
                 st.session_state["_geo_centrado_en"] = _pid
             fg_sel = folium.FeatureGroup(name="seleccion")
-            folium.CircleMarker(
+            folium.Marker(
                 location=[_p_sel["latitud"], _p_sel["longitud"]],
-                radius=26, color="#0D47A1", weight=3,
-                fill=False, dash_array="6,4",
+                icon=folium.DivIcon(
+                    html=(
+                        '<div class="lvca-sel-mark">'
+                        '<div class="lvca-sel-pulse"></div>'
+                        '<div class="lvca-sel-ring"></div>'
+                        '</div>'
+                    ),
+                    icon_size=(52, 52),
+                    icon_anchor=(26, 26),
+                    class_name="lvca-sel-divicon",
+                ),
                 tooltip=f"Punto seleccionado: {_p_sel['codigo']}",
             ).add_to(fg_sel)
     else:
         st.session_state.pop("_geo_centrado_en", None)
 
     map_data = st_folium(
-        mapa, use_container_width=True, height=640,
+        mapa, use_container_width=True, height=680,
         returned_objects=["last_object_clicked"],
         key="geo_mapa",
         center=centro,
         zoom=zoom_sel,
         feature_group_to_add=fg_sel,
     )
-    n_visibles = sum(
-        1 for p in pts_mapa
+    # Contador SIEMPRE visible: da contexto continuo de "qué estoy viendo"
+    # (puntos en el mapa + cuántos en excedencia), sin tener que contar
+    # marcadores. Si hay filtros activos, indica también el total.
+    pts_visibles = [
+        p for p in pts_mapa
         if not solo_exc or p.get("estado") == "excedencia"
-    )
+    ]
+    n_visibles = len(pts_visibles)
+    n_exc_vis = sum(1 for p in pts_visibles if p.get("estado") == "excedencia")
+    _cap = f"**{n_visibles}** puntos en el mapa · **{n_exc_vis}** en excedencia"
     if n_visibles < len(puntos_con_coords):
-        st.caption(
-            f"Mostrando {n_visibles} de {len(puntos_con_coords)} puntos "
-            f"(filtros activos)."
-        )
+        _cap += f"  ·  filtros activos ({n_visibles}/{len(puntos_con_coords)})"
+    st.caption(_cap)
 
     # Click en marcador → cambia automáticamente a Modo Punto + selecciona el punto.
     # IMPORTANTE: st_folium retorna `last_object_clicked` cacheado en cada rerun
