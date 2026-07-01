@@ -20,7 +20,7 @@ from typing import Optional
 import pandas as pd
 import streamlit as st
 
-from components.ui_styles import chip_eca_html
+from components.ui_styles import COLORS, chip_eca_html, icon
 from services.elisa_microcistina import STD_CONC_UGL
 from services.microcistina_import import (
     parse_excel_solver,
@@ -292,20 +292,36 @@ def _render_resultado(imp, analista_id: Optional[str]) -> None:
     estado_reg = estado_registro_microcistina([m for m in ids_vigentes if m])
     n_reg = sum(1 for mid in ids_vigentes if estado_reg.get(mid))
     if n_reg:
-        st.caption(
-            f"✅ {n_reg} de {len(imp.muestras)} muestra(s) de la placa ya "
-            "están registradas en la base de datos."
+        st.markdown(
+            "<div style='display:flex;align-items:center;gap:6px;margin:2px 0 4px;"
+            f"font-size:0.78rem;color:{COLORS['text_light']}'>"
+            + icon("check", size=15, color=COLORS["success"])
+            + f"<span>{n_reg} de {len(imp.muestras)} muestra(s) de la placa ya "
+            "están registradas en la base de datos.</span></div>",
+            unsafe_allow_html=True,
         )
 
     def _check_html(estado: Optional[str]) -> str:
+        # Iconografía SVG (Lucide) de la plataforma, no emojis.
         if estado == "validado":
-            return ("<div style='text-align:center;font-size:1.15rem' "
-                    "title='Registrada y validada (firmada)'>✅🔒</div>")
+            return (
+                "<div style='display:flex;align-items:center;justify-content:center;"
+                "gap:4px' title='Registrada y validada (firmada)'>"
+                + icon("check", size=18, color=COLORS["success"])
+                + icon("lock", size=13, color=COLORS["text_light"])
+                + "</div>"
+            )
         if estado == "registrado":
-            return ("<div style='text-align:center;font-size:1.15rem' "
-                    "title='Registrada'>✅</div>")
-        return ("<div style='text-align:center;color:#c7cdd6' "
-                "title='Sin registrar'>—</div>")
+            return (
+                "<div style='display:flex;justify-content:center' "
+                "title='Registrada'>"
+                + icon("check", size=18, color=COLORS["success"])
+                + "</div>"
+            )
+        return (
+            f"<div style='text-align:center;color:{COLORS['text_muted']}' "
+            "title='Sin registrar'>–</div>"
+        )
 
     h1, h2, h3, h4 = st.columns([1.6, 1.25, 1.55, 0.5])
     h1.caption("Muestra de la placa (valor final)")
