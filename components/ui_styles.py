@@ -1541,7 +1541,9 @@ hr {
     border-radius: 14px;
     background: linear-gradient(100deg, #eef2f7 20%, #f6f9fc 45%, #eef2f7 70%);
     background-size: 1400px 100%;
-    animation: lvca-geo-shimmer 1.7s linear infinite;
+    /* Finito (no 'infinite'): tras la carga el iframe opaco lo tapa; no tiene
+       sentido seguir repintando el fondo el resto de la sesión. */
+    animation: lvca-geo-shimmer 1.7s linear 8;
 }
 /* Barra de filtros del mapa alineada verticalmente: el toggle, el selectbox de
    cuenca y el popover Exportar tienen distinta altura de línea base. El ancla

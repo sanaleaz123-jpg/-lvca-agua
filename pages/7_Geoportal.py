@@ -2663,34 +2663,25 @@ def _fragmento_mapa(puntos_con_coords: list[dict], opciones_punto: dict) -> None
                 use_container_width=True,
             )
 
-    # ── Mapa base cacheado por firma de contenido ───────────────────────
-    # Fluidez: NO reconstruimos el mapa al seleccionar un punto. El mapa base
-    # se cachea por (cuenca + solo_exc + puntos renderizados). Seleccionar o
-    # buscar un punto reutiliza el MISMO objeto Folium (su HTML es estable →
-    # st_folium NO re-monta el iframe) y solo panea vía center/zoom + dibuja el
-    # anillo como feature_group sobre el mapa vivo. Esto elimina el parpadeo en
-    # blanco al hacer click/buscar. El mapa solo se reconstruye cuando cambia el
-    # conjunto de puntos o los filtros (acción deliberada y poco frecuente).
-    firma_mapa = (
-        cuenca_sel, solo_exc,
-        tuple(
-            (
-                p["id"], p.get("estado"),
-                p.get("n_excedencias"), p.get("n_parametros_evaluados"),
-                p.get("indice_cumplimiento"),
-            )
-            for p in pts_mapa
-        ),
+    # ── Mapa base reconstruido en cada render ────────────────────────────
+    # Fluidez: la clave para que st_folium NO re-monte el iframe (y no haya
+    # parpadeo en blanco al seleccionar) es que el HTML del mapa base sea
+    # ESTABLE entre reruns con el mismo contenido. Por eso el centro/zoom y el
+    # anillo de selección NO se hornean en el mapa: van como center=/zoom= y
+    # feature_group_to_add a st_folium, que los aplica sobre el mapa VIVO.
+    #
+    # Se reconstruye un objeto NUEVO en cada render a propósito (NO cachear el
+    # objeto folium en session_state): streamlit-folium MUTA el objeto que
+    # recibe (feature_group_to_add.add_to lo incrusta) y folium no es idempotente
+    # al re-renderizar, así que reutilizar el MISMO objeto entre reruns cambia su
+    # hash y reintroduce el re-montaje + deja anillos fantasma. Un objeto fresco
+    # por render tiene hash estable (los IDs aleatorios se normalizan) y refleja
+    # siempre los datos actuales (incl. alertas OMS). El coste es mínimo: las
+    # capas GeoJSON pesadas ya están cacheadas con @st.cache_data.
+    mapa = _construir_mapa(
+        pts_mapa, solo_excedencias=solo_exc,
+        centro=None, zoom=None, punto_sel_id=None,
     )
-    _cache = st.session_state.get("_geo_mapa_cache")
-    if not _cache or _cache[0] != firma_mapa:
-        mapa = _construir_mapa(
-            pts_mapa, solo_excedencias=solo_exc,
-            centro=None, zoom=None, punto_sel_id=None,
-        )
-        st.session_state["_geo_mapa_cache"] = (firma_mapa, mapa)
-    else:
-        mapa = _cache[1]
 
     # ── Enfoque del mapa: en Modo Punto, panear al punto activo ──────────
     # center/zoom mueven el mapa VIVO (sin reconstruir tiles); el anillo se pasa
