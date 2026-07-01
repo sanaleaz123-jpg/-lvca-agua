@@ -109,8 +109,8 @@ def _pantalla_login() -> None:
         <style>
         [data-testid='stHeader'] { display: none !important; }
         [data-testid='stMainBlockContainer'] {
-            padding-top: 14px !important;
-            padding-bottom: 18px !important;
+            padding-top: 22px !important;
+            padding-bottom: 22px !important;
             background: var(--lvca-bg-app);
             max-width: 100% !important;
         }
@@ -145,6 +145,13 @@ def _pantalla_login() -> None:
            de la plataforma. */
         .st-key-lvca_login_card [data-baseweb="input"] {
             border-radius: var(--lvca-radius-sm) !important;
+        }
+        /* Inputs del login algo más cómodos que el resto de la plataforma
+           (aquí sobra espacio vertical y se agradece un objetivo de click
+           más holgado). */
+        .st-key-lvca_login_card [data-baseweb="input"] input {
+            padding-top: 0.5rem !important;
+            padding-bottom: 0.5rem !important;
         }
         .st-key-lvca_login_card [data-baseweb="input"]:focus-within {
             border-color: var(--lvca-brand-azul-dark) !important;
@@ -188,15 +195,15 @@ def _pantalla_login() -> None:
             background: var(--lvca-bg-card);
             border: 1px solid var(--lvca-border-soft);
             border-radius: var(--lvca-radius-md);
-            padding: 10px 14px;
-            height: 76px;
+            padding: 12px 16px;
+            height: 92px;
             display: flex;
             align-items: center;
             justify-content: center;
             box-shadow: var(--lvca-shadow-xs);
         }
         .lvca-logo-frame img {
-            max-height: 56px;
+            max-height: 66px;
             max-width: 100%;
             object-fit: contain;
         }
@@ -218,12 +225,12 @@ def _pantalla_login() -> None:
                 """
                 <div style="position:relative; overflow:hidden;
                      background:var(--lvca-brand-azul-dark);
-                     color:white; padding:16px 28px 14px 28px; text-align:center;">
-                    <h1 style="margin:0; font-size:1.3rem; font-weight:700;
-                         color:#ffffff; letter-spacing:-0.02em; line-height:1.2;">
+                     color:white; padding:22px 28px 18px 28px; text-align:center;">
+                    <h1 style="margin:0; font-size:1.4rem; font-weight:700;
+                         color:#ffffff; letter-spacing:-0.02em; line-height:1.25;">
                         Laboratorio de Vigilancia<br>de Calidad de Agua
                     </h1>
-                    <p style="margin:7px 0 0 0; font-size:0.82rem;
+                    <p style="margin:10px 0 0 0; font-size:0.82rem;
                          color:rgba(255,255,255,0.92); font-weight:600;
                          letter-spacing:0.1em; text-transform:uppercase;">
                         AUTODEMA
@@ -241,7 +248,7 @@ def _pantalla_login() -> None:
                 st.markdown(
                     f"""
                     <div style="display:grid; grid-template-columns:1fr 1fr;
-                         gap:14px; margin:14px 0 2px 0;">
+                         gap:16px; margin:20px 0 4px 0;">
                         <div class="lvca-logo-frame">
                             <img src="{autodema_uri}" alt="PEIMS-AUTODEMA"/>
                         </div>
@@ -249,8 +256,8 @@ def _pantalla_login() -> None:
                             <img src="{lvca_uri}" alt="LVCA"/>
                         </div>
                     </div>
-                    <div style="text-align:center; color:var(--lvca-brand-azul-mid); font-size:0.88rem;
-                         font-weight:600; margin:12px 0 6px 0; letter-spacing:-0.01em;">
+                    <div style="text-align:center; color:var(--lvca-brand-azul-mid); font-size:0.9rem;
+                         font-weight:600; margin:18px 0 10px 0; letter-spacing:-0.01em;">
                         Iniciar sesión
                     </div>
                     """,
@@ -288,8 +295,8 @@ def _pantalla_login() -> None:
                 # Pie del card
                 st.markdown(
                     f"""<div style='text-align:center; color:var(--lvca-text-faint);
-                         font-size:0.72rem; margin-top:10px;
-                         border-top:1px solid var(--lvca-border-soft); padding:8px 0 8px 0;'>
+                         font-size:0.72rem; margin-top:14px;
+                         border-top:1px solid var(--lvca-border-soft); padding:10px 0 12px 0;'>
                         {APP_ENTIDAD} · v{APP_VERSION}
                     </div>""",
                     unsafe_allow_html=True,
