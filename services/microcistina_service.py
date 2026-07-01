@@ -404,6 +404,11 @@ def listar_corridas() -> list[dict]:
     for c in corridas:
         rows = res_por_corrida.get(c["id"], [])
         mids = {r["muestra_id"] for r in rows if r.get("muestra_id")}
+        if not mids:
+            # Corrida sin muestras vinculadas: residuo de re-registrar la misma
+            # placa (el upsert de resultados los reapunta a la corrida nueva y
+            # deja la anterior vacía). No aporta nada al historial → se omite.
+            continue
         val = {r["muestra_id"] for r in rows if r.get("validado") and r.get("muestra_id")}
         camps = sorted({camp_por_muestra.get(mid, "—") for mid in mids})
         c = dict(c)
@@ -607,6 +612,43 @@ def _persistir_corrida(db, row: dict, corrida_id: Optional[str]) -> Optional[str
     return data[0]["id"] if data else None
 
 
+def _limpiar_corridas_huerfanas(db, conservar: Optional[str] = None) -> int:
+    """
+    Borra corridas ELISA sin NINGÚN resultado de microcistina vinculado.
+
+    Estos huérfanos aparecen al re-registrar la misma placa: cada registro crea
+    una corrida nueva y el upsert de resultados (único por muestra+parámetro)
+    reapunta los resultados a la última, dejando la anterior vacía. Como no se
+    puede registrar una placa sin asignar muestras, toda corrida con 0 resultados
+    es un residuo seguro de borrar. `conservar` protege un id (la recién creada).
+    Devuelve cuántas borró.
+    """
+    param_id = (get_param_microcistina() or {}).get("id")
+    if not param_id:
+        return 0
+    try:
+        todas = {r["id"] for r in
+                 (db.table("elisa_microcistina_corridas").select("id").execute().data or [])}
+        usadas = {
+            r["corrida_id"] for r in (
+                db.table("resultados_laboratorio").select("corrida_id")
+                .eq("parametro_id", param_id).not_.is_("corrida_id", "null")
+                .execute().data or []
+            ) if r.get("corrida_id")
+        }
+    except Exception:
+        return 0
+    huerfanas = todas - usadas - ({conservar} if conservar else set())
+    n = 0
+    for cid in huerfanas:
+        try:
+            db.table("elisa_microcistina_corridas").delete().eq("id", cid).execute()
+            n += 1
+        except Exception:
+            pass
+    return n
+
+
 def _upsert_resultado(db, *, muestra_id, param_id, corrida_id, res: ResultadoMuestra,
                       lcm, fecha, analista_id) -> None:
     cualificador = None
@@ -672,6 +714,7 @@ def guardar_corrida(
         _upsert_resultado(db, muestra_id=mid, param_id=param_id, corrida_id=corrida_id,
                           res=res, lcm=lcm, fecha=fecha, analista_id=analista_id)
 
+    _limpiar_corridas_huerfanas(db, conservar=corrida_id)
     _invalidar_cache()
     return calc
 
@@ -733,6 +776,7 @@ def guardar_corrida_importada(
                           corrida_id=corrida_id, res=res, lcm=lcm,
                           fecha=fecha, analista_id=analista_id)
 
+    _limpiar_corridas_huerfanas(db, conservar=corrida_id)
     _invalidar_cache()
     return corrida_id
 
