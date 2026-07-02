@@ -1300,6 +1300,36 @@ def _render_dashboard(puntos: list[dict]) -> None:
 # 2. MAPA OPTIMIZADO (Fix 1: z-index — markers always above heatmap)
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _redondear_coords_geojson(obj: dict) -> dict:
+    """
+    Redondea las coordenadas de la geometría a 5 decimales (~1 m de precisión,
+    de sobra para un visor). Los archivos fuente traen ~14 decimales
+    (precisión sub-milimétrica), lo que infla ~70% el peso del GeoJSON que
+    viaja incrustado en el HTML del mapa EN CADA rerun del fragmento.
+    Solo toca `geometry.coordinates`; propiedades y estructura intactas.
+    Se aplica dentro de los loaders cacheados: corre una sola vez.
+    """
+    def _r(x):
+        if isinstance(x, float):
+            return round(x, 5)
+        if isinstance(x, list):
+            return [_r(v) for v in x]
+        return x
+
+    def _fix_geom(g):
+        if isinstance(g, dict) and "coordinates" in g:
+            g["coordinates"] = _r(g["coordinates"])
+
+    if obj.get("type") == "FeatureCollection":
+        for ft in obj.get("features", []):
+            _fix_geom(ft.get("geometry"))
+    elif obj.get("type") == "Feature":
+        _fix_geom(obj.get("geometry"))
+    else:
+        _fix_geom(obj)
+    return obj
+
+
 @st.cache_data(show_spinner=False)
 def _cargar_geojson_puntos() -> dict[str, dict]:
     """Carga las siluetas de cuerpos de agua (represas). Cacheado en disco."""
@@ -1316,7 +1346,7 @@ def _cargar_geojson_puntos() -> dict[str, dict]:
                 data = json.load(fh)
             codigo = data.get("properties", {}).get("punto", "")
             if codigo:
-                siluetas[codigo] = data
+                siluetas[codigo] = _redondear_coords_geojson(data)
         except Exception:
             pass
     return siluetas
@@ -1336,7 +1366,7 @@ def _cargar_geojson_cuencas() -> list[dict]:
         try:
             with open(f, encoding="utf-8") as fh:
                 cuencas.append({
-                    "data": json.load(fh),
+                    "data": _redondear_coords_geojson(json.load(fh)),
                     "nombre": f.stem.replace("_", " "),
                 })
         except Exception:
@@ -1358,7 +1388,7 @@ def _cargar_geojson_rios() -> list[dict]:
         try:
             with open(f, encoding="utf-8") as fh:
                 items.append({
-                    "data": json.load(fh),
+                    "data": _redondear_coords_geojson(json.load(fh)),
                     "nombre": f.stem.replace("rios_", "").replace("_", " ").title(),
                 })
         except Exception:
@@ -1439,15 +1469,20 @@ def _construir_mapa(
     # mapa claro (CartoDB Positron) para el look limpio de geoportal: deja
     # respirar a las capas (cuencas, ríos, puntos) sin la saturación del
     # satélite, que queda como opción.
+    # keep_buffer=4 (Leaflet keepBuffer, default 2): retiene más tiles fuera
+    # del viewport al panear/zoomear → menos áreas en blanco durante la
+    # navegación, a cambio de algo más de memoria (aceptable en desktop).
     folium.TileLayer(
         "CartoDB positron",
         name="Mapa claro",
         max_native_zoom=20, max_zoom=21,
+        keep_buffer=4,
     ).add_to(m)
     folium.TileLayer(
         "OpenStreetMap",
         name="Calles",
         max_native_zoom=19, max_zoom=21,
+        keep_buffer=4,
     ).add_to(m)
     # Esri World Imagery (Maxar Vivid). Sirve tiles nativos hasta ~z19 en la
     # zona de Arequipa/altiplano (antes lo limitábamos a 17 por precaución, lo
@@ -1460,6 +1495,7 @@ def _construir_mapa(
         attr="Tiles © Esri — Source: Esri, Maxar, Earthstar Geographics y la comunidad de usuarios GIS",
         name="Satélite",
         max_native_zoom=19, max_zoom=21,
+        keep_buffer=4,
     ).add_to(m)
     # Capa Topográfico removida — el satélite + calles cubren los casos de uso
     # y reduce la carga visual del control de capas.
@@ -2600,7 +2636,7 @@ def _fragmento_mapa(puntos_con_coords: list[dict], opciones_punto: dict) -> None
     # Ancla para alinear verticalmente la barra de filtros (toggle + selectbox
     # + popover tienen distinta altura de línea base). CSS en ui_styles.
     st.markdown('<div class="lvca-geo-filtros"></div>', unsafe_allow_html=True)
-    fc1, fc2, fc3 = st.columns([2.4, 2.4, 1.4])
+    fc1, fc2, fc3, fc4 = st.columns([2.2, 2.2, 1.3, 1.3])
     with fc1:
         solo_exc = st.toggle(
             "Solo excedencias",
@@ -2647,6 +2683,25 @@ def _fragmento_mapa(puntos_con_coords: list[dict], opciones_punto: dict) -> None
                 use_container_width=True,
             )
 
+    with fc4:
+        # Volver al punto activo tras panear/zoomear lejos. El centrado es
+        # "una sola vez por selección" (no secuestra el pan del usuario), así
+        # que re-clicar el marcador no recentra — este botón cubre ese caso.
+        _punto_activo = (
+            st.session_state.get("geo_modo") == "punto"
+            and st.session_state.get("geo_punto") in opciones_punto
+        )
+        if st.button(
+            ":material/my_location: Centrar",
+            key="geo_centrar",
+            use_container_width=True,
+            disabled=not _punto_activo,
+            help="Vuelve a centrar el mapa en el punto seleccionado.",
+        ):
+            # Reactivar el centrado único: el bloque de enfoque de abajo
+            # recentra en ESTE mismo render del fragment (sin rerun extra).
+            st.session_state.pop("_geo_centrado_en", None)
+
     # ── Mapa base reconstruido en cada render ────────────────────────────
     # Fluidez: la clave para que st_folium NO re-monte el iframe (y no haya
     # parpadeo en blanco al seleccionar) es que el HTML del mapa base sea
@@ -2680,8 +2735,18 @@ def _fragmento_mapa(puntos_con_coords: list[dict], opciones_punto: dict) -> None
             # Centrar UNA sola vez por selección: no secuestrar el zoom/pan
             # manual del usuario en reruns posteriores (cambiar tab, parámetro…).
             if st.session_state.get("_geo_centrado_en") != _pid:
-                centro = (_p_sel["latitud"], _p_sel["longitud"])
-                zoom_sel = 13
+                # Nonce anti-dedupe: el frontend de streamlit-folium solo hace
+                # setView si center/zoom difieren del ÚLTIMO valor APLICADO
+                # (last_center/last_zoom persisten mientras viva el iframe).
+                # Sin esto, re-centrar en el mismo punto (botón "Centrar", o
+                # volver a él tras pasar por Campaña) sería un no-op aunque el
+                # usuario haya paneado lejos. La perturbación alterna ~1e-9°
+                # (~0.1 mm) y ~1e-6 de zoom (Leaflet lo snapea al entero):
+                # invisible, pero cambia el JSON.stringify del frontend.
+                _nonce = (st.session_state.get("_geo_center_nonce", 0) + 1) % 2
+                st.session_state["_geo_center_nonce"] = _nonce
+                centro = (_p_sel["latitud"] + _nonce * 1e-9, _p_sel["longitud"])
+                zoom_sel = 13 + _nonce * 1e-6
                 st.session_state["_geo_centrado_en"] = _pid
             fg_sel = folium.FeatureGroup(name="seleccion")
             folium.Marker(
