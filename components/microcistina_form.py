@@ -17,6 +17,7 @@ Función pública:
 
 from __future__ import annotations
 
+import hashlib
 from typing import Optional
 
 import pandas as pd
@@ -25,7 +26,6 @@ import streamlit as st
 from components.ui_styles import COLORS, chip_eca_html, icon
 from services.elisa_microcistina import STD_CONC_UGL
 from services.microcistina_import import (
-    CAPACIDAD_MUESTRAS,
     mapa_placa,
     parse_excel_solver,
     parse_grid_text,
@@ -255,7 +255,10 @@ def _render_placa_mapa(imp, n_activas: int) -> None:
     labels = [["—"] * NCOL for _ in range(NROW)]
     hover = [["Pocillo vacío"] * NCOL for _ in range(NROW)]
 
-    def _poner(r, c1, c2, label, od1, od2, conc, cv):
+    def _poner(r, c1, c2, label, od1, od2, conc, cv, en_conc=True):
+        # en_conc=False excluye la celda de la escala de concentración (para los
+        # estándares: ST5=5 µg/L, muy por encima de las muestras, aplastaría el
+        # color de estas). Conserva su OD, etiqueta y hover.
         media = (od1 + od2) / 2.0
         conc_txt = f"{conc:.4g} µg/L" if conc is not None else "—"
         cv_txt = f"{cv:.1f}%" if cv is not None else "—"
@@ -263,15 +266,15 @@ def _render_placa_mapa(imp, n_activas: int) -> None:
                 f"<br>%CV {cv_txt}<br>Conc {conc_txt}")
         for c in (c1, c2):
             z_od[r][c] = media
-            z_conc[r][c] = conc if conc is not None else None
+            z_conc[r][c] = conc if (en_conc and conc is not None) else None
             labels[r][c] = label
             hover[r][c] = htxt
 
-    # Estándares ST0..ST5
+    # Estándares ST0..ST5 (fuera de la escala de concentración)
     for i, (r, c1, c2) in enumerate(mapa["std"]):
         if i < len(imp.std_od):
             o1, o2 = imp.std_od[i]
-            _poner(r, c1, c2, f"ST{i}", o1, o2, STD_CONC_UGL[i], None)
+            _poner(r, c1, c2, f"ST{i}", o1, o2, STD_CONC_UGL[i], None, en_conc=False)
     # Control (CT)
     cr, cc1, cc2 = mapa["control"]
     o1, o2 = imp.control_od
@@ -315,11 +318,28 @@ def _render_placa_mapa(imp, n_activas: int) -> None:
         yaxis=dict(autorange="reversed", title="Fila", fixedrange=True),
     )
     st.plotly_chart(fig, use_container_width=True)
+    nota_std = (" Los estándares (ST0–ST5) se muestran sin color en esta vista "
+                "(quedan fuera de la escala de concentración)." if usar_conc else "")
     st.caption(
         "Col 1-2: estándares (ST0–ST5) y control (CT). Muestras S1..S"
         f"{n_activas} serpenteando de H→A por pares de columnas. "
-        "Los pocillos «—» (sin color) quedaron vacíos."
+        "Los pocillos «—» quedaron vacíos." + nota_std
     )
+
+
+def _huella_placa(imp) -> str:
+    """Huella estable de la placa (OD de estándares, control y muestras).
+
+    Sirve para detectar cuándo se sube una placa DISTINTA entre reruns y así
+    reiniciar el N autodetectado del widget (que de otro modo hereda el valor de
+    la placa anterior, porque st.number_input persiste su 'key' e ignora 'value').
+    """
+    raw = repr((
+        imp.std_od, imp.control_od,
+        tuple((m.od_1, m.od_2) for m in imp.muestras),
+        imp.n_muestras_detectadas,
+    ))
+    return hashlib.md5(raw.encode()).hexdigest()
 
 
 def _render_resultado(imp, analista_id: Optional[str]) -> None:
@@ -338,15 +358,24 @@ def _render_resultado(imp, analista_id: Optional[str]) -> None:
     # como pocillos vacíos al final del orden serpenteante y se ignoran.
     cap = len(imp.muestras)
     n_det = min(cap, imp.n_muestras_detectadas or cap)
+    # El number_input persiste su valor por 'key' entre reruns e ignora 'value='
+    # una vez creado. Para que cada placa NUEVA aplique SU propio N autodetectado
+    # (y no herede el de la placa anterior), reiniciamos el estado del widget
+    # cuando cambia la huella de la placa.
+    fp = _huella_placa(imp)
+    if st.session_state.get("mc_n_muestras_fp") != fp:
+        st.session_state["mc_n_muestras_fp"] = fp
+        st.session_state["mc_n_muestras"] = int(n_det)
     nc1, nc2 = st.columns([1, 2.4])
     n_sel = int(nc1.number_input(
         "Nº de muestras en la placa", min_value=1, max_value=max(1, cap),
-        value=int(n_det), step=1, key="mc_n_muestras",
+        step=1, key="mc_n_muestras",
     ))
     nc2.caption(
         f"Se detectaron **{n_det}** muestra(s) cargada(s)"
         + (f" · {cap - n_det} pocillo(s) vacío(s) al final." if cap - n_det else ".")
-        + " Ajusta si es necesario; los pocillos sobrantes se ignoran."
+        + " Ajústalo si es necesario. Si una muestra muy tóxica (OD≈0) quedó al "
+        "final, súbelo a mano para no perderla."
     )
     # Recortar a las muestras realmente cargadas: validez, asignación y guardado
     # operan sobre este subconjunto.

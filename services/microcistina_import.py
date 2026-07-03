@@ -74,34 +74,37 @@ def mapa_placa() -> dict:
 _mapa_placa = mapa_placa
 CAPACIDAD_MUESTRAS = max(mapa_placa()["samples"].keys())   # 41
 
-# OD mínima para considerar un pozo "no cargado" (vacío). Un pozo sin pipetear
-# lee cerca del baseline del lector (~0), por debajo del mínimo de la curva (D).
+# OD máxima para considerar un pozo "no cargado" (vacío). Un pozo sin pipetear
+# lee cerca del baseline del lector (~0). Es un umbral FIJO y bajo, deliberadamente
+# por debajo del mínimo de la curva (D≈0.08–0.15): así una muestra genuinamente
+# tóxica —que en ELISA competitivo satura con OD baja, cerca de D— NO se confunde
+# con un pozo vacío y no se descarta en silencio. Prima no perder muestras reales
+# sobre no incluir algún pozo vacío (el analista ajusta N a la baja si hace falta).
 UMBRAL_OD_VACIO = 0.03
 
 
-def detectar_n_muestras(grid: list[list[float]], curva: CurvaParams) -> int:
+def detectar_n_muestras(grid: list[list[float]], curva: Optional[CurvaParams] = None) -> int:
     """
     Estima cuántas muestras se cargaron en la placa contando los pocillos
     **vacíos al final** del orden serpenteante (S41 → S1).
 
-    Un pozo se considera vacío cuando su OD media < ``umbral``, con
-    ``umbral = max(UMBRAL_OD_VACIO, curva.D * 0.5)``: un pozo no pipeteado lee
-    cerca del baseline del lector, por debajo del mínimo de la curva (D),
-    mientras que una muestra real —aun muy concentrada— satura cerca de D.
+    Un pozo se cuenta como vacío solo cuando **ambas** réplicas están por debajo
+    de ``UMBRAL_OD_VACIO`` (baseline del lector). El umbral es fijo y bajo a
+    propósito: una muestra real —aun muy concentrada— satura cerca del mínimo de
+    la curva (D), muy por encima del baseline, por lo que no se descarta.
 
     Devuelve ``N`` = número de muestras cargadas (S1..SN), con mínimo 1.
+    ``curva`` se acepta por compatibilidad; el umbral ya no depende de ella.
 
-    Limitación: una muestra genuinamente muy concentrada podría leerse como
-    vacía. Por eso el analista puede ajustar N a mano y el mapa de la placa lo
-    hace evidente.
+    Limitación: una muestra tan concentrada que lea ≈0 (por debajo del baseline)
+    es indistinguible de un pozo vacío por OD. Por eso el analista puede ajustar
+    N a mano; el caption del panel avisa de este caso.
     """
     mapa = mapa_placa()
-    umbral = max(UMBRAL_OD_VACIO, (curva.D or 0.0) * 0.5)
     vacios_finales = 0
     for n in range(CAPACIDAD_MUESTRAS, 0, -1):
         r, c1, c2 = mapa["samples"][n]
-        media = (grid[r][c1] + grid[r][c2]) / 2.0
-        if media < umbral:
+        if max(grid[r][c1], grid[r][c2]) < UMBRAL_OD_VACIO:
             vacios_finales += 1
         else:
             break

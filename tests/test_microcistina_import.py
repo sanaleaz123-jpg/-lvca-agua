@@ -80,6 +80,28 @@ class TestDetectarNMuestras:
     def test_placa_sin_muestras_minimo_uno(self):
         assert detectar_n_muestras(_grid(0), CURVA) == 1
 
+    def test_curva_es_opcional(self):
+        # El umbral es fijo; la curva ya no es necesaria.
+        assert detectar_n_muestras(_grid(30)) == 30
+
+    def test_muestra_saturada_baja_od_no_se_descarta(self):
+        # Regresión: una muestra real muy tóxica satura con OD baja (cerca del
+        # mínimo de la curva D, p.ej. 0.05) pero por encima del baseline. NO debe
+        # contarse como pozo vacío ni descartarse (antes el umbral D*0.5 la perdía).
+        g = _grid(9)                      # S1..S9 con OD alta
+        mapa = mapa_placa()
+        r, c1, c2 = mapa["samples"][10]
+        g[r][c1] = g[r][c2] = 0.05        # S10 saturada, OD baja pero > baseline
+        assert detectar_n_muestras(g) == 10
+
+    def test_una_replica_con_senal_no_se_descarta(self):
+        # Un pozo se cuenta vacío solo si AMBAS réplicas están bajo el baseline.
+        g = _grid(9)
+        mapa = mapa_placa()
+        r, c1, c2 = mapa["samples"][10]
+        g[r][c1], g[r][c2] = 0.0, 0.5     # una réplica con señal
+        assert detectar_n_muestras(g) == 10
+
 
 # ── parse_placa_cruda: detección + grilla guardada ───────────────────────────
 class TestParsePlacaCruda:
