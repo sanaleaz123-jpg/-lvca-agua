@@ -220,6 +220,78 @@ _BD_TABLE_CSS = """
 _FREEZE_COLS = ["Fecha", "Hora", "Código Punto", "Punto"]
 _FREEZE_INDEX = {name: i for i, name in enumerate(_FREEZE_COLS)}
 
+# ── Abreviaturas de encabezado (SOLO presentación en pantalla) ───────────────
+# El DataFrame y las descargas conservan los nombres completos; estas
+# abreviaturas se aplican únicamente al texto del <th>, con el nombre completo
+# disponible en el tooltip (atributo title). Alineadas con los `nombre_corto`
+# del seed de parámetros, con los ajustes pedidos (T°, C.E., formas químicas).
+ABREVIATURAS_PARAM: dict[str, str] = {
+    # Campo
+    "P001": "pH",
+    "P002": "T°",
+    "P003": "C.E.",
+    "P004": "OD",
+    "P006": "Turbidez",
+    # Fisicoquímicos
+    "P010": "Color",
+    "P019": "DBO5",
+    "P025": "Dureza",
+    "P028": "SST",
+    "P031": "NO3",
+    "P032": "NO2",
+    "P033": "NH3 total",
+    "P034": "NH3 libre",
+    "P036": "P total",
+    "P038": "PO4",
+    "P041": "SO4",
+    "P042": "Cl",
+    "P074": "Fe",
+    "P077": "Mn",
+    "P091": "Microcistina",
+    "P124": "Cl-a",
+    # Hidrobiológicos
+    "P120": "Fitopl.",
+    "P126": "Zoopl.",
+    "P130": "Perifiton",
+    "FITO_CYANOBACTERIA_CEL": "Cianob.",
+    "FITO_CYANOBACTERIA_BIOVOL": "Cianob. biovol.",
+    "FITO_BACILLARIOPHYTA": "Diatomeas",
+    "FITO_CHLOROPHYTA": "Alg. verdes",
+    "FITO_OCHROPHYTA": "Alg. doradas",
+    "FITO_CHAROPHYTA": "Carofitas",
+    "FITO_EUGLENOPHYTA": "Euglenoid.",
+    "FITO_DINOPHYTA": "Dinofl.",
+    "FITO_CRYPTOPHYTA": "Criptofitas",
+}
+
+# Columnas identificadoras que conviene acortar; el resto (Fecha, Hora, Punto,
+# Cuenca, Tipo, ECA) ya son cortas y se muestran igual.
+ABREVIATURAS_FIJAS: dict[str, str] = {
+    "Código Punto": "Cód. Punto",
+    "Código Muestra": "Cód. Muestra",
+    "Código Lab.": "Cód. Lab.",
+    "Profundidad (m)": "Prof. (m)",
+}
+
+
+def _unidad_corta(label_completo: str) -> str:
+    """Extrae la unidad (último paréntesis del label) y la simplifica.
+
+    Los nombres pueden llevar paréntesis propios (p. ej.
+    'Nitrógeno amoniacal total (N-NH3) (mg N-NH4/L)'), por lo que la unidad es
+    SIEMPRE el último grupo entre paréntesis. Cualquier unidad de masa por
+    litro ('mg N-NO3/L', 'mg CaCO3/L', 'mg O2/L'…) se colapsa a 'mg/L'; las
+    demás unidades se mantienen tal cual.
+    """
+    ini = label_completo.rfind("(")
+    fin = label_completo.rfind(")")
+    if ini == -1 or fin == -1 or fin < ini:
+        return ""
+    unidad = label_completo[ini + 1:fin].strip()
+    if unidad.startswith("mg") and unidad.endswith("/L"):
+        return "mg/L"
+    return unidad
+
 
 def _fmt_valor(val, fmt: str) -> str:
     """Formatea un valor numérico usando un format string estilo %.2f."""
@@ -294,12 +366,22 @@ def _render_tabla_por_campana(
     text_cols = {"Fecha", "Hora", "Código Punto", "Punto", "Código Muestra",
                  "Código Lab.", "Cuenca", "Tipo", "ECA"}
 
-    # Cabecera (con clases de congelado en las columnas identificadoras)
+    # Cabecera (con clases de congelado en las columnas identificadoras).
+    # El texto se abrevia SOLO para mostrar; el nombre completo original queda
+    # en el tooltip (title). Los datos y las descargas usan el label completo.
     thead_cells = []
     for c in columnas:
         fi = _FREEZE_INDEX.get(c)
         cls = f' class="freeze f{fi}"' if fi is not None else ""
-        thead_cells.append(f"<th{cls}>{escape(c)}</th>")
+        cod = label_to_codigo.get(c)
+        if cod is not None:
+            abrev = ABREVIATURAS_PARAM.get(cod) or c.split(" (")[0]
+            unidad = _unidad_corta(c)
+            corto = f"{abrev} ({unidad})" if unidad and unidad != abrev else abrev
+        else:
+            corto = ABREVIATURAS_FIJAS.get(c, c)
+        titulo = f' title="{escape(c)}"' if corto != c else ""
+        thead_cells.append(f"<th{cls}{titulo}>{escape(corto)}</th>")
     thead = "".join(thead_cells)
 
     # Cuerpo: agrupar filas consecutivas que comparten campana_id.
@@ -972,7 +1054,10 @@ def main() -> None:
 
     columnas_visibles = [(cod, label) for cod, label in COLUMNAS_PARAMETROS if cod in codigos_visibles]
 
-    # ── Métricas rápidas ────────────────────────────────────────────────
+    # ── Métricas (para la firma de caché de descargas y el resumen) ─────
+    # Se calculan pero no se muestran como tarjetas: n_valores/n_excedencias
+    # alimentan la firma de caché del Excel/CSV y n_muestras/n_puntos el
+    # resumen compacto sobre la tabla.
     n_muestras = len(datos)
     n_puntos = len({d["punto_codigo"] for d in datos})
     n_valores, n_excedencias = _metricas_bd(
@@ -982,14 +1067,6 @@ def main() -> None:
         str(fecha_fin) if fecha_fin else None,
         tuple(categoria_filtro),
     )
-
-    mc1, mc2, mc3, mc4 = st.columns(4)
-    mc1.metric("Muestras", n_muestras)
-    mc2.metric("Puntos", n_puntos)
-    mc3.metric("Valores registrados", n_valores)
-    mc4.metric("Excedencias ECA", n_excedencias,
-               delta=f"-{round(n_excedencias/n_valores*100, 1)}%" if n_valores else "0%",
-               delta_color="inverse")
 
     # ── Atajos del flujo con los filtros actuales ───────────────────────
     nav1, nav2, nav3, _sp = st.columns([1.2, 1.2, 1.2, 2.4])
