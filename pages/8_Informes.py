@@ -3,7 +3,7 @@ pages/8_Informes.py
 Generación de informes y exportación de datos.
 
 Secciones:
-    Tab 1 — Informe por campaña: resumen, excedencias, Reportes de Ensayo
+    Tab 1 — Informe por campaña: excedencias, Reportes de Ensayo
             (Parámetros Fisicoquímicos / Fitoplancton / Microcistina) y envío por correo
     Tab 2 — Informe por punto: historial temporal, descarga Excel
 
@@ -18,7 +18,7 @@ import pandas as pd
 import streamlit as st
 
 from components.auth_guard import require_rol
-from components.nav_context import consumir_contexto, ir_a, preseleccionar, rol_alcanza
+from components.nav_context import consumir_contexto, preseleccionar
 from components.ui_styles import (
     ECA_CHIP_STYLES,
     aplicar_estilos,
@@ -47,7 +47,6 @@ from services.reporte_microcistina_service import (
 from services.pdf_service import docx_a_pdf
 from services.resultado_service import get_campanas, _get_usuario_interno_id
 from services.punto_service import get_puntos
-from services.cumplimiento_service import EstadoECA
 from services.contactos_service import get_contactos, crear_contacto, correo_valido
 from services.email_service import (
     smtp_configurado,
@@ -226,73 +225,76 @@ def _render_envio_correo(campana, campana_id, reportes, resumen) -> None:
               + (f" ({c['entidad']})" if c.get("entidad") else ""): c["correo"]
               for c in contactos}
 
-    sel = st.multiselect(
-        "Destinatarios (libreta de contactos)",
-        options=list(labels.keys()),
-        key=f"mail_sel_{campana_id}",
-        placeholder="Elige uno o más contactos guardados",
-    )
-    otros = st.text_input(
-        "Otros correos (separados por coma)",
-        key=f"mail_otros_{campana_id}",
-        placeholder="ej. persona@dominio.com, otra@dominio.com",
-    )
+    # Dos columnas: destinatarios/adjuntos a la izquierda, mensaje a la derecha.
+    col_dest, col_msg = st.columns(2, gap="large")
 
-    # Alta rápida de contacto a la libreta.
-    with st.expander("Agregar contacto a la libreta", icon=":material/person_add:"):
-        with st.form(f"form_nuevo_contacto_{campana_id}", clear_on_submit=True):
-            n1, n2, n3 = st.columns(3)
-            c_nom = n1.text_input("Nombre")
-            c_cor = n2.text_input("Correo")
-            c_ent = n3.text_input("Entidad", placeholder="(opcional)")
-            if st.form_submit_button("Guardar contacto", icon=":material/save:"):
-                try:
-                    crear_contacto(c_nom, c_cor, c_ent)
-                    st.success(f"Contacto «{c_nom}» agregado.")
-                    st.rerun()
-                except Exception as exc:
-                    st.error(str(exc), icon=":material/error:")
+    with col_dest:
+        sel = st.multiselect(
+            "Destinatarios (libreta de contactos)",
+            options=list(labels.keys()),
+            key=f"mail_sel_{campana_id}",
+            placeholder="Elige uno o más contactos guardados",
+        )
+        otros = st.text_input(
+            "Otros correos (separados por coma)",
+            key=f"mail_otros_{campana_id}",
+            placeholder="ej. persona@dominio.com, otra@dominio.com",
+        )
 
-    # Adjuntos disponibles (casillas).
-    st.markdown("**Adjuntar:**")
-    ad_cols = st.columns(max(len(disponibles), 1))
-    seleccion_adj = {}
-    for i, r in enumerate(disponibles):
-        with ad_cols[i]:
+        # Alta rápida de contacto a la libreta.
+        with st.expander("Agregar contacto a la libreta", icon=":material/person_add:"):
+            with st.form(f"form_nuevo_contacto_{campana_id}", clear_on_submit=True):
+                c_nom = st.text_input("Nombre")
+                n2, n3 = st.columns(2)
+                c_cor = n2.text_input("Correo")
+                c_ent = n3.text_input("Entidad", placeholder="(opcional)")
+                if st.form_submit_button("Guardar contacto", icon=":material/save:"):
+                    try:
+                        crear_contacto(c_nom, c_cor, c_ent)
+                        st.success(f"Contacto «{c_nom}» agregado.")
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(str(exc), icon=":material/error:")
+
+        # Adjuntos disponibles (casillas).
+        st.markdown("**Adjuntar:**")
+        seleccion_adj = {}
+        for r in disponibles:
             seleccion_adj[r["key"]] = st.checkbox(
                 f"{r['icono']} {r['titulo']}", value=True,
                 key=f"adj_{r['key']}_{campana_id}",
             )
 
-    # Asunto y cuerpo (automáticos y editables).
-    asunto_def = f"Informe LVCA — {campana['codigo']} ({campana.get('nombre', '')})"
-    resumen_txt = construir_resumen_correo(resumen, _especie_dominante(campana_id))
-    cuerpo_def = (
-        "Estimados,\n\n"
-        f"Adjuntamos los informes correspondientes a la campaña "
-        f"{campana['codigo']} — {campana.get('nombre', '')}.\n\n"
-        f"{resumen_txt}\n\n"
-        "Saludos cordiales,\n"
-        "Laboratorio de Vigilancia de Calidad del Agua (LVCA) — AUTODEMA"
-    )
-    asunto = st.text_input("Asunto", value=asunto_def, key=f"mail_asunto_{campana_id}")
-    cuerpo = st.text_area("Mensaje", value=cuerpo_def, height=160, key=f"mail_cuerpo_{campana_id}")
+    with col_msg:
+        # Asunto y cuerpo (automáticos y editables).
+        asunto_def = f"Informe LVCA — {campana['codigo']} ({campana.get('nombre', '')})"
+        resumen_txt = construir_resumen_correo(resumen, _especie_dominante(campana_id))
+        cuerpo_def = (
+            "Estimados,\n\n"
+            f"Adjuntamos los informes correspondientes a la campaña "
+            f"{campana['codigo']} — {campana.get('nombre', '')}.\n\n"
+            f"{resumen_txt}\n\n"
+            "Saludos cordiales,\n"
+            "Laboratorio de Vigilancia de Calidad del Agua (LVCA) — AUTODEMA"
+        )
+        asunto = st.text_input("Asunto", value=asunto_def, key=f"mail_asunto_{campana_id}")
+        cuerpo = st.text_area("Mensaje", value=cuerpo_def, height=140, key=f"mail_cuerpo_{campana_id}")
 
-    b1, b2 = st.columns([2, 1])
-    enviar = b1.button(
-        "Enviar informes", type="primary", use_container_width=True,
-        icon=":material/send:", key=f"btn_enviar_{campana_id}",
-        disabled=not smtp_configurado(),
-    )
-    with b2:
-        with st.popover("Correo de prueba", use_container_width=True, disabled=not smtp_configurado()):
-            dest_prueba = st.text_input("Enviar prueba a", key=f"mail_prueba_{campana_id}")
-            if st.button("Enviar prueba", key=f"btn_prueba_{campana_id}"):
-                try:
-                    enviar_correo_prueba(dest_prueba)
-                    st.success("Correo de prueba enviado.")
-                except Exception as exc:
-                    st.error(str(exc), icon=":material/error:")
+        b1, b2 = st.columns([2, 1])
+        enviar = b1.button(
+            "Enviar informes", type="primary", use_container_width=True,
+            icon=":material/send:", key=f"btn_enviar_{campana_id}",
+            disabled=not smtp_configurado(),
+        )
+        with b2:
+            with st.popover("Correo de prueba", use_container_width=True, disabled=not smtp_configurado()):
+                dest_prueba = st.text_input("Enviar prueba a", key=f"mail_prueba_{campana_id}")
+                if st.button("Enviar prueba", key=f"btn_prueba_{campana_id}"):
+                    try:
+                        enviar_correo_prueba(dest_prueba)
+                        st.success("Correo de prueba enviado.")
+                    except Exception as exc:
+                        st.error(str(exc), icon=":material/error:")
 
     if enviar:
         destinatarios = [labels[s] for s in sel]
@@ -377,23 +379,6 @@ def _render_informe_campana() -> None:
             icon=":material/refresh:", use_container_width=True,
         )
 
-    # Atajos del flujo con la campaña seleccionada (solo páginas que el
-    # rol de la sesión puede abrir).
-    nav1, nav2, nav3, _sp = st.columns([1.2, 1.2, 1.2, 2.4])
-    with nav1:
-        if rol_alcanza("administrador") and st.button(
-                "Ver campaña", key="inf_nav_campana",
-                icon=":material/event:", use_container_width=True):
-            ir_a("campanas", campana_id=campana_id)
-    with nav2:
-        if st.button("Resultados", key="inf_nav_resultados",
-                     icon=":material/biotech:", use_container_width=True):
-            ir_a("resultados", campana_id=campana_id)
-    with nav3:
-        if st.button("Base de Datos", key="inf_nav_bd",
-                     icon=":material/database:", use_container_width=True):
-            ir_a("base_datos", campana_id=campana_id)
-
     # Auto-cargar el informe si cambió la campaña o se presiona Actualizar
     cached_id = st.session_state.get("informe_campana_id")
     cached = st.session_state.get("informe_campana")
@@ -413,31 +398,7 @@ def _render_informe_campana() -> None:
 
     campana = resumen["campana"]
 
-    # ── Métricas (5 estados del motor de cumplimiento) ───────────────────
-    st.markdown(f"### {campana['codigo']} — {campana['nombre']}")
-
-    por_estado = resumen.get("por_estado", {})
-    n_cumple   = por_estado.get(EstadoECA.CUMPLE, 0)
-    n_excede   = por_estado.get(EstadoECA.EXCEDE, 0)
-    n_art6     = por_estado.get(EstadoECA.EXCEDE_EXCEPCION_ART6, 0)
-    n_noverif  = por_estado.get(EstadoECA.NO_VERIFICABLE, 0)
-    n_noaplica = por_estado.get(EstadoECA.NO_APLICA, 0)
-
-    mc1, mc2, mc3 = st.columns(3)
-    mc1.metric("Puntos", len(resumen["puntos"]))
-    mc2.metric("Muestras", len(resumen["muestras"]))
-    mc3.metric("Resultados", resumen["total_resultados"])
-
-    me1, me2, me3, me4, me5 = st.columns(5)
-    me1.metric("Cumple",     n_cumple)
-    me2.metric("Excede",     n_excede,
-               delta=(f"-{n_excede}" if n_excede > 0 else None),
-               delta_color="inverse")
-    me3.metric("Art. 6",     n_art6)
-    me4.metric("No verif.",  n_noverif)
-    me5.metric("No aplica",  n_noaplica)
-
-    # ── Tabla de excedencias ─────────────────────────────────────────────
+    # ── Tabla de excedencias (solo si existen) ───────────────────────────
     if resumen["excedencias"]:
         section_header("Excedencias ECA detectadas", "alert")
         exc_rows = []
@@ -460,37 +421,21 @@ def _render_informe_campana() -> None:
                 "Motivo": st.column_config.TextColumn("Motivo", width="large"),
             },
         )
-    elif n_excede == 0 and n_art6 == 0:
-        st.success(
-            "No se detectaron excedencias ECA en esta campaña.",
-            icon=":material/check_circle:",
-        )
+    # ── Centro de informes (descargas) ────────────────────────────────────
+    section_header("Informes de la campaña", "file")
+    st.caption(
+        "Descarga cada informe con un clic o envíalos por correo. Personaliza el "
+        "encabezado de los Reportes de Ensayo en *opciones* si lo necesitas."
+    )
 
-    # ── Leyenda de estados ECA ───────────────────────────────────────────
-    with st.expander("Leyenda de estados ECA", icon=":material/help:"):
-        lc1, lc2, lc3 = st.columns(3)
-        lc1.markdown(
-            "**Cumple** — dentro del rango ECA aplicable, con conversión a "
-            "la especie oficial del DS cuando corresponde."
-        )
-        lc1.markdown(
-            "**Excede** — supera el umbral ECA. Se evaluó con el motor de "
-            "cumplimiento (forma analítica, especie, Δ3 temperatura, Tabla N°1 NH₃)."
-        )
-        lc2.markdown(
-            "**Art. 6** — excede, pero el punto tiene excepción aprobada por "
-            "ANA (condición natural no antrópica)."
-        )
-        lc2.markdown(
-            "**No verif.** — no se puede emitir juicio: LC>ECA, falta pH/T "
-            "para NH₃ Cat 4, zona de mezcla (Art. 7), falta línea base de "
-            "temperatura, o discrepancia total/disuelta."
-        )
-        lc3.markdown(
-            "**No aplica** — parámetro sin ECA en el DS 004-2017-MINAM para "
-            "la categoría del punto (ej. Fosfatos, N amoniacal total en Cat 4, "
-            "P total en Cat 3)."
-        )
+    hay_hidrobio = tiene_analisis_hidrobiologico(campana_id)
+    hay_micro = tiene_resultados_microcistina(campana_id)
+
+    ov_fito, ov_micro = _render_opciones_encabezado(campana, hay_hidrobio, hay_micro)
+    reportes = _catalogo_reportes(
+        campana, campana_id, hay_hidrobio, hay_micro, ov_fito, ov_micro,
+    )
+    _render_tarjetas_informes(reportes)
 
     # ── Tabla de resultados completa ─────────────────────────────────────
     with st.expander(
@@ -522,23 +467,6 @@ def _render_informe_campana() -> None:
                     "Motivo": st.column_config.TextColumn("Motivo", width="large"),
                 },
             )
-
-    # ── Centro de informes (descargas + envío por correo) ─────────────────
-    st.divider()
-    section_header("Informes de la campaña", "file")
-    st.caption(
-        "Descarga cada informe con un clic o envíalos por correo. Personaliza el "
-        "encabezado de los Reportes de Ensayo en *opciones* si lo necesitas."
-    )
-
-    hay_hidrobio = tiene_analisis_hidrobiologico(campana_id)
-    hay_micro = tiene_resultados_microcistina(campana_id)
-
-    ov_fito, ov_micro = _render_opciones_encabezado(campana, hay_hidrobio, hay_micro)
-    reportes = _catalogo_reportes(
-        campana, campana_id, hay_hidrobio, hay_micro, ov_fito, ov_micro,
-    )
-    _render_tarjetas_informes(reportes)
 
     st.divider()
     _render_envio_correo(campana, campana_id, reportes, resumen)
