@@ -697,24 +697,28 @@ def _render_editar(punto_id: str) -> None:
                 key=f"edit_dist_{kp}",
             )
 
-        accesibilidad = st.text_area(
-            "Accesibilidad",
-            value=punto.get("accesibilidad") or "",
-            height=80, key=f"edit_acces_{kp}",
-            placeholder="Ej: A 15 km del desvío de la carretera Arequipa-Chivay...",
-        )
-        representatividad = st.text_area(
-            "Representatividad",
-            value=punto.get("representatividad") or "",
-            height=80, key=f"edit_repre_{kp}",
-            placeholder="Ej: Caracteriza la calidad del agua embalsada en...",
-        )
-        finalidad = st.text_area(
-            "Finalidad",
-            value=punto.get("finalidad") or "",
-            height=80, key=f"edit_final_{kp}",
-            placeholder="Ej: Monitoreo de vigilancia de calidad de agua.",
-        )
+        ta1, ta2, ta3 = st.columns(3)
+        with ta1:
+            accesibilidad = st.text_area(
+                "Accesibilidad",
+                value=punto.get("accesibilidad") or "",
+                height=80, key=f"edit_acces_{kp}",
+                placeholder="Ej: A 15 km del desvío de la carretera Arequipa-Chivay...",
+            )
+        with ta2:
+            representatividad = st.text_area(
+                "Representatividad",
+                value=punto.get("representatividad") or "",
+                height=80, key=f"edit_repre_{kp}",
+                placeholder="Ej: Caracteriza la calidad del agua embalsada en...",
+            )
+        with ta3:
+            finalidad = st.text_area(
+                "Finalidad",
+                value=punto.get("finalidad") or "",
+                height=80, key=f"edit_final_{kp}",
+                placeholder="Ej: Monitoreo de vigilancia de calidad de agua.",
+            )
 
         # ── Art. 7 del DS 004-2017-MINAM — zona de mezcla ─────────────────
         section_header("Zona de mezcla (Art. 7)", "water_drop")
@@ -835,34 +839,40 @@ def _render_editar(punto_id: str) -> None:
         except Exception as exc:
             st.error(f"Error al actualizar: {exc}")
 
-    # ── Excepciones Art. 6 (condiciones naturales aprobadas por ANA) ─────────
+    # ── Secciones complementarias en tabs (antes iban apiladas: ~3 pantallas
+    #    de scroll; como pestañas solo se ve la activa) ─────────────────────────
     st.divider()
-    _render_excepciones_art6(punto_id, punto.get("codigo", ""))
+    tab_exc, tab_lb, tab_croquis = st.tabs([
+        "Excepciones Art. 6",
+        "Línea base de temperatura",
+        "Croquis",
+    ])
 
-    # ── Línea base de temperatura para evaluación Δ3 ─────────────────────────
-    st.divider()
-    _render_linea_base_temperatura(punto_id, punto.get("codigo", ""))
+    with tab_exc:
+        _render_excepciones_art6(punto_id, punto.get("codigo", ""))
 
-    # ── Croquis del punto ──────────────────────────────────────────────
-    st.divider()
-    section_header("Croquis del punto de monitoreo", "map")
-    croquis_url = get_croquis_url(punto_id)
-    if croquis_url:
-        st.image(croquis_url, caption="Croquis actual", width=400)
+    with tab_lb:
+        _render_linea_base_temperatura(punto_id, punto.get("codigo", ""))
 
-    croquis_file = st.file_uploader(
-        "Subir imagen de croquis",
-        type=["jpg", "jpeg", "png"],
-        key=f"croquis_{punto_id}",
-    )
-    if croquis_file:
-        if st.button("Guardar croquis", key=f"btn_croquis_{punto_id}"):
-            try:
-                url = upload_croquis(punto_id, croquis_file.getvalue(), croquis_file.type)
-                st.success("Croquis guardado correctamente.")
-                st.rerun()
-            except Exception as exc:
-                st.error(f"Error al subir croquis: {exc}")
+    with tab_croquis:
+        section_header("Croquis del punto de monitoreo", "map")
+        croquis_url = get_croquis_url(punto_id)
+        if croquis_url:
+            st.image(croquis_url, caption="Croquis actual", width=400)
+
+        croquis_file = st.file_uploader(
+            "Subir imagen de croquis",
+            type=["jpg", "jpeg", "png"],
+            key=f"croquis_{punto_id}",
+        )
+        if croquis_file:
+            if st.button("Guardar croquis", key=f"btn_croquis_{punto_id}"):
+                try:
+                    url = upload_croquis(punto_id, croquis_file.getvalue(), croquis_file.type)
+                    st.success("Croquis guardado correctamente.")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Error al subir croquis: {exc}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -977,21 +987,25 @@ def _render_nuevo() -> None:
         with nu3:
             n_distrito = st.text_input("Distrito", placeholder="CALLALLI", key="new_dist")
 
-        n_accesibilidad = st.text_area(
-            "Accesibilidad",
-            height=80, key="new_acces",
-            placeholder="Ej: A 15 km del desvío de la carretera Arequipa-Chivay...",
-        )
-        n_representatividad = st.text_area(
-            "Representatividad",
-            height=80, key="new_repre",
-            placeholder="Ej: Caracteriza la calidad del agua embalsada en...",
-        )
-        n_finalidad = st.text_area(
-            "Finalidad",
-            height=80, key="new_finalidad",
-            placeholder="Ej: Monitoreo de vigilancia de calidad de agua.",
-        )
+        nta1, nta2, nta3 = st.columns(3)
+        with nta1:
+            n_accesibilidad = st.text_area(
+                "Accesibilidad",
+                height=80, key="new_acces",
+                placeholder="Ej: A 15 km del desvío de la carretera Arequipa-Chivay...",
+            )
+        with nta2:
+            n_representatividad = st.text_area(
+                "Representatividad",
+                height=80, key="new_repre",
+                placeholder="Ej: Caracteriza la calidad del agua embalsada en...",
+            )
+        with nta3:
+            n_finalidad = st.text_area(
+                "Finalidad",
+                height=80, key="new_finalidad",
+                placeholder="Ej: Monitoreo de vigilancia de calidad de agua.",
+            )
 
         submitted = st.form_submit_button(
             "Crear punto", type="primary", use_container_width=True,

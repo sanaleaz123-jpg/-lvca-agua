@@ -262,18 +262,15 @@ def _render_sistema() -> None:
             st.error(f"Error: {exc}")
             return
 
-    sc1, sc2, sc3 = st.columns(3)
+    sc1, sc2, sc3, sc4, sc5, sc6 = st.columns(6)
     sc1.metric("Usuarios", stats["usuarios"])
     sc2.metric("Campañas", stats["campanas"])
     sc3.metric("Muestras totales", stats["muestras"])
-
-    sc4, sc5, sc6 = st.columns(3)
     sc4.metric("Resultados de lab.", stats["resultados"])
     sc5.metric("Parámetros activos", stats["parametros"])
     sc6.metric("Puntos activos", stats["puntos"])
 
     # ── Actividad reciente ───────────────────────────────────────────────
-    st.divider()
     section_header("Actividad reciente (últimos 7 días)", "clock")
 
     try:
@@ -327,7 +324,6 @@ def _render_sistema() -> None:
         st.caption("No hay muestras recientes.")
 
     # ── Info del entorno ─────────────────────────────────────────────────
-    st.divider()
     section_header("Configuración", "settings")
     from config.settings import APP_ENV, SUPABASE_URL
     st.caption(f"Entorno: **{APP_ENV}** | Supabase: {SUPABASE_URL[:40]}...")

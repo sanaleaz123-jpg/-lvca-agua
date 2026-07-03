@@ -228,7 +228,7 @@ _GLOBAL_CSS = """<style>
     /* Escala tipográfica única — fuente de verdad de los tamaños.
        Reconcilia los h1 que competían (global 1.5rem, banner 2rem/800,
        page-header legacy 1.55rem) en una jerarquía coherente. */
-    --lvca-fs-display: 2.125rem;   /* título de página (banner) — presencia institucional */
+    --lvca-fs-display: 1.55rem;    /* título de página (banner) — compacto, gana ~25px de alto */
     --lvca-fs-h1:      1.5rem;
     --lvca-fs-h2:      1.25rem;
     --lvca-fs-h3:      1.0625rem;
@@ -339,8 +339,8 @@ small, .small, .stCaption, [data-testid="stCaption"] {
 [data-testid="stMetric"] {
     background: #ffffff;
     border: 1px solid #eef2f6;
-    border-radius: var(--lvca-radius-lg);
-    padding: 11px 16px;
+    border-radius: var(--lvca-radius-md);
+    padding: 7px 14px;
     box-shadow: var(--lvca-shadow-sm);
     transition: all var(--lvca-t) var(--lvca-ease);
 }
@@ -357,7 +357,7 @@ small, .small, .stCaption, [data-testid="stCaption"] {
     letter-spacing: 0.04em;
 }
 [data-testid="stMetric"] [data-testid="stMetricValue"] {
-    font-size: 1.85rem !important;
+    font-size: 1.5rem !important;
     font-weight: 700 !important;
     color: #0f172a !important;
     letter-spacing: -0.02em;
@@ -748,9 +748,9 @@ hr {
     align-items: center;
     gap: 11px;
     color: #0f172a;
-    font-size: 1.05rem;
+    font-size: 1rem;
     font-weight: 700;
-    margin: 0.9rem 0 0.4rem 0;
+    margin: 0.6rem 0 0.3rem 0;
     padding-bottom: 6px;
     border-bottom: 1px solid var(--lvca-border);
     text-transform: uppercase;
@@ -794,10 +794,17 @@ hr {
     box-shadow: var(--lvca-shadow-xs);
 }
 
-/* ── Alertas ───────────────────────────────────────────────────────────── */
+/* ── Alertas — compactas: menos relleno y texto al cuerpo base ─────────── */
 [data-testid="stAlert"] {
     border-radius: 10px;
     transition: all 0.15s ease;
+}
+[data-testid="stAlertContainer"] {
+    padding: 0.5rem 0.85rem !important;
+}
+[data-testid="stAlert"] [data-testid="stMarkdownContainer"] p {
+    font-size: 0.85rem !important;
+    line-height: 1.45 !important;
 }
 
 /* ── Material Symbols Rounded: clase base por si Streamlit no la define
@@ -1450,8 +1457,8 @@ hr {
    modo deja un hueco en blanco entre la barra azul y las tarjetas. */
 [data-testid="stMainBlockContainer"]:has(.lvca-geo-vista-integrada),
 [data-testid="stMainBlockContainer"]:has(.lvca-geo-vista-integrada):has(.st-key-lvca_top_nav) {
-    padding-top: 84px !important;
-    padding-bottom: 10px !important;
+    padding-top: 64px !important;
+    padding-bottom: 8px !important;
 }
 /* El div .lvca-geo-vista-integrada es solo un ancla de CSS: su contenedor se
    saca del flujo (display:none) para que NO deje hueco vertical sobre las
@@ -1463,14 +1470,14 @@ hr {
 /* KPI cards más compactas */
 .lvca-geo-vista-integrada ~ div .lvca-kpi-bold,
 .lvca-geo-kpis .lvca-kpi-bold {
-    min-height: 124px !important;
-    padding: 14px 16px 13px 20px !important;
+    min-height: 104px !important;
+    padding: 11px 16px 10px 20px !important;
     border-radius: 12px !important;
 }
 .lvca-geo-vista-integrada ~ div .lvca-kpi-bold .lvca-kpi-value,
 .lvca-geo-kpis .lvca-kpi-bold .lvca-kpi-value {
-    font-size: 2.35rem !important;
-    margin: 6px 0 4px 0 !important;
+    font-size: 2.05rem !important;
+    margin: 3px 0 3px 0 !important;
 }
 /* Bullets en una sola línea con ellipsis: evita el amontonamiento cuando
    el bullet es "CÓDIGO — Nombre largo". El texto completo queda en title. */
@@ -1537,7 +1544,7 @@ hr {
     100% { background-position: 700px 0; }
 }
 [data-testid="stMainBlockContainer"]:has(.lvca-geo-vista-integrada) [data-testid="stElementContainer"]:has(iframe) {
-    min-height: 680px;
+    min-height: 600px;
     border-radius: 14px;
     background: linear-gradient(100deg, #eef2f7 20%, #f6f9fc 45%, #eef2f7 70%);
     background-size: 1400px 100%;
@@ -1564,11 +1571,11 @@ hr {
         radial-gradient(130% 150% at 100% 0%, rgba(10,147,150,0.07) 0%, rgba(10,147,150,0) 46%),
         linear-gradient(135deg, #ffffff 0%, #f3f8fd 100%);
     color: var(--lvca-text);
-    padding: 12px 32px 12px 36px;
+    padding: 8px 24px 8px 28px;
     border: 1px solid var(--lvca-border-soft);
     border-radius: var(--lvca-radius-lg);
     box-shadow: var(--lvca-shadow-sm);
-    margin-bottom: 12px;
+    margin-bottom: 8px;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -1595,8 +1602,8 @@ hr {
     line-height: 1.15;
 }
 .lvca-banner .lvca-banner-sub {
-    margin: 4px 0 0 0;
-    font-size: 0.9rem;
+    margin: 2px 0 0 0;
+    font-size: 0.82rem;
     color: var(--lvca-text-muted);
     font-weight: 500;
 }
@@ -1660,18 +1667,18 @@ hr {
     line-height: 1.3;
 }
 .lvca-kpi-lite .lvca-kpi-lite-value {
-    font-size: 2.8rem;
+    font-size: 2.1rem;
     font-weight: 800;
     color: #0f172a;
     letter-spacing: -0.035em;
-    margin-top: 8px;
+    margin-top: 5px;
     line-height: 1;
     font-variant-numeric: tabular-nums;
 }
 .lvca-kpi-lite .lvca-kpi-lite-foot {
     font-size: 0.76rem;
     color: #64748b;
-    margin-top: 8px;
+    margin-top: 5px;
 }
 .lvca-kpi-lite.verde    { --kpi-accent: var(--lvca-acento-verde);    --kpi-accent-bg: #dcfce7; }
 .lvca-kpi-lite.amarillo { --kpi-accent: var(--lvca-acento-amarillo); --kpi-accent-bg: #fef3c7; }
@@ -1761,7 +1768,7 @@ textarea:focus-visible,
 .lvca-user-rol  { color: rgba(255,255,255,0.72) !important; }
 
 /* ── Respiración entre secciones ─────────────────────────────────────────── */
-.lvca-section-header { margin-top: 0.9rem !important; }
+.lvca-section-header { margin-top: 0.6rem !important; }
 
 /* ── Responsividad: tablet ───────────────────────────────────────────────── */
 @media (max-width: 820px) {
@@ -2213,7 +2220,7 @@ _TOP_NAV_CSS = """<style>
     z-index: 999 !important;
     background: linear-gradient(180deg, #0F3F78 0%, var(--lvca-nav-bg) 100%) !important;
     border-bottom: 2px solid rgba(45, 212, 191, 0.38);
-    padding: 10px 1.5rem 6px 1.5rem;
+    padding: 6px 1.5rem 4px 1.5rem;
     box-shadow: 0 2px 12px rgba(8, 42, 87, 0.28),
                 inset 0 1px 0 rgba(255,255,255,0.08);
 }
@@ -2226,15 +2233,15 @@ _TOP_NAV_CSS = """<style>
 
 /* Empujar el contenido de la página para que no quede oculto bajo el
    top-nav fijo. La altura depende del tamaño del label de usuario +
-   altura de los page_links. 94px es un buffer ajustado (el nav mide ~83px);
+   altura de los page_links. Con los paddings compactos el nav mide ~72px;
    si el top-nav quedara más compacto/alto, ajustar aquí. */
 [data-testid="stMainBlockContainer"]:has(.st-key-lvca_top_nav) {
-    padding-top: 86px !important;
+    padding-top: 76px !important;
 }
 /* Línea 1: marca + usuario */
 .lvca-brand {
     display: flex; align-items: center; gap: 10px;
-    margin-bottom: 4px;
+    margin-bottom: 2px;
 }
 .lvca-brand-logo {
     width: 28px; height: 28px;
@@ -2298,7 +2305,7 @@ _TOP_NAV_CSS = """<style>
     align-items: center;
     justify-content: center;
     gap: 6px;
-    padding: 8px 12px !important;
+    padding: 6px 11px !important;
     margin: 0 !important;
     font-size: 0.82rem !important;
     font-weight: 500 !important;

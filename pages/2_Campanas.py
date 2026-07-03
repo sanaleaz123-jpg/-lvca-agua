@@ -400,7 +400,6 @@ def _render_detalle(campana_id: str) -> None:
 
     # ── Transición de estado y acciones ──────────────────────────────────────
     estado_actual = camp["estado"]
-    st.divider()
 
     bc1, bc2, bc3 = st.columns([3, 2, 2])
 
@@ -452,7 +451,6 @@ def _render_detalle(campana_id: str) -> None:
     _render_atajo_flujo(camp)
 
     # ── Edición de campaña (admin) ───────────────────────────────────────────
-    st.divider()
     with st.expander(
         "Editar datos de la campaña",
         expanded=False,
@@ -461,7 +459,6 @@ def _render_detalle(campana_id: str) -> None:
         _render_editar_campana(campana_id, camp)
 
     # ── Puntos incluidos ─────────────────────────────────────────────────────
-    st.divider()
     with st.expander(
         f"Puntos de muestreo incluidos ({len(puntos)})",
         expanded=True,
@@ -571,7 +568,6 @@ def _render_detalle(campana_id: str) -> None:
             st.caption("Aún no hay muestras registradas en esta campaña.")
 
     # ── Archivar / restaurar (soft-delete, recomendado) ──────────────────────
-    st.divider()
     sesion = st.session_state.get("sesion")
     usuario_id = sesion.uid if sesion else None
     es_archivada = camp["estado"] == "archivada"

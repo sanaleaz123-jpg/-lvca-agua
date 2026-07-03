@@ -324,12 +324,15 @@ def _render_tabla_excedencias(excedencias: list[dict]) -> None:
         tipo="warn",
     )
 
-    # Render primeras 15 como cards; el resto queda accesible desde Base de Datos.
+    # Render primeras 15 como cards en cuadrícula responsiva (2-3 por fila):
+    # ocupa ~1/3 del alto que la lista apilada. El resto queda en Base de Datos.
     max_visibles = 15
     visibles = excedencias[:max_visibles]
     cards_html = "".join(_render_excedencia_card(e) for e in visibles)
     st.markdown(
-        f'<div style="display:flex; flex-direction:column; gap:10px;">{cards_html}</div>',
+        f'<div style="display:grid; '
+        f'grid-template-columns:repeat(auto-fill, minmax(330px, 1fr)); '
+        f'gap:10px;">{cards_html}</div>',
         unsafe_allow_html=True,
     )
 
@@ -388,7 +391,7 @@ def _render_grafico_excedencias(excedencias: list[dict]) -> None:
 
     apply_plotly_layout(
         fig,
-        height=max(350, len(df_chart) * 32 + 100),
+        height=min(420, max(300, len(df_chart) * 28 + 80)),
         x_title="Cantidad de excedencias",
         margin=dict(l=0, r=40, t=10, b=30),
         yaxis=dict(showgrid=False, title=None),
@@ -431,7 +434,7 @@ def _render_excedencias_por_punto(excedencias: list[dict]) -> None:
 
     apply_plotly_layout(
         fig,
-        height=max(300, len(df_chart) * 35 + 80),
+        height=min(420, max(300, len(df_chart) * 28 + 80)),
         x_title="Cantidad de excedencias",
         margin=dict(l=0, r=40, t=10, b=30),
         yaxis=dict(showgrid=False, title=None),
@@ -647,15 +650,12 @@ def _panel_dashboard(puntos_all: list[dict]) -> None:
 
     # ── 0. Acceso a módulos (grilla SSDH-ANA) ───────────────────────────────
     _render_module_grid()
-    st.divider()
 
     # ── 1. Tarjetas KPI ─────────────────────────────────────────────────────
     _render_kpis(metricas)
-    st.divider()
 
     # ── 2. Excedencias: tabla ───────────────────────────────────────────────
     _render_tabla_excedencias(excedencias)
-    st.divider()
 
     # ── 3. Gráficos de análisis ─────────────────────────────────────────────
     col_param, col_punto, col_donut = st.columns([2, 2, 1])
@@ -668,8 +668,6 @@ def _panel_dashboard(puntos_all: list[dict]) -> None:
 
     with col_donut:
         _render_donut_estado(puntos)
-
-    st.divider()
 
     # ── 4. Mapa de puntos ───────────────────────────────────────────────────
     _render_mapa(puntos)
@@ -704,7 +702,6 @@ def main() -> None:
     _panel_dashboard(puntos_all)
 
     # ── Tareas pendientes accionables ───────────────────────────────────────
-    st.divider()
     _render_tareas_pendientes()
 
 
