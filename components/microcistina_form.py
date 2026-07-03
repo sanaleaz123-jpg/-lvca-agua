@@ -5,9 +5,11 @@ en *Resultados de Laboratorio*.
 
 Flujo único: se sube la placa de absorbancias (Excel del lector) o el libro del
 Solver; la plataforma ajusta la curva 4PL, calcula el control y las
-concentraciones de las 41 muestras, muestra la curva de calibración, y el
-analista asigna cada muestra a su campaña/estación y registra. Una placa puede
-abarcar varias campañas. No hay ingreso manual de absorbancias.
+concentraciones de las muestras cargadas (hasta 41), muestra la curva de
+calibración y el mapa de la placa, y el analista asigna cada muestra a su
+campaña/estación y registra. No siempre se cargan todos los pocillos: la
+cantidad de muestras se detecta y es ajustable. Una placa puede abarcar varias
+campañas. No hay ingreso manual de absorbancias.
 
 Función pública:
     render_panel_microcistina(analista_id)
@@ -23,6 +25,8 @@ import streamlit as st
 from components.ui_styles import COLORS, chip_eca_html, icon
 from services.elisa_microcistina import STD_CONC_UGL
 from services.microcistina_import import (
+    CAPACIDAD_MUESTRAS,
+    mapa_placa,
     parse_excel_solver,
     parse_grid_text,
     parse_placa_cruda,
@@ -96,9 +100,9 @@ def _render_import(analista_id: Optional[str]) -> None:
         st.caption(
             "Sube el Excel con la placa de absorbancias (8 filas A–H × 12 "
             "columnas) tal como sale del lector. La plataforma ubica los "
-            "estándares (ST0–ST5), el control y las 41 muestras con la "
-            "distribución fija del laboratorio y calcula todo (curva 4PL + "
-            "concentraciones), igual que el Solver del Excel."
+            "estándares (ST0–ST5), el control y las muestras (hasta 41) con la "
+            "distribución fija del laboratorio, detecta cuántas se cargaron y "
+            "calcula todo (curva 4PL + concentraciones), igual que el Solver."
         )
         up = st.file_uploader("Excel de la placa (.xlsx)", type=["xlsx"],
                               key="mc_placa_xlsx")
@@ -228,8 +232,98 @@ def _render_validez(imp) -> None:
         st.success("✅ Corrida válida: cumple todos los criterios de control de calidad.")
 
 
+def _render_placa_mapa(imp, n_activas: int) -> None:
+    """Mapa 8×12 de la placa: cada pocillo con su rol y color por OD/conc.
+
+    Reconstruye la distribución fija (ST0–ST5 y control en col 1-2; muestras
+    S1..SN serpenteando) para ver de un vistazo cómo quedaron los pocillos y
+    cuáles quedaron vacíos. El color codifica la OD o la concentración; los
+    pocillos sobrantes (S(N+1)..) se muestran como vacíos.
+    """
+    try:
+        import plotly.graph_objects as go
+    except Exception:
+        return
+
+    ROWS = ["A", "B", "C", "D", "E", "F", "G", "H"]
+    COLS = [str(i) for i in range(1, 13)]
+    NROW, NCOL = 8, 12
+    mapa = mapa_placa()
+
+    z_od = [[None] * NCOL for _ in range(NROW)]
+    z_conc = [[None] * NCOL for _ in range(NROW)]
+    labels = [["—"] * NCOL for _ in range(NROW)]
+    hover = [["Pocillo vacío"] * NCOL for _ in range(NROW)]
+
+    def _poner(r, c1, c2, label, od1, od2, conc, cv):
+        media = (od1 + od2) / 2.0
+        conc_txt = f"{conc:.4g} µg/L" if conc is not None else "—"
+        cv_txt = f"{cv:.1f}%" if cv is not None else "—"
+        htxt = (f"<b>{label}</b><br>OD {od1:g} / {od2:g} (prom {media:.3f})"
+                f"<br>%CV {cv_txt}<br>Conc {conc_txt}")
+        for c in (c1, c2):
+            z_od[r][c] = media
+            z_conc[r][c] = conc if conc is not None else None
+            labels[r][c] = label
+            hover[r][c] = htxt
+
+    # Estándares ST0..ST5
+    for i, (r, c1, c2) in enumerate(mapa["std"]):
+        if i < len(imp.std_od):
+            o1, o2 = imp.std_od[i]
+            _poner(r, c1, c2, f"ST{i}", o1, o2, STD_CONC_UGL[i], None)
+    # Control (CT)
+    cr, cc1, cc2 = mapa["control"]
+    o1, o2 = imp.control_od
+    _poner(cr, cc1, cc2, "CT", o1, o2, imp.control.conc_ugL, imp.control.cv_pct)
+    # Muestras cargadas S1..SN (las sobrantes quedan vacías)
+    for n in sorted(mapa["samples"].keys()):
+        if n > n_activas or n > len(imp.muestras):
+            continue
+        r, c1, c2 = mapa["samples"][n]
+        m = imp.muestras[n - 1]
+        _poner(r, c1, c2, f"S{n}", m.od_1, m.od_2, m.conc_ugL, m.cv_pct)
+
+    st.markdown("##### Distribución de la placa")
+    color_por = st.radio(
+        "Colorear por", ["OD", "Concentración (µg/L)"],
+        horizontal=True, key="mc_placa_color", label_visibility="collapsed",
+    )
+    usar_conc = color_por.startswith("Conc")
+    z = z_conc if usar_conc else z_od
+    escala = "OrRd" if usar_conc else "YlGnBu"
+    barra = "µg/L" if usar_conc else "OD"
+
+    fig = go.Figure(go.Heatmap(
+        z=z, x=COLS, y=ROWS,
+        hovertext=hover, hovertemplate="%{hovertext}<extra></extra>",
+        hoverongaps=False,
+        colorscale=escala, colorbar=dict(title=barra, thickness=12),
+        xgap=3, ygap=3,
+    ))
+    # Etiqueta de cada pocillo como anotación (así los vacíos también se rotulan).
+    for r in range(NROW):
+        for c in range(NCOL):
+            vacio = labels[r][c] == "—"
+            fig.add_annotation(
+                x=COLS[c], y=ROWS[r], text=labels[r][c], showarrow=False,
+                font=dict(size=10, color=(COLORS["text_muted"] if vacio else "#0f172a")),
+            )
+    fig.update_layout(
+        height=360, margin=dict(l=10, r=10, t=10, b=10),
+        xaxis=dict(side="top", title="Columna", fixedrange=True),
+        yaxis=dict(autorange="reversed", title="Fila", fixedrange=True),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+    st.caption(
+        "Col 1-2: estándares (ST0–ST5) y control (CT). Muestras S1..S"
+        f"{n_activas} serpenteando de H→A por pares de columnas. "
+        "Los pocillos «—» (sin color) quedaron vacíos."
+    )
+
+
 def _render_resultado(imp, analista_id: Optional[str]) -> None:
-    """Resumen de la corrida + curva + mapeo de muestras + datos + registro."""
+    """Resumen de la corrida + curva + mapa de la placa + mapeo + registro."""
     c = imp.curva
     k1, k2, k3, k4, k5 = st.columns(5)
     k1.metric("A (Amax)", f"{c.A:.4f}")
@@ -237,10 +331,31 @@ def _render_resultado(imp, analista_id: Optional[str]) -> None:
     k3.metric("C (IC50)", f"{c.C:.4f}")
     k4.metric("D", f"{c.D:.4f}")
     k5.metric("R²", f"{c.r2:.5f}")
+
+    # ── Nº de muestras cargadas (autodetectado, ajustable) ───────────────────
+    # No siempre se cargan todos los pocillos: la placa se procesa completa y el
+    # analista fija cuántas muestras se corrieron realmente. Las demás quedan
+    # como pocillos vacíos al final del orden serpenteante y se ignoran.
+    cap = len(imp.muestras)
+    n_det = min(cap, imp.n_muestras_detectadas or cap)
+    nc1, nc2 = st.columns([1, 2.4])
+    n_sel = int(nc1.number_input(
+        "Nº de muestras en la placa", min_value=1, max_value=max(1, cap),
+        value=int(n_det), step=1, key="mc_n_muestras",
+    ))
+    nc2.caption(
+        f"Se detectaron **{n_det}** muestra(s) cargada(s)"
+        + (f" · {cap - n_det} pocillo(s) vacío(s) al final." if cap - n_det else ".")
+        + " Ajusta si es necesario; los pocillos sobrantes se ignoran."
+    )
+    # Recortar a las muestras realmente cargadas: validez, asignación y guardado
+    # operan sobre este subconjunto.
+    imp.muestras = imp.muestras[:n_sel]
+
     ctrl_txt = f"{imp.control.conc_ugL:.3f} µg/L" if imp.control.conc_ugL is not None else "—"
     st.caption(
         f"Control: {ctrl_txt} (%CV {imp.control.cv_pct:.2f}) · ORDEN: "
-        f"{imp.orden or '—'} · {len(imp.muestras)} muestra(s) en la placa."
+        f"{imp.orden or '—'} · {n_sel} muestra(s) cargada(s)."
     )
     for a in imp.avisos:
         st.warning(a)
@@ -250,6 +365,9 @@ def _render_resultado(imp, analista_id: Optional[str]) -> None:
 
     # Curva de calibración (se llena automáticamente con la placa subida).
     _render_curva(imp)
+
+    # Mapa de la placa: distribución de los pocillos (estándares/control/muestras).
+    _render_placa_mapa(imp, n_sel)
 
     # ── Mapeo de cada muestra de la placa a su campaña/estación ──────────────
     grupos = get_muestras_agrupadas_por_campana()

@@ -52,7 +52,7 @@ HOJA = "MCT SAES"
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def _mapa_placa() -> dict:
+def mapa_placa() -> dict:
     """
     Devuelve el mapeo de la distribución fija:
         {"std": [(row,col1,col2), ...x6], "control": (row,col1,col2),
@@ -68,6 +68,44 @@ def _mapa_placa() -> dict:
         for row in range(8):                       # A..H
             samples[base + (7 - row)] = (row, c1, c2)
     return {"std": std, "control": control, "samples": samples}
+
+
+# Alias interno (compatibilidad) y capacidad máxima de muestras de la placa.
+_mapa_placa = mapa_placa
+CAPACIDAD_MUESTRAS = max(mapa_placa()["samples"].keys())   # 41
+
+# OD mínima para considerar un pozo "no cargado" (vacío). Un pozo sin pipetear
+# lee cerca del baseline del lector (~0), por debajo del mínimo de la curva (D).
+UMBRAL_OD_VACIO = 0.03
+
+
+def detectar_n_muestras(grid: list[list[float]], curva: CurvaParams) -> int:
+    """
+    Estima cuántas muestras se cargaron en la placa contando los pocillos
+    **vacíos al final** del orden serpenteante (S41 → S1).
+
+    Un pozo se considera vacío cuando su OD media < ``umbral``, con
+    ``umbral = max(UMBRAL_OD_VACIO, curva.D * 0.5)``: un pozo no pipeteado lee
+    cerca del baseline del lector, por debajo del mínimo de la curva (D),
+    mientras que una muestra real —aun muy concentrada— satura cerca de D.
+
+    Devuelve ``N`` = número de muestras cargadas (S1..SN), con mínimo 1.
+
+    Limitación: una muestra genuinamente muy concentrada podría leerse como
+    vacía. Por eso el analista puede ajustar N a mano y el mapa de la placa lo
+    hace evidente.
+    """
+    mapa = mapa_placa()
+    umbral = max(UMBRAL_OD_VACIO, (curva.D or 0.0) * 0.5)
+    vacios_finales = 0
+    for n in range(CAPACIDAD_MUESTRAS, 0, -1):
+        r, c1, c2 = mapa["samples"][n]
+        media = (grid[r][c1] + grid[r][c2]) / 2.0
+        if media < umbral:
+            vacios_finales += 1
+        else:
+            break
+    return max(1, CAPACIDAD_MUESTRAS - vacios_finales)
 
 
 @dataclass
@@ -95,6 +133,8 @@ class CorridaImportada:
     factor: float = FACTOR_DILUCION_DEFAULT
     recalculado: bool = False
     avisos: list[str] = field(default_factory=list)
+    n_muestras_detectadas: Optional[int] = None   # muestras cargadas estimadas
+    placa_od: Optional[list[list[float]]] = None   # grilla 8×12 cruda (si aplica)
 
 
 def _num(ws, fila: int, col: int) -> Optional[float]:
@@ -239,6 +279,7 @@ def parse_excel_solver(
         factor=factor,
         recalculado=recalculado,
         avisos=avisos,
+        n_muestras_detectadas=len(muestras),   # el Solver ya viene recortado
     )
 
 
@@ -341,7 +382,7 @@ def parse_placa_cruda(
     if len(grid) != 8 or any(len(r) != 12 for r in grid):
         raise ValueError("La placa debe ser 8 filas × 12 columnas.")
     g = [[float(v) for v in row] for row in grid]
-    mapa = _mapa_placa()
+    mapa = mapa_placa()
     avisos: list[str] = []
 
     # Estándares y curva
@@ -376,4 +417,5 @@ def parse_placa_cruda(
         control_conc_1=control_conc_1, control_conc_2=control_conc_2,
         muestras=muestras, std_od=std_od, control_od=(ctrl_od1, ctrl_od2),
         kit_lote=None, orden=2, factor=factor, recalculado=True, avisos=avisos,
+        n_muestras_detectadas=detectar_n_muestras(g, curva), placa_od=g,
     )
