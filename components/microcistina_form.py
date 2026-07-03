@@ -239,99 +239,199 @@ def _render_validez(imp) -> None:
         st.success("✅ Corrida válida: cumple todos los criterios de control de calidad.")
 
 
-def _render_placa_mapa(imp, n_activas: int) -> None:
-    """Mapa 8×12 de la placa: cada pocillo con su rol y color por OD/conc.
+# ── Mapa de la placa: paleta y helpers de color ──────────────────────────────
+_OD_STOPS = ["#eff6ff", "#bae6fd", "#38bdf8", "#0284c7", "#075985"]   # frío (OD)
+_CONC_STOPS = ["#fef9f5", "#fed7aa", "#fb923c", "#ea580c", "#b91c1c"]  # cálido (conc)
+_CONC_OVER = "#7f1d1d"   # muestra sobre rango
+_NEUTRAL = "#e9eef5"     # estándar en la vista de concentración
 
+_PLACA_CSS = """
+<style>
+html,body{margin:0;background:transparent;}
+.mc-wrap{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  padding:46px 6px 8px;box-sizing:border-box;color:#0f172a;}
+.mc-plate{display:grid;grid-template-columns:24px repeat(12,minmax(0,1fr));
+  gap:7px;max-width:760px;margin:0 auto;}
+.mc-hd{font-size:11px;color:#94a3b8;text-align:center;align-self:center;font-weight:600;}
+.mc-rl{font-size:11px;color:#94a3b8;font-weight:600;display:flex;align-items:center;justify-content:center;}
+.mc-cell{position:relative;display:flex;align-items:center;justify-content:center;}
+.mc-well{width:100%;max-width:40px;aspect-ratio:1;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:9.5px;font-weight:700;letter-spacing:.2px;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.35),0 1px 2px rgba(15,23,42,.14);
+  animation:mcpop .5s cubic-bezier(.2,.7,.3,1.3) both;
+  transition:transform .13s ease,box-shadow .13s ease;}
+.mc-well:hover{transform:scale(1.18);box-shadow:0 6px 16px rgba(15,23,42,.28);z-index:6;}
+.mc-empty{width:100%;max-width:40px;aspect-ratio:1;border-radius:50%;
+  border:1.5px dashed #cbd5e1;background:#f8fafc;
+  animation:mcpop .5s cubic-bezier(.2,.7,.3,1.3) both;}
+@keyframes mcpop{0%{opacity:0;transform:scale(.2)}100%{opacity:1;transform:scale(1)}}
+.mc-tip{position:absolute;bottom:120%;left:50%;transform:translateX(-50%) translateY(5px);
+  background:#0f172a;color:#fff;padding:6px 9px;border-radius:7px;font-size:11px;
+  line-height:1.4;white-space:nowrap;font-weight:500;opacity:0;pointer-events:none;
+  transition:opacity .13s ease,transform .13s ease;z-index:30;box-shadow:0 8px 22px rgba(0,0,0,.28);}
+.mc-tip:after{content:'';position:absolute;top:100%;left:50%;transform:translateX(-50%);
+  border:5px solid transparent;border-top-color:#0f172a;}
+.mc-cell:hover .mc-tip{opacity:1;transform:translateX(-50%) translateY(0);}
+.mc-legend{display:flex;align-items:center;gap:8px;justify-content:center;flex-wrap:wrap;
+  margin:22px auto 0;max-width:760px;font-size:11px;color:#475569;}
+.mc-bar{width:150px;height:9px;border-radius:5px;box-shadow:inset 0 0 0 1px rgba(15,23,42,.08);}
+.mc-lbl{font-variant-numeric:tabular-nums;}
+.mc-sep{width:1px;height:16px;background:#e2e8f0;margin:0 4px;}
+.mc-chip{display:inline-flex;align-items:center;gap:5px;}
+.mc-chip i{width:12px;height:12px;border-radius:50%;display:inline-block;box-shadow:0 1px 2px rgba(15,23,42,.14);}
+.mc-chip i.dash{background:#f8fafc;border:1.5px dashed #cbd5e1;box-shadow:none;}
+</style>
+"""
+
+
+def _hex_rgb(h: str):
+    h = h.lstrip("#")
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def _grad(stops, t: float) -> str:
+    """Color interpolado a lo largo de ``stops`` para t ∈ [0,1]."""
+    t = 0.0 if t < 0 else 1.0 if t > 1 else t
+    seg = t * (len(stops) - 1)
+    i = min(int(seg), len(stops) - 2)
+    f = seg - i
+    a, b = _hex_rgb(stops[i]), _hex_rgb(stops[i + 1])
+    return "#%02x%02x%02x" % tuple(round(a[k] + (b[k] - a[k]) * f) for k in range(3))
+
+
+def _lum(hexcolor: str) -> float:
+    r, g, b = _hex_rgb(hexcolor)
+    return (0.299 * r + 0.587 * g + 0.114 * b) / 255.0
+
+
+def _placa_html(imp, n_activas: int, usar_conc: bool) -> str:
+    """HTML de la placa 8×12 con pocillos circulares (sin el <style>).
+
+    Función pura (sin Streamlit) para poder previsualizarla y testearla.
     Reconstruye la distribución fija (ST0–ST5 y control en col 1-2; muestras
-    S1..SN serpenteando) para ver de un vistazo cómo quedaron los pocillos y
-    cuáles quedaron vacíos. El color codifica la OD o la concentración; los
-    pocillos sobrantes (S(N+1)..) se muestran como vacíos.
+    S1..SN serpenteando); los pocillos sobrantes se muestran vacíos.
     """
-    try:
-        import plotly.graph_objects as go
-    except Exception:
-        return
-
-    ROWS = ["A", "B", "C", "D", "E", "F", "G", "H"]
-    COLS = [str(i) for i in range(1, 13)]
-    NROW, NCOL = 8, 12
     mapa = mapa_placa()
+    ROWS = "ABCDEFGH"
+    wells: dict = {}     # (fila, col) -> datos del pocillo
 
-    z_od = [[None] * NCOL for _ in range(NROW)]
-    z_conc = [[None] * NCOL for _ in range(NROW)]
-    labels = [["—"] * NCOL for _ in range(NROW)]
-    hover = [["Pocillo vacío"] * NCOL for _ in range(NROW)]
-
-    def _poner(r, c1, c2, label, od1, od2, conc, cv, en_conc=True):
-        # en_conc=False excluye la celda de la escala de concentración (para los
-        # estándares: ST5=5 µg/L, muy por encima de las muestras, aplastaría el
-        # color de estas). Conserva su OD, etiqueta y hover.
+    def _put(r, c1, c2, label, od1, od2, conc, cv, role, over=False):
         media = (od1 + od2) / 2.0
-        conc_txt = f"{conc:.4g} µg/L" if conc is not None else "—"
-        cv_txt = f"{cv:.1f}%" if cv is not None else "—"
-        htxt = (f"<b>{label}</b><br>OD {od1:g} / {od2:g} (prom {media:.3f})"
-                f"<br>%CV {cv_txt}<br>Conc {conc_txt}")
         for c in (c1, c2):
-            z_od[r][c] = media
-            z_conc[r][c] = conc if (en_conc and conc is not None) else None
-            labels[r][c] = label
-            hover[r][c] = htxt
+            wells[(r, c)] = dict(label=label, od=media, od1=od1, od2=od2,
+                                 conc=conc, cv=cv, role=role, over=over)
 
-    # Estándares ST0..ST5 (fuera de la escala de concentración)
     for i, (r, c1, c2) in enumerate(mapa["std"]):
         if i < len(imp.std_od):
             o1, o2 = imp.std_od[i]
-            _poner(r, c1, c2, f"ST{i}", o1, o2, STD_CONC_UGL[i], None, en_conc=False)
-    # Control (CT)
+            _put(r, c1, c2, f"ST{i}", o1, o2, STD_CONC_UGL[i], None, "std")
     cr, cc1, cc2 = mapa["control"]
     o1, o2 = imp.control_od
-    _poner(cr, cc1, cc2, "CT", o1, o2, imp.control.conc_ugL, imp.control.cv_pct)
-    # Muestras cargadas S1..SN (las sobrantes quedan vacías)
+    _put(cr, cc1, cc2, "CT", o1, o2, imp.control.conc_ugL, imp.control.cv_pct, "control")
     for n in sorted(mapa["samples"].keys()):
         if n > n_activas or n > len(imp.muestras):
             continue
         r, c1, c2 = mapa["samples"][n]
         m = imp.muestras[n - 1]
-        _poner(r, c1, c2, f"S{n}", m.od_1, m.od_2, m.conc_ugL, m.cv_pct)
+        _put(r, c1, c2, f"S{n}", m.od_1, m.od_2, m.conc_ugL, m.cv_pct,
+             "sample", over=(m.conc_ugL is None))
+
+    # Escala activa (los estándares no entran en la de concentración).
+    if usar_conc:
+        vals = [w["conc"] for w in wells.values()
+                if w["role"] in ("sample", "control") and w["conc"] is not None]
+        vmin, vmax, stops = 0.0, (max(vals) if vals else 1.0), _CONC_STOPS
+    else:
+        vals = [w["od"] for w in wells.values()]
+        vmin, vmax, stops = (min(vals), max(vals), _OD_STOPS) if vals else (0.0, 1.0, _OD_STOPS)
+
+    def _fill(w) -> str:
+        if usar_conc:
+            if w["role"] == "std":
+                return _NEUTRAL
+            if w["over"]:
+                return _CONC_OVER
+            if w["conc"] is None:
+                return _NEUTRAL
+            t = (w["conc"] - vmin) / (vmax - vmin) if vmax > vmin else 0.5
+            return _grad(stops, t)
+        t = (w["od"] - vmin) / (vmax - vmin) if vmax > vmin else 0.5
+        return _grad(stops, t)
+
+    def _tip(w) -> str:
+        od = f"{w['od1']:g}/{w['od2']:g}"
+        if w["role"] == "std":
+            return f"<b>{w['label']}</b> · estándar<br>{w['conc']:g} µg/L · OD {od}"
+        if w["role"] == "control":
+            cc = f"{w['conc']:.3f} µg/L" if w["conc"] is not None else "—"
+            return f"<b>{w['label']}</b> · control<br>OD {od} · %CV {w['cv']:.1f}<br>{cc}"
+        if w["over"]:
+            return f"<b>{w['label']}</b><br>OD {od}<br>⚠ sobre rango (&gt;5 µg/L)"
+        cc = f"{w['conc']:.4g} µg/L" if w["conc"] is not None else "—"
+        return f"<b>{w['label']}</b><br>OD {od} · %CV {w['cv']:.1f}<br>{cc}"
+
+    cells = ['<div class="mc-hd"></div>']
+    cells += [f'<div class="mc-hd">{c}</div>' for c in range(1, 13)]
+    for r in range(8):
+        cells.append(f'<div class="mc-rl">{ROWS[r]}</div>')
+        for c in range(12):
+            delay = (r * 12 + c) * 0.010
+            w = wells.get((r, c))
+            if w is None:
+                cells.append(
+                    '<div class="mc-cell"><div class="mc-empty" '
+                    f'style="animation-delay:{delay:.2f}s"></div></div>')
+                continue
+            fill = _fill(w)
+            txt = "#ffffff" if _lum(fill) < 0.6 else "#0f172a"
+            cells.append(
+                '<div class="mc-cell">'
+                f'<div class="mc-well" style="background:{fill};color:{txt};'
+                f'animation-delay:{delay:.2f}s">{w["label"]}'
+                f'<span class="mc-tip">{_tip(w)}</span></div></div>')
+    plate = '<div class="mc-plate">' + "".join(cells) + "</div>"
+
+    unidad = "µg/L" if usar_conc else "OD"
+    # Los chips de "Estándar" (gris) y "Sobre rango" solo aplican en la vista de
+    # concentración (en la de OD los estándares sí van coloreados en el gradiente).
+    chips = ""
+    if usar_conc:
+        chips += '<span class="mc-chip"><i style="background:#e9eef5"></i>Estándar</span>'
+        chips += '<span class="mc-chip"><i style="background:#7f1d1d"></i>Sobre rango</span>'
+    chips += '<span class="mc-chip"><i class="dash"></i>Vacío</span>'
+    legend = (
+        '<div class="mc-legend">'
+        f'<span class="mc-lbl">{vmin:.2f}</span>'
+        f'<span class="mc-bar" style="background:linear-gradient(90deg,{", ".join(stops)})"></span>'
+        f'<span class="mc-lbl">{vmax:.2f} {unidad}</span>'
+        '<span class="mc-sep"></span>'
+        f'{chips}'
+        "</div>")
+
+    return '<div class="mc-wrap">' + plate + legend + "</div>"
+
+
+def _render_placa_mapa(imp, n_activas: int) -> None:
+    """Mapa de la placa 8×12 con pocillos circulares: color por OD o
+    concentración, animación de entrada escalonada y hover con detalle."""
+    import streamlit.components.v1 as components
 
     st.markdown("##### Distribución de la placa")
-    color_por = st.radio(
+    usar_conc = st.radio(
         "Colorear por", ["OD", "Concentración (µg/L)"],
         horizontal=True, key="mc_placa_color", label_visibility="collapsed",
-    )
-    usar_conc = color_por.startswith("Conc")
-    z = z_conc if usar_conc else z_od
-    escala = "OrRd" if usar_conc else "YlGnBu"
-    barra = "µg/L" if usar_conc else "OD"
+    ).startswith("Conc")
 
-    fig = go.Figure(go.Heatmap(
-        z=z, x=COLS, y=ROWS,
-        hovertext=hover, hovertemplate="%{hovertext}<extra></extra>",
-        hoverongaps=False,
-        colorscale=escala, colorbar=dict(title=barra, thickness=12),
-        xgap=3, ygap=3,
-    ))
-    # Etiqueta de cada pocillo como anotación (así los vacíos también se rotulan).
-    for r in range(NROW):
-        for c in range(NCOL):
-            vacio = labels[r][c] == "—"
-            fig.add_annotation(
-                x=COLS[c], y=ROWS[r], text=labels[r][c], showarrow=False,
-                font=dict(size=10, color=(COLORS["text_muted"] if vacio else "#0f172a")),
-            )
-    fig.update_layout(
-        height=360, margin=dict(l=10, r=10, t=10, b=10),
-        xaxis=dict(side="top", title="Columna", fixedrange=True),
-        yaxis=dict(autorange="reversed", title="Fila", fixedrange=True),
-    )
-    st.plotly_chart(fig, use_container_width=True)
-    nota_std = (" Los estándares (ST0–ST5) se muestran sin color en esta vista "
-                "(quedan fuera de la escala de concentración)." if usar_conc else "")
+    components.html(_PLACA_CSS + _placa_html(imp, n_activas, usar_conc),
+                    height=500, scrolling=False)
+
+    nota = (" En esta vista los estándares se muestran en gris (fuera de la escala "
+            "de concentración)." if usar_conc else "")
     st.caption(
-        "Col 1-2: estándares (ST0–ST5) y control (CT). Muestras S1..S"
-        f"{n_activas} serpenteando de H→A por pares de columnas. "
-        "Los pocillos «—» quedaron vacíos." + nota_std
-    )
+        "Placa 8×12. Col 1-2: estándares (ST0–ST5) y control (CT); muestras "
+        f"S1..S{n_activas} serpenteando de H→A. Pasa el cursor por un pocillo para "
+        "ver su detalle." + nota)
 
 
 def _huella_placa(imp) -> str:
