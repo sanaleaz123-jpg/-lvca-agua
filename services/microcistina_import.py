@@ -296,8 +296,15 @@ import re
 def parse_grid_text(text: str) -> list[list[float]]:
     """
     Convierte el texto pegado de la placa en una matriz 8×12 de floats.
-    Tolera etiquetas de fila (A–H), separadores por tab/espacio/coma/';' y
-    coma decimal. Ignora una fila de encabezado de columnas (1..12) si aparece.
+
+    Acepta placas PARCIALES: se puede pegar solo lo que se corrió (p. ej. la
+    columna de estándares/control y unas pocas columnas de muestras). Se admiten
+    de 6 a 8 filas (A–H) y de 2 a 12 columnas; los pocillos que falten se
+    rellenan como VACÍOS (OD 0). Las columnas van en pares (réplicas): col 1-2
+    (estándares + control + S1), col 3-4, 5-6… para las muestras.
+
+    Tolera etiquetas de fila (A–H), separadores por tab/espacio/coma/';' y coma
+    decimal, e ignora una fila de encabezado de columnas (1..12) si aparece.
     """
     filas: list[list[float]] = []
     for linea in text.strip().splitlines():
@@ -306,17 +313,31 @@ def parse_grid_text(text: str) -> list[list[float]]:
             continue
         nums = re.findall(r"-?\d+(?:[.,]\d+)?", linea)
         vals = [float(n.replace(",", ".")) for n in nums]
-        # Saltar fila de encabezado "1 2 3 ... 12"
-        if vals == [float(i) for i in range(1, 13)]:
+        # Saltar una fila de encabezado de columnas "1 2 3 … k" (cualquier ancho).
+        if len(vals) >= 2 and vals == [float(i) for i in range(1, len(vals) + 1)]:
             continue
         if vals:
-            filas.append(vals[:12] if len(vals) >= 12 else vals)
-    if len(filas) != 8 or any(len(f) != 12 for f in filas):
+            filas.append(vals[:12])
+
+    n_cols = max((len(f) for f in filas), default=0)
+    if len(filas) < 6 or n_cols < 2:
         raise ValueError(
-            "Se esperaban 8 filas (A–H) × 12 columnas de absorbancias. "
-            f"Se leyeron {len(filas)} fila(s) con longitudes {[len(f) for f in filas]}."
+            "Pega al menos las 6 filas de estándares con sus 2 réplicas (col 1-2). "
+            "Se aceptan de 6 a 8 filas (A–H) y de 2 a 12 columnas; lo que falte se "
+            f"toma como pocillos vacíos. Se leyeron {len(filas)} fila(s) y "
+            f"{n_cols} columna(s)."
         )
-    return filas
+    if len(filas) > 8:
+        raise ValueError(
+            f"Se leyeron {len(filas)} filas; la placa tiene como máximo 8 (A–H). "
+            "Revisa que no haya filas de más."
+        )
+    # Rellenar a 8×12 con 0.0 (pocillos no cargados = vacíos).
+    grid = [[0.0] * 12 for _ in range(8)]
+    for r, f in enumerate(filas):
+        for c, v in enumerate(f[:12]):
+            grid[r][c] = v
+    return grid
 
 
 def _grid_desde_hoja(ws) -> Optional[list[list[float]]]:

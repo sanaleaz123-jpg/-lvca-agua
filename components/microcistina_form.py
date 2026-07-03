@@ -113,10 +113,17 @@ def _render_import(analista_id: Optional[str]) -> None:
                 st.error(f"No se pudo leer la placa: {exc}")
         else:
             with st.expander("…o pegar la placa como texto"):
+                st.caption(
+                    "Pega solo las columnas que se corrieron (en pares de "
+                    "réplicas): col 1-2 = estándares (ST0–ST5) + control + S1; "
+                    "col 3-4, 5-6… = muestras. Lo que falte se toma como pocillos "
+                    "vacíos. Mínimo: las 6 filas de estándares con sus 2 réplicas."
+                )
                 txt = st.text_area(
-                    "Placa OD (8 filas × 12 columnas)", height=200, key="mc_grid",
-                    placeholder=("A  0.959 1.002 0.919 0.866 ...\n"
-                                 "B  0.861 0.806 0.85 0.92 ...\n... hasta la fila H"),
+                    "Placa OD (8 filas A–H; 2 a 12 columnas)", height=200, key="mc_grid",
+                    placeholder=("0.959 1.002 0.919 0.866\n"
+                                 "0.861 0.806 0.85  0.92\n"
+                                 "… hasta la fila H (aquí solo 4 columnas)"),
                 )
                 if txt.strip():
                     try:
