@@ -28,8 +28,9 @@ from services.base_datos_service import (
 
 # Filas por página en la vista de tabla. La paginación solo se activa cuando
 # hay más registros que esto; con conjuntos pequeños la tabla se muestra
-# completa como antes. Reduce drásticamente el tamaño del DOM/HTML renderizado.
-_FILAS_POR_PAGINA = 200
+# completa como antes. Reduce drásticamente el tamaño del DOM/HTML renderizado
+# y el scroll inicial de la página.
+_FILAS_POR_PAGINA = 100
 from services.parametro_registry import (
     get_columnas_parametros,
     get_codigos_parametros,

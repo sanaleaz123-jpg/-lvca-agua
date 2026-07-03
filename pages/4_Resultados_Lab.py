@@ -312,9 +312,6 @@ def _render_categoria(
     Retorna {parametro_id: {valor, observaciones, cualificador}}.
     """
     con_datos = sum(1 for f in filas_cat if f["valor_numerico"] is not None)
-    cs = st.columns(3)
-    cs[0].caption(f"Parámetros: **{len(filas_cat)}**")
-    cs[1].caption(f"Con valor: **{con_datos}**")
     n_exc = sum(
         1 for f in filas_cat
         if f["valor_numerico"] is not None
@@ -324,11 +321,63 @@ def _render_categoria(
             or (f["lim_min"] is not None and f["valor_numerico"] < f["lim_min"])
         )
     )
-    cs[2].markdown(
-        f'<span style="font-size:0.85em">:material/warning: Exceden estimados: '
-        f'<b>{n_exc}</b></span>',
+
+    # ── Filtro de vista: evita renderizar 50-80 filas cuando solo interesan
+    #    las del ensayo. Si la muestra ya tiene datos, arranca en "Con valor";
+    #    ocultar una fila NO borra nada (el guardado solo procesa filas con
+    #    valor/observación/cualificador y lo persistido en BD queda intacto). ──
+    cat_key = (filas_cat[0].get("categoria") or "cat").replace(" ", "_").lower()
+    fc_busq, fc_modo, fc_stats = st.columns([1.8, 2.4, 1.8])
+    busq = fc_busq.text_input(
+        "Buscar parámetro",
+        key=f"lab_busq_{key_prefix}_{cat_key}",
+        placeholder="Buscar parámetro...",
+        label_visibility="collapsed",
+        icon=":material/search:",
+    )
+    modo = fc_modo.radio(
+        "Mostrar",
+        ["Con valor", "Pendientes", "Todos"],
+        index=(0 if con_datos else 2),
+        horizontal=True,
+        label_visibility="collapsed",
+        key=f"lab_modo_{key_prefix}_{cat_key}",
+    )
+    fc_stats.markdown(
+        f'<span style="font-size:0.82em; color:#64748b;">'
+        f'{len(filas_cat)} parám. · {con_datos} con valor · '
+        f':material/warning: exceden <b>{n_exc}</b></span>',
         unsafe_allow_html=True,
     )
+
+    if modo == "Con valor":
+        filas_vista = [
+            f for f in filas_cat
+            if f["valor_numerico"] is not None or f.get("cualificador")
+        ]
+    elif modo == "Pendientes":
+        filas_vista = [
+            f for f in filas_cat
+            if f["valor_numerico"] is None and not f.get("cualificador")
+        ]
+    else:
+        filas_vista = filas_cat
+    if busq and busq.strip():
+        q = busq.strip().lower()
+        filas_vista = [
+            f for f in filas_vista
+            if q in f["parametro"].lower() or q in (f.get("codigo") or "").lower()
+        ]
+
+    ocultas = len(filas_cat) - len(filas_vista)
+    if ocultas > 0:
+        st.caption(
+            f":material/filter_alt: {ocultas} parámetro(s) oculto(s) por el filtro — "
+            "sus datos guardados no se modifican. Cambia a **Todos** para verlos."
+        )
+    if not filas_vista:
+        st.info("Ningún parámetro coincide con el filtro actual.")
+        return {}
 
     # Encabezado
     hcols = st.columns([3, 1.6, 1.1, 0.7, 1, 0.6, 0.5])
@@ -344,7 +393,7 @@ def _render_categoria(
 
     valores: dict[str, dict] = {}
 
-    for fila in filas_cat:
+    for fila in filas_vista:
         pid = fila["parametro_id"]
         lim_max = fila["lim_max"]
         lim_min = fila["lim_min"]
@@ -435,9 +484,9 @@ def _render_categoria(
 
         valores[pid] = {"valor": val, "observaciones": "", "cualificador": cualif or None}
 
-    # Observaciones en sección colapsable
+    # Observaciones en sección colapsable (solo de las filas visibles)
     with st.expander("Observaciones", icon=":material/edit_note:", expanded=False):
-        for fila in filas_cat:
+        for fila in filas_vista:
             pid = fila["parametro_id"]
             existing_obs = fila.get("observaciones", "") or ""
             obs = st.text_input(

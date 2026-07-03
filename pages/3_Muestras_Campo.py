@@ -690,16 +690,15 @@ def _render_registro(campana_id: str) -> None:
                         st.rerun()
 
     with st.form("form_muestra", clear_on_submit=False):
-        # ── Tipo ─────────────────────────────────────────────────────────
-        tipo = st.selectbox(
-            "Tipo de muestra",
-            TIPOS_MUESTRA,
-            index=tipo_idx,
-            format_func=lambda t: ETIQUETA_TIPO.get(t, t),
-        )
-
-        # ── Fecha, hora y técnico ────────────────────────────────────────
-        c3, c4, c5 = st.columns(3)
+        # ── Tipo, fecha, hora y técnico (una sola fila) ───────────────────
+        c2, c3, c4, c5 = st.columns([1.1, 1, 0.8, 1.4])
+        with c2:
+            tipo = st.selectbox(
+                "Tipo de muestra",
+                TIPOS_MUESTRA,
+                index=tipo_idx,
+                format_func=lambda t: ETIQUETA_TIPO.get(t, t),
+            )
         with c3:
             fecha = st.date_input(
                 "Fecha de recolección *",
@@ -727,18 +726,29 @@ def _render_registro(campana_id: str) -> None:
         prof_vals: dict[str, float] = {}  # solo modo columna
 
         if modo_muestreo == "superficial":
-            # Solo 1 campo de profundidad para superficial
-            prof_sup_val = st.number_input(
-                "Profundidad de muestreo (m)",
-                min_value=0.0, max_value=50.0, step=0.1,
-                value=float(def_profundidades.get("S", 0.3)),
-                key=f"reg_prof_sup{scope}",
-            )
+            # Profundidad + temperatura de transporte en una sola fila
+            ps1, ps2 = st.columns(2)
+            with ps1:
+                prof_sup_val = st.number_input(
+                    "Profundidad de muestreo (m)",
+                    min_value=0.0, max_value=50.0, step=0.1,
+                    value=float(def_profundidades.get("S", 0.3)),
+                    key=f"reg_prof_sup{scope}",
+                )
+            with ps2:
+                temp_transporte = st.number_input(
+                    "Temperatura de transporte (°C)",
+                    min_value=-10.0,
+                    max_value=50.0,
+                    value=def_temp,
+                    step=0.5,
+                )
         else:
-            # Columna de agua: ecosonda, Secchi y profundidad de cada nivel marcado
+            # Columna de agua: ecosonda, Secchi y temperatura en una fila;
+            # debajo, la profundidad de cada nivel marcado.
             section_header("Profundidades", "waves")
             st.caption("Ingrese las profundidades en metros para cada nivel de muestreo.")
-            pt1, pt2 = st.columns(2)
+            pt1, pt2, pt3 = st.columns(3)
             with pt1:
                 prof_total_val = st.number_input(
                     "Profundidad total (ecosonda) (m)",
@@ -752,6 +762,14 @@ def _render_registro(campana_id: str) -> None:
                     min_value=0.0, max_value=100.0, step=0.1,
                     value=float(def_prof_secchi) if def_prof_secchi else 0.0,
                     key=f"reg_prof_secchi{scope}",
+                )
+            with pt3:
+                temp_transporte = st.number_input(
+                    "Temperatura de transporte (°C)",
+                    min_value=-10.0,
+                    max_value=50.0,
+                    value=def_temp,
+                    step=0.5,
                 )
 
             if niveles_seleccionados:
@@ -775,15 +793,6 @@ def _render_registro(campana_id: str) -> None:
                     "para ingresar sus profundidades."
                 )
 
-        # ── Transporte ───────────────────────────────────────────────────
-        temp_transporte = st.number_input(
-            "Temperatura de transporte (°C)",
-            min_value=-10.0,
-            max_value=50.0,
-            value=def_temp,
-            step=0.5,
-        )
-
         # ── Observaciones (clima siempre; descarga y nivel solo en embalses) ──
         section_header("Observaciones de campo", "file")
         if es_embalse:
@@ -802,6 +811,7 @@ def _render_registro(campana_id: str) -> None:
         observaciones = st.text_area(
             "Observaciones adicionales",
             value=def_obs,
+            height=80,
             placeholder="Notas sobre condiciones, accesibilidad, olores, color del agua...",
         )
 
