@@ -17,7 +17,6 @@ Función pública:
 
 from __future__ import annotations
 
-import hashlib
 from typing import Optional
 
 import pandas as pd
@@ -434,21 +433,6 @@ def _render_placa_mapa(imp, n_activas: int) -> None:
         "ver su detalle." + nota)
 
 
-def _huella_placa(imp) -> str:
-    """Huella estable de la placa (OD de estándares, control y muestras).
-
-    Sirve para detectar cuándo se sube una placa DISTINTA entre reruns y así
-    reiniciar el N autodetectado del widget (que de otro modo hereda el valor de
-    la placa anterior, porque st.number_input persiste su 'key' e ignora 'value').
-    """
-    raw = repr((
-        imp.std_od, imp.control_od,
-        tuple((m.od_1, m.od_2) for m in imp.muestras),
-        imp.n_muestras_detectadas,
-    ))
-    return hashlib.md5(raw.encode()).hexdigest()
-
-
 def _render_resultado(imp, analista_id: Optional[str]) -> None:
     """Resumen de la corrida + curva + mapa de la placa + mapeo + registro."""
     c = imp.curva
@@ -459,33 +443,11 @@ def _render_resultado(imp, analista_id: Optional[str]) -> None:
     k4.metric("D", f"{c.D:.4f}")
     k5.metric("R²", f"{c.r2:.5f}")
 
-    # ── Nº de muestras cargadas (autodetectado, ajustable) ───────────────────
-    # No siempre se cargan todos los pocillos: la placa se procesa completa y el
-    # analista fija cuántas muestras se corrieron realmente. Las demás quedan
-    # como pocillos vacíos al final del orden serpenteante y se ignoran.
+    # Nº de muestras cargadas: se detecta automáticamente (pocillos vacíos al
+    # final del orden serpenteante). La placa se procesa completa y se recorta a
+    # las cargadas; validez, asignación y guardado operan sobre ese subconjunto.
     cap = len(imp.muestras)
-    n_det = min(cap, imp.n_muestras_detectadas or cap)
-    # El number_input persiste su valor por 'key' entre reruns e ignora 'value='
-    # una vez creado. Para que cada placa NUEVA aplique SU propio N autodetectado
-    # (y no herede el de la placa anterior), reiniciamos el estado del widget
-    # cuando cambia la huella de la placa.
-    fp = _huella_placa(imp)
-    if st.session_state.get("mc_n_muestras_fp") != fp:
-        st.session_state["mc_n_muestras_fp"] = fp
-        st.session_state["mc_n_muestras"] = int(n_det)
-    nc1, nc2 = st.columns([1, 2.4])
-    n_sel = int(nc1.number_input(
-        "Nº de muestras en la placa", min_value=1, max_value=max(1, cap),
-        step=1, key="mc_n_muestras",
-    ))
-    nc2.caption(
-        f"Se detectaron **{n_det}** muestra(s) cargada(s)"
-        + (f" · {cap - n_det} pocillo(s) vacío(s) al final." if cap - n_det else ".")
-        + " Ajústalo si es necesario. Si una muestra muy tóxica (OD≈0) quedó al "
-        "final, súbelo a mano para no perderla."
-    )
-    # Recortar a las muestras realmente cargadas: validez, asignación y guardado
-    # operan sobre este subconjunto.
+    n_sel = min(cap, imp.n_muestras_detectadas or cap)
     imp.muestras = imp.muestras[:n_sel]
 
     ctrl_txt = f"{imp.control.conc_ugL:.3f} µg/L" if imp.control.conc_ugL is not None else "—"
