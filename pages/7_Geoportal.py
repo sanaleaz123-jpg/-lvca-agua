@@ -2581,33 +2581,56 @@ def main() -> None:
     )
 
     # ── 2. Mapa (7/12) + Sidebar derecha (5/12) ─────────────────────────
-    # Ambas columnas corren como fragments: tocar los filtros del mapa NO
-    # re-renderiza la sidebar (gráficos Plotly), y tocar parámetro/año/tabs
-    # de la sidebar NO reconstruye el mapa Folium. Solo cambiar de punto o
-    # de modo escala a rerun completo (el mapa debe recentrarse).
-    col_mapa, col_side = st.columns([7, 5], gap="medium")
-
-    with col_mapa:
-        _fragmento_mapa(puntos_con_coords, opciones_punto)
-
-    with col_side:
-        _fragmento_sidebar(
-            opciones_punto, parametros, campanas,
-            str(fecha_inicio), str(fecha_fin),
-        )
-
-
-def _firma_sync_mapa() -> tuple:
-    """Estado de la sidebar del que depende el centrado del mapa."""
-    return (
-        st.session_state.get("geo_modo"),
-        st.session_state.get("geo_punto"),
+    # Mapa y sidebar viven DENTRO de UN SOLO fragment (_fragmento_geoportal).
+    # Clave de la fluidez: un click en un marcador —o cambiar de punto/modo—
+    # se resuelve con un rerun de ámbito "fragment" (st.rerun(scope="fragment")),
+    # que re-renderiza SOLO este bloque (mapa + panel) sin tocar el dashboard,
+    # la barra de navegación ni recargar la página entera. Antes eran dos
+    # fragments separados: como un fragment no puede refrescar a otro, el click
+    # obligaba a un rerun de app completo → la página se ponía en blanco y
+    # re-disparaba el toast en cada click. Con ambos en el mismo fragment el
+    # panel se actualiza al vuelo y el mapa no re-monta el iframe (su HTML base
+    # es idéntico entre reruns; solo se le pasan center/zoom/anillo en vivo).
+    _fragmento_geoportal(
+        puntos_con_coords, opciones_punto, parametros, campanas,
+        str(fecha_inicio), str(fecha_fin),
     )
 
 
 @st.fragment
-def _fragmento_mapa(puntos_con_coords: list[dict], opciones_punto: dict) -> None:
-    """Columna izquierda: buscador + filtros del mapa + Folium + clicks."""
+def _fragmento_geoportal(
+    puntos_con_coords: list[dict],
+    opciones_punto: dict,
+    parametros: list[dict],
+    campanas: list[dict],
+    fecha_inicio: str,
+    fecha_fin: str,
+) -> None:
+    """
+    Fragment único que contiene mapa (izq) + panel de análisis (der). Al vivir
+    juntos, un click en el mapa o un cambio de punto/modo re-renderiza ambas
+    columnas con un rerun de ámbito "fragment" — sin blanquear la página ni
+    reconstruir el dashboard. El dashboard de KPIs queda FUERA a propósito: no
+    depende de la selección, así que nunca se re-renderiza al navegar el mapa.
+    """
+    col_mapa, col_side = st.columns([7, 5], gap="medium")
+
+    with col_mapa:
+        _col_mapa(puntos_con_coords, opciones_punto)
+
+    with col_side:
+        _col_sidebar(
+            opciones_punto, parametros, campanas,
+            fecha_inicio, fecha_fin,
+        )
+
+
+def _col_mapa(puntos_con_coords: list[dict], opciones_punto: dict) -> None:
+    """Columna izquierda: buscador + filtros del mapa + Folium + clicks.
+
+    No lleva @st.fragment: se renderiza dentro de _fragmento_geoportal, así el
+    rerun del click (scope="fragment") refresca también el panel derecho.
+    """
     import folium
     from streamlit_folium import st_folium
 
@@ -2629,8 +2652,9 @@ def _fragmento_mapa(puntos_con_coords: list[dict], opciones_punto: dict) -> None
     ):
         st.session_state["geo_punto"] = sel_buscar
         st.session_state["geo_modo"] = "punto"
-        st.session_state["_geo_sync_mapa"] = _firma_sync_mapa()
-        st.rerun()  # scope app: sidebar y mapa se sincronizan
+        # scope="fragment": re-renderiza solo mapa + panel (sin blanquear la
+        # página). El mapa se recentra porque se reconstruye con el nuevo punto.
+        st.rerun(scope="fragment")
 
     # ── Filtros del mapa + exportación ───────────────────────────────
     # Ancla para alinear verticalmente la barra de filtros (toggle + selectbox
@@ -2768,7 +2792,7 @@ def _fragmento_mapa(puntos_con_coords: list[dict], opciones_punto: dict) -> None
         st.session_state.pop("_geo_centrado_en", None)
 
     map_data = st_folium(
-        mapa, use_container_width=True, height=680,
+        mapa, use_container_width=True, height=600,
         returned_objects=["last_object_clicked"],
         key="geo_mapa",
         center=centro,
@@ -2813,13 +2837,13 @@ def _fragmento_mapa(puntos_con_coords: list[dict], opciones_punto: dict) -> None
                 st.session_state["geo_ultimo_click"] = firma
                 st.session_state["geo_punto"] = closest_label
                 st.session_state["geo_modo"] = "punto"
-                # Registrar la firma para que la sidebar no re-escale el rerun
-                st.session_state["_geo_sync_mapa"] = _firma_sync_mapa()
-                st.rerun()  # scope app: sidebar y mapa se sincronizan
+                # scope="fragment": el click refresca mapa + panel al vuelo, sin
+                # rerun de app completo → sin pantalla en blanco, el dashboard y
+                # la barra de navegación se quedan intactos.
+                st.rerun(scope="fragment")
 
 
-@st.fragment
-def _fragmento_sidebar(
+def _col_sidebar(
     opciones_punto: dict,
     parametros: list[dict],
     campanas: list[dict],
@@ -2827,9 +2851,11 @@ def _fragmento_sidebar(
     fecha_fin: str,
 ) -> None:
     """
-    Columna derecha: modo Campaña/Punto + gráficos. Cambiar parámetro, año
-    o tab re-renderiza solo esta columna. Cambiar de modo o de punto escala
-    a rerun completo porque el mapa (fuera del fragment) debe recentrarse.
+    Columna derecha: modo Campaña/Punto + gráficos. Se renderiza dentro de
+    _fragmento_geoportal (mismo fragment que el mapa). Cambiar parámetro, año o
+    tab re-renderiza el fragment (mapa + panel) con ámbito "fragment", sin tocar
+    el dashboard ni recargar la página. Al cambiar de modo o de punto el mapa
+    (dibujado antes en la misma pasada) lee el estado nuevo y se recentra solo.
     """
     st.markdown('<div class="lvca-geo-sidebar">', unsafe_allow_html=True)
 
@@ -2853,14 +2879,10 @@ def _fragmento_sidebar(
 
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # Sincronización con el mapa: si el modo o el punto cambiaron en este
-    # rerun parcial, escalar a rerun completo para que el mapa se recentre.
-    firma = _firma_sync_mapa()
-    if st.session_state.get("_geo_sync_mapa") != firma:
-        primera_vez = "_geo_sync_mapa" not in st.session_state
-        st.session_state["_geo_sync_mapa"] = firma
-        if not primera_vez:
-            st.rerun()  # scope app
+    # Mapa y panel viven en el MISMO fragment: al cambiar de modo o de punto en
+    # el panel, el fragment se re-renderiza entero y la columna del mapa (que se
+    # dibuja antes) ya lee el estado nuevo y se recentra en la misma pasada. No
+    # hace falta escalar a rerun de app ni sincronizar firmas.
 
 
 _TRES_CATS = ("campo", "fisicoquimico", "hidrobiologico")
