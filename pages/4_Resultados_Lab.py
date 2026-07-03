@@ -20,7 +20,7 @@ import pandas as pd
 import streamlit as st
 
 from components.auth_guard import require_rol
-from components.nav_context import consumir_contexto, ir_a, preseleccionar, rol_alcanza
+from components.nav_context import consumir_contexto, preseleccionar
 from components.ui_styles import (
     ECA_CHIP_STYLES,
     aplicar_estilos,
@@ -543,29 +543,6 @@ def _flujo_por_muestra() -> None:
     # ── Selección en cascada ─────────────────────────────────────────────────
     with st.expander("Seleccionar muestra", icon=":material/list:", expanded=True):
         campana_id, punto_id, muestra_id = _panel_seleccion()
-
-    # ── Atajos del flujo con la selección actual ─────────────────────────────
-    # Campañas y Muestras exigen rol administrador: solo se ofrecen a quien
-    # puede entrar (rol_alcanza evita aterrizar en "Acceso denegado").
-    if campana_id:
-        _admin = rol_alcanza("administrador")
-        nav1, nav2, nav3, nav4, _sp = st.columns([1.2, 1.2, 1.2, 1.2, 1.6])
-        with nav1:
-            if _admin and st.button("Campaña", key="res_nav_campana",
-                                    icon=":material/event:", use_container_width=True):
-                ir_a("campanas", campana_id=campana_id)
-        with nav2:
-            if _admin and st.button("Muestras", key="res_nav_muestras",
-                                    icon=":material/edit_note:", use_container_width=True):
-                ir_a("muestras", campana_id=campana_id)
-        with nav3:
-            if st.button("Base de Datos", key="res_nav_bd",
-                         icon=":material/database:", use_container_width=True):
-                ir_a("base_datos", campana_id=campana_id, punto_id=punto_id)
-        with nav4:
-            if st.button("Informe", key="res_nav_informe",
-                         icon=":material/description:", use_container_width=True):
-                ir_a("informes", campana_id=campana_id)
 
     if not muestra_id:
         st.info("Selecciona una muestra para ingresar resultados.")

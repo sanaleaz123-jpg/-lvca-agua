@@ -16,7 +16,7 @@ import pandas as pd
 import streamlit as st
 
 from components.auth_guard import require_rol
-from components.nav_context import consumir_contexto, ir_a, preseleccionar
+from components.nav_context import consumir_contexto, preseleccionar
 from components.ui_styles import aplicar_estilos, page_header, section_header, top_nav
 from services.punto_service import (
     get_puntos,
@@ -153,17 +153,6 @@ def _render_listado() -> None:
         key="sel_detalle_pt",
     )
     punto_id = opciones_detalle[sel_detalle]
-
-    # Atajos del flujo: el mismo punto en las demás secciones
-    pnav1, pnav2, _sp = st.columns([1.3, 1.3, 3.4])
-    with pnav1:
-        if st.button("Ver en Geoportal", key="pt_nav_geo",
-                     icon=":material/map:", use_container_width=True):
-            ir_a("geoportal", punto_id=punto_id)
-    with pnav2:
-        if st.button("Datos del punto", key="pt_nav_bd",
-                     icon=":material/database:", use_container_width=True):
-            ir_a("base_datos", punto_id=punto_id)
 
     _render_editar(punto_id)
 

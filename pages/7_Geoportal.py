@@ -22,7 +22,7 @@ import pandas as pd
 import streamlit as st
 
 from components.auth_guard import require_rol
-from components.nav_context import consumir_contexto, ir_a
+from components.nav_context import consumir_contexto
 from components.ui_styles import (
     COLORS,
     aplicar_estilos,
@@ -3095,23 +3095,6 @@ def _render_modo_punto(
         _render_estado_eca_compacto(punto, fecha_inicio, fecha_fin)
     with tab_ficha:
         _render_panel_punto(punto)
-
-    # Atajos del flujo: el mismo punto en las demás secciones.
-    # "Editar punto" solo se ofrece a quien puede entrar a esa página (admin).
-    _sesion = st.session_state.get("sesion")
-    _es_admin = bool(_sesion and _sesion.tiene_rol("administrador"))
-    gnav1, gnav2 = st.columns(2)
-    with gnav1:
-        if st.button("Datos del punto", key="geo_nav_bd",
-                     icon=":material/database:", use_container_width=True,
-                     help="Abrir la Base de Datos filtrada por este lugar."):
-            ir_a("base_datos", punto_id=punto.get("id"))
-    with gnav2:
-        if _es_admin and st.button(
-                "Editar punto", key="geo_nav_punto",
-                icon=":material/edit_location:", use_container_width=True,
-                help="Abrir la ficha de gestión del punto."):
-            ir_a("puntos", punto_id=punto.get("id"))
 
 
 def _render_panel_punto(punto_sel: dict) -> None:

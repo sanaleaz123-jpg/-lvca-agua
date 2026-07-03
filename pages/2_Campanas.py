@@ -17,7 +17,7 @@ import pandas as pd
 import streamlit as st
 
 from components.auth_guard import require_rol
-from components.nav_context import consumir_contexto, ir_a
+from components.nav_context import consumir_contexto
 from components.ui_styles import (
     CAMPANA_ESTADO_COLORS,
     aplicar_estilos,
@@ -197,44 +197,6 @@ _ESTADO_CELDA_COLORS: dict[str, dict[str, str]] = {
     for key, label in _ESTADO_LABEL_LIMPIO.items()
     if key in CAMPANA_ESTADO_COLORS
 }
-
-
-def _render_atajo_flujo(camp: dict) -> None:
-    """
-    Botón de "siguiente paso" según el estado de la campaña.
-    Pre-selecciona la campaña en la página destino vía session_state.
-    """
-    estado = camp.get("estado")
-
-    if estado == "en_campo":
-        if st.button(
-            "Registrar muestras de campo",
-            key="atajo_muestras",
-            icon=":material/edit_note:",
-            type="secondary",
-            use_container_width=True,
-        ):
-            ir_a("muestras", campana_id=camp["id"])
-
-    elif estado == "en_laboratorio":
-        if st.button(
-            "Capturar resultados de laboratorio",
-            key="atajo_resultados",
-            icon=":material/biotech:",
-            type="secondary",
-            use_container_width=True,
-        ):
-            ir_a("resultados", campana_id=camp["id"])
-
-    elif estado == "completada":
-        if st.button(
-            "Ver / generar informe",
-            key="atajo_informe",
-            icon=":material/description:",
-            type="secondary",
-            use_container_width=True,
-        ):
-            ir_a("informes", campana_id=camp["id"])
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -447,9 +409,6 @@ def _render_detalle(campana_id: str) -> None:
                 except TransicionInvalidaError as exc:
                     st.error(str(exc))
 
-    # ── Atajo al siguiente paso del flujo según estado ───────────────────────
-    _render_atajo_flujo(camp)
-
     # ── Edición de campaña (admin) ───────────────────────────────────────────
     with st.expander(
         "Editar datos de la campaña",
@@ -506,45 +465,6 @@ def _render_detalle(campana_id: str) -> None:
 
         # Barra de progreso
         st.progress(min(avance["porcentaje"] / 100.0, 1.0))
-
-        # Atajos a las páginas de detalle (todas las etapas del flujo)
-        ax1, ax2, ax3, ax4 = st.columns(4)
-        with ax1:
-            if avance["total_muestras"] > 0:
-                if st.button(
-                    "Muestras de campo",
-                    key="atajo_avance_muestras",
-                    icon=":material/edit_note:",
-                    use_container_width=True,
-                ):
-                    ir_a("muestras", campana_id=campana_id)
-        with ax2:
-            if avance["total_resultados_registrados"] > 0:
-                if st.button(
-                    "Resultados de lab",
-                    key="atajo_avance_resultados",
-                    icon=":material/biotech:",
-                    use_container_width=True,
-                ):
-                    ir_a("resultados", campana_id=campana_id)
-        with ax3:
-            if avance["total_resultados_registrados"] > 0:
-                if st.button(
-                    "Base de Datos",
-                    key="atajo_avance_bd",
-                    icon=":material/database:",
-                    use_container_width=True,
-                ):
-                    ir_a("base_datos", campana_id=campana_id)
-        with ax4:
-            if avance["total_resultados_registrados"] > 0:
-                if st.button(
-                    "Informe",
-                    key="atajo_avance_informe",
-                    icon=":material/description:",
-                    use_container_width=True,
-                ):
-                    ir_a("informes", campana_id=campana_id)
 
         # Tabla de muestras individuales
         if muestras:

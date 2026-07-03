@@ -16,7 +16,7 @@ import pandas as pd
 import streamlit as st
 
 from components.auth_guard import require_rol
-from components.nav_context import consumir_contexto, ir_a, preseleccionar, rol_alcanza
+from components.nav_context import consumir_contexto, preseleccionar
 from services.base_datos_service import (
     LIMITE_MUESTRAS,
     actualizar_resultado,
@@ -1054,24 +1054,6 @@ def main() -> None:
     # filtro por código de monitoreo).
     n_muestras = len(datos)
     n_puntos = len({d["punto_codigo"] for d in datos})
-
-    # ── Atajos del flujo con la campaña seleccionada ────────────────────
-    # Solo se muestran cuando hay una campaña elegida y el rol lo permite, para
-    # no dejar una fila vacía con "Todas las campañas".
-    _puede_ver_campana = rol_alcanza("administrador")
-    _puede_ver_informe = rol_alcanza("visualizador")
-    if campana_id and (_puede_ver_campana or _puede_ver_informe):
-        nav1, nav2, _sp = st.columns([1.4, 1.4, 3.2])
-        with nav1:
-            if _puede_ver_campana and st.button(
-                    "Ver campaña", key="bd_nav_campana",
-                    icon=":material/event:", use_container_width=True):
-                ir_a("campanas", campana_id=campana_id)
-        with nav2:
-            if _puede_ver_informe and st.button(
-                    "Informe de campaña", key="bd_nav_informe",
-                    icon=":material/description:", use_container_width=True):
-                ir_a("informes", campana_id=campana_id)
 
     # ── Construir DataFrame para mostrar ────────────────────────────────
     # Orden cronológico ascendente. Se agrupa PRIMERO por campaña (fecha_inicio
