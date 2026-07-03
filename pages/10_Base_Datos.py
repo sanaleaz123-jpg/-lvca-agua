@@ -632,29 +632,6 @@ def _xlsx_cacheado(sig: str, _df, _datos, _columnas_visibles, _formato_codigo, _
     return _construir_xlsx(_df, _datos, _columnas_visibles, _formato_codigo, _limites, _lcm)
 
 
-@st.cache_data(show_spinner=False)
-def _metricas_bd(campana_id, punto_ids, fecha_inicio, fecha_fin, categorias):
-    """Métricas del consolidado (valores registrados / excedencias) cacheadas por
-    la firma de filtros. Evita recorrer ~5000×40 filas en cada rerun (p. ej. al
-    paginar). Re-deriva datos/límites desde sus cachés (cache-hit) y se limpia
-    junto con ellas en cada escritura/edición de referencia."""
-    datos = get_datos_consolidados(
-        campana_id=campana_id, punto_ids=punto_ids,
-        fecha_inicio=fecha_inicio, fecha_fin=fecha_fin,
-    )
-    limites = get_limites_eca_todos()
-    cat_params = get_cat_params()
-    codigos: list[str] = []
-    for cat in categorias:
-        codigos.extend(cat_params.get(cat, []))
-    n_val = sum(1 for d in datos for cod in codigos if d.get(cod) is not None)
-    n_exc = sum(
-        1 for d in datos for cod in codigos
-        if d.get(cod) is not None and _excede_eca(d[cod], d.get("eca_id"), cod, limites)
-    )
-    return n_val, n_exc
-
-
 # ── Edición en cuadrícula (compartida por la vista inline y la pestaña) ───────
 
 # Metadatos editables de una muestra: (etiqueta visible, clave en `datos`,
@@ -713,9 +690,9 @@ def _usuario_id_actual() -> str | None:
 
 def _limpiar_caches_pagina() -> None:
     """Limpia las cachés st.cache_data locales de la página que dependen de los
-    datos editados, para que vista, métricas y descargas reflejen los cambios
+    datos editados, para que la vista y las descargas reflejen los cambios
     inmediatamente (el backend ya invalidó las cachés @cached del servicio)."""
-    for fn in (_metricas_bd, _df_a_csv, _xlsx_cacheado):
+    for fn in (_df_a_csv, _xlsx_cacheado):
         try:
             fn.clear()
         except Exception:
@@ -936,11 +913,8 @@ def main() -> None:
     # Contexto de navegación: otra página pidió filtrar por campaña/punto
     ctx = consumir_contexto("base_datos")
 
-    # ── Filtros (en main area, no sidebar) ──────────────────────────────
-    from components.ui_styles import filter_bar_open, filter_bar_close
-    filter_bar_open()
-
-    fc1, fc2, fc3, fc4 = st.columns([1.4, 1.6, 1, 1])
+    # ── Filtros (una sola fila, en main area) ───────────────────────────
+    fc1, fc2, fc3, fc4, fc5 = st.columns([1.3, 1.5, 1.2, 0.9, 0.9])
     with fc1:
         campanas = get_campanas()
         opciones_camp = {"Todas las campañas": None}
@@ -992,15 +966,23 @@ def main() -> None:
         )
         punto_ids_filtro = opciones_lugar[sel_lugar]
     with fc3:
+        codigo_query = st.text_input(
+            "Código de monitoreo",
+            key="bd_codigo",
+            placeholder="Ej. E-1, RChil1…",
+            help="Filtra por código del punto de monitoreo o de la muestra. "
+                 "Coincidencia parcial, no distingue mayúsculas.",
+        ).strip()
+    with fc4:
         _hoy = date.today()
         _default_desde = _hoy.replace(year=_hoy.year - 1)
         fecha_inicio = st.date_input("Desde", value=_default_desde, key="bd_desde")
-    with fc4:
+    with fc5:
         fecha_fin = st.date_input("Hasta", value=_hoy, key="bd_hasta")
 
-    # Segunda fila de opciones (categorías + flag de celdas vacías)
-    fc5, fc6 = st.columns([3, 1])
-    with fc5:
+    # Segunda fila: opciones de presentación (categorías + celdas vacías)
+    oc1, oc2 = st.columns([3, 1])
+    with oc1:
         _categorias_disponibles = list(get_cat_params().keys())
         categoria_filtro = st.multiselect(
             "Categorías a mostrar",
@@ -1008,10 +990,9 @@ def main() -> None:
             default=_categorias_disponibles,
             key="bd_categorias",
         )
-    with fc6:
+    with oc2:
         st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)
         mostrar_vacios = st.checkbox("Mostrar celdas vacías", value=True, key="bd_vacios")
-    filter_bar_close()
 
     # ── Cargar datos ────────────────────────────────────────────────────
     with st.spinner("Cargando base de datos..."):
@@ -1027,6 +1008,17 @@ def main() -> None:
             st.exception(e)
             st.stop()
         limites = get_limites_eca_todos()
+
+    # Filtro por código de monitoreo (punto o muestra): coincidencia parcial
+    # sobre los datos ya cargados. Se aplica antes de las métricas y del df para
+    # que la tabla, el resumen y las descargas reflejen la búsqueda.
+    if codigo_query:
+        q = codigo_query.lower()
+        datos = [
+            d for d in datos
+            if q in (d.get("punto_codigo") or "").lower()
+            or q in (d.get("codigo_muestra") or "").lower()
+        ]
 
     if not datos:
         st.info("No se encontraron resultados con los filtros seleccionados.")
@@ -1054,37 +1046,31 @@ def main() -> None:
 
     columnas_visibles = [(cod, label) for cod, label in COLUMNAS_PARAMETROS if cod in codigos_visibles]
 
-    # ── Métricas (para la firma de caché de descargas y el resumen) ─────
-    # Se calculan pero no se muestran como tarjetas: n_valores/n_excedencias
-    # alimentan la firma de caché del Excel/CSV y n_muestras/n_puntos el
-    # resumen compacto sobre la tabla.
+    # ── Conteos para el resumen y la firma de caché ─────────────────────
+    # No se muestran como tarjetas; n_muestras/n_puntos alimentan el resumen
+    # compacto sobre la tabla y, junto con los filtros, discriminan la firma de
+    # caché de las descargas. Se calculan sobre `datos` ya filtrado (incluido el
+    # filtro por código de monitoreo).
     n_muestras = len(datos)
     n_puntos = len({d["punto_codigo"] for d in datos})
-    n_valores, n_excedencias = _metricas_bd(
-        campana_id,
-        punto_ids_filtro,
-        str(fecha_inicio) if fecha_inicio else None,
-        str(fecha_fin) if fecha_fin else None,
-        tuple(categoria_filtro),
-    )
 
-    # ── Atajos del flujo con los filtros actuales ───────────────────────
-    nav1, nav2, nav3, _sp = st.columns([1.2, 1.2, 1.2, 2.4])
-    with nav1:
-        _punto_geo = punto_ids_filtro[0] if punto_ids_filtro else None
-        if st.button("Ver en Geoportal", key="bd_nav_geo",
-                     icon=":material/map:", use_container_width=True):
-            ir_a("geoportal", punto_id=_punto_geo)
-    with nav2:
-        if campana_id and rol_alcanza("administrador") and st.button(
-                "Ver campaña", key="bd_nav_campana",
-                icon=":material/event:", use_container_width=True):
-            ir_a("campanas", campana_id=campana_id)
-    with nav3:
-        if campana_id and rol_alcanza("visualizador") and st.button(
-                "Informe de campaña", key="bd_nav_informe",
-                icon=":material/description:", use_container_width=True):
-            ir_a("informes", campana_id=campana_id)
+    # ── Atajos del flujo con la campaña seleccionada ────────────────────
+    # Solo se muestran cuando hay una campaña elegida y el rol lo permite, para
+    # no dejar una fila vacía con "Todas las campañas".
+    _puede_ver_campana = rol_alcanza("administrador")
+    _puede_ver_informe = rol_alcanza("visualizador")
+    if campana_id and (_puede_ver_campana or _puede_ver_informe):
+        nav1, nav2, _sp = st.columns([1.4, 1.4, 3.2])
+        with nav1:
+            if _puede_ver_campana and st.button(
+                    "Ver campaña", key="bd_nav_campana",
+                    icon=":material/event:", use_container_width=True):
+                ir_a("campanas", campana_id=campana_id)
+        with nav2:
+            if _puede_ver_informe and st.button(
+                    "Informe de campaña", key="bd_nav_informe",
+                    icon=":material/description:", use_container_width=True):
+                ir_a("informes", campana_id=campana_id)
 
     # ── Construir DataFrame para mostrar ────────────────────────────────
     # Orden cronológico ascendente. Se agrupa PRIMERO por campaña (fecha_inicio
@@ -1214,7 +1200,7 @@ def main() -> None:
 
         # ── Descargas (siempre el conjunto completo filtrado) ────────────
         sig = (f"{campana_id}|{punto_ids_filtro}|{fecha_inicio}|{fecha_fin}|"
-               f"{tuple(categoria_filtro)}|{n_muestras}|{n_valores}|{n_excedencias}|"
+               f"{tuple(categoria_filtro)}|{codigo_query}|{n_muestras}|"
                f"v{st.session_state.get('bd_data_version', 0)}")
         dl1, dl2, _dsp = st.columns([1.1, 1.1, 2.8])
         with dl1:
