@@ -15,3 +15,6 @@ BASE DE DATOS*.xlsx
 CADENA COLUMNA*.xlsx
 IDENTIFICACIÓN DE PUNTO*.docx
 base de datos Fisicoquimico*.xlsx
+
+# Respaldos locales de Supabase (nunca subir datos al repo)
+backups/
