@@ -1273,6 +1273,65 @@ def _render_categoria_columna(
     n_niv = len(niveles)
     col_widths = [2.4] + [1.6] * n_niv + [0.7, 1.0]
 
+    # ── Filtro de vista (mismo criterio que la vista de muestra simple):
+    #    un parámetro cuenta "con valor" si CUALQUIER nivel tiene dato.
+    #    Ocultar filas no borra nada: el guardado solo procesa lo visible
+    #    y lo persistido en BD queda intacto. ──────────────────────────────
+    def _tiene_dato(pid: str) -> bool:
+        return any(
+            (n["filas_idx"].get(pid, {}).get("valor_numerico") is not None)
+            or n["filas_idx"].get(pid, {}).get("cualificador")
+            for n in niveles
+        )
+
+    con_datos = sum(1 for f in filas_cat if _tiene_dato(f["parametro_id"]))
+    cat_key = (filas_cat[0].get("categoria") or "cat").replace(" ", "_").lower()
+    kcol = niveles[0]["meta"]["id"][:8]
+    fc_busq, fc_modo, fc_stats = st.columns([1.8, 2.4, 1.8])
+    busq = fc_busq.text_input(
+        "Buscar parámetro",
+        key=f"lab_col_busq_{kcol}_{cat_key}",
+        placeholder="Buscar parámetro...",
+        label_visibility="collapsed",
+        icon=":material/search:",
+    )
+    modo = fc_modo.radio(
+        "Mostrar",
+        ["Con valor", "Pendientes", "Todos"],
+        index=(0 if con_datos else 2),
+        horizontal=True,
+        label_visibility="collapsed",
+        key=f"lab_col_modo_{kcol}_{cat_key}",
+    )
+    fc_stats.markdown(
+        f'<span style="font-size:0.82em; color:#64748b;">'
+        f'{len(filas_cat)} parám. · {con_datos} con valor</span>',
+        unsafe_allow_html=True,
+    )
+
+    if modo == "Con valor":
+        filas_vista = [f for f in filas_cat if _tiene_dato(f["parametro_id"])]
+    elif modo == "Pendientes":
+        filas_vista = [f for f in filas_cat if not _tiene_dato(f["parametro_id"])]
+    else:
+        filas_vista = filas_cat
+    if busq and busq.strip():
+        q = busq.strip().lower()
+        filas_vista = [
+            f for f in filas_vista
+            if q in f["parametro"].lower() or q in (f.get("codigo") or "").lower()
+        ]
+
+    ocultas = len(filas_cat) - len(filas_vista)
+    if ocultas > 0:
+        st.caption(
+            f":material/filter_alt: {ocultas} parámetro(s) oculto(s) por el filtro — "
+            "sus datos guardados no se modifican. Cambia a **Todos** para verlos."
+        )
+    if not filas_vista:
+        st.info("Ningún parámetro coincide con el filtro actual.")
+        return
+
     # Encabezado
     hcols = st.columns(col_widths)
     hcols[0].markdown("**Parámetro**")
@@ -1284,7 +1343,7 @@ def _render_categoria_columna(
     hcols[1 + n_niv].markdown("**Unidad**")
     hcols[2 + n_niv].markdown("**Lím. ECA**")
 
-    for fila in filas_cat:
+    for fila in filas_vista:
         pid = fila["parametro_id"]
         lim_max = fila["lim_max"]
         lim_min = fila["lim_min"]
