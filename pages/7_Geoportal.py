@@ -16,6 +16,8 @@ Audiencia actual: técnicos AUTODEMA/ANA. La versión ciudadana se hará aparte.
 
 from __future__ import annotations
 
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 
 import pandas as pd
@@ -1330,6 +1332,107 @@ def _redondear_coords_geojson(obj: dict) -> dict:
     return obj
 
 
+def _podar_propiedades_geojson(obj: dict, conservar: tuple[str, ...] = ()) -> dict:
+    """
+    Deja en `properties` de cada feature SOLO las claves `conservar` (o vacío).
+    El GeoJSON viaja incrustado en el HTML del mapa; las propiedades que ni
+    los tooltips ni el código usan solo inflan el payload. Se aplica dentro
+    de los loaders cacheados: corre una sola vez.
+    """
+    def _poda(ft: dict) -> None:
+        props = ft.get("properties") or {}
+        ft["properties"] = (
+            {k: props.get(k) for k in conservar} if conservar else {}
+        )
+
+    if obj.get("type") == "FeatureCollection":
+        for ft in obj.get("features", []):
+            _poda(ft)
+    else:
+        _poda(obj)
+    return obj
+
+
+def _simplificar_coords_geojson(obj: dict, tolerancia: float) -> dict:
+    """
+    Simplificación Douglas-Peucker (Python puro, sin shapely — no está en
+    requirements y esto corre una sola vez dentro de loaders cacheados).
+
+    `tolerancia` en grados: desviación máxima permitida de la línea original
+    (1e-5 ≈ 1.1 m en estas latitudes). Respeta anillos de polígonos: mantiene
+    el cierre (primer punto == último) y conserva el anillo original si la
+    simplificación lo degeneraría (< 4 puntos).
+
+    Solo se usa en las siluetas de represas: la red hídrica y las cuencas ya
+    vienen pre-simplificadas de origen (~340-600 m entre vértices) y no
+    pierden peso a tolerancias seguras.
+    """
+    import math
+
+    def _rdp(pts: list, tol: float) -> list:
+        n = len(pts)
+        if n < 3:
+            return list(pts)
+        keep = [False] * n
+        keep[0] = keep[n - 1] = True
+        stack = [(0, n - 1)]
+        while stack:
+            i0, i1 = stack.pop()
+            ax, ay = pts[i0][0], pts[i0][1]
+            bx, by = pts[i1][0], pts[i1][1]
+            dx, dy = bx - ax, by - ay
+            den = dx * dx + dy * dy
+            dmax, imax = -1.0, -1
+            for i in range(i0 + 1, i1):
+                px, py = pts[i][0], pts[i][1]
+                if den == 0.0:
+                    d = math.hypot(px - ax, py - ay)
+                else:
+                    t = ((px - ax) * dx + (py - ay) * dy) / den
+                    t = 0.0 if t < 0.0 else (1.0 if t > 1.0 else t)
+                    d = math.hypot(px - (ax + t * dx), py - (ay + t * dy))
+                if d > dmax:
+                    dmax, imax = d, i
+            if dmax > tol:
+                keep[imax] = True
+                stack.append((i0, imax))
+                stack.append((imax, i1))
+        return [p for p, k in zip(pts, keep) if k]
+
+    def _es_lista_posiciones(c) -> bool:
+        return (
+            bool(c) and isinstance(c[0], (list, tuple))
+            and bool(c[0]) and isinstance(c[0][0], (int, float))
+        )
+
+    def _simplifica(c):
+        if not isinstance(c, list) or not c:
+            return c
+        if _es_lista_posiciones(c):
+            cerrado = c[0] == c[-1]
+            out = _rdp(c, tolerancia)
+            if cerrado:
+                if out[0] != out[-1]:
+                    out.append(list(out[0]))
+                if len(out) < 4:  # anillo degenerado → conservar original
+                    return c
+            return out
+        return [_simplifica(x) for x in c]
+
+    def _fix_geom(g):
+        if isinstance(g, dict) and "coordinates" in g:
+            g["coordinates"] = _simplifica(g["coordinates"])
+
+    if obj.get("type") == "FeatureCollection":
+        for ft in obj.get("features", []):
+            _fix_geom(ft.get("geometry"))
+    elif obj.get("type") == "Feature":
+        _fix_geom(obj.get("geometry"))
+    else:
+        _fix_geom(obj)
+    return obj
+
+
 @st.cache_data(show_spinner=False)
 def _cargar_geojson_puntos() -> dict[str, dict]:
     """Carga las siluetas de cuerpos de agua (represas). Cacheado en disco."""
@@ -1346,6 +1449,10 @@ def _cargar_geojson_puntos() -> dict[str, dict]:
                 data = json.load(fh)
             codigo = data.get("properties", {}).get("punto", "")
             if codigo:
+                # Poda + simplificación (5e-5° ≈ 5.5 m, invisible a cualquier
+                # zoom útil) + redondeo: ~45% menos vértices en las siluetas.
+                data = _podar_propiedades_geojson(data, ("punto",))
+                data = _simplificar_coords_geojson(data, 5e-5)
                 siluetas[codigo] = _redondear_coords_geojson(data)
         except Exception:
             pass
@@ -1365,8 +1472,13 @@ def _cargar_geojson_cuencas() -> list[dict]:
     for f in cuencas_dir.glob("*.geojson"):
         try:
             with open(f, encoding="utf-8") as fh:
+                # El nombre sale del filename y el tooltip es un f-string:
+                # las properties del archivo no se usan → payload fuera.
+                # Sin RDP: el contorno ya viene simplificado (~600 m/vértice).
                 cuencas.append({
-                    "data": _redondear_coords_geojson(json.load(fh)),
+                    "data": _redondear_coords_geojson(
+                        _podar_propiedades_geojson(json.load(fh))
+                    ),
                     "nombre": f.stem.replace("_", " "),
                 })
         except Exception:
@@ -1387,8 +1499,16 @@ def _cargar_geojson_rios() -> list[dict]:
     for f in rios_dir.glob("*.geojson"):
         try:
             with open(f, encoding="utf-8") as fh:
+                # Conservar SOLO lo que usa el mapa: TIPO_CA (split río/
+                # quebrada) y los 3 campos del tooltip. Sin RDP: la red ya
+                # viene simplificada de origen (~340 m entre vértices).
                 items.append({
-                    "data": _redondear_coords_geojson(json.load(fh)),
+                    "data": _redondear_coords_geojson(
+                        _podar_propiedades_geojson(
+                            json.load(fh),
+                            ("NOMBRE_CA", "LONG_KM", "CATEGORIA", "TIPO_CA"),
+                        )
+                    ),
                     "nombre": f.stem.replace("rios_", "").replace("_", " ").title(),
                 })
         except Exception:
@@ -2545,12 +2665,53 @@ def main() -> None:
     fecha_inicio = date.today() - timedelta(days=180)
     fecha_fin    = date.today()
 
+    # ── Cargas de arranque EN PARALELO ───────────────────────────────────
+    # Las 4 llamadas son independientes y cacheadas (TTL): en frío se pagan
+    # a la vez (≈ la más lenta) en vez de en serie, donde además la primera
+    # query carga con todo el establecimiento de conexión (DNS + TLS).
+    # get_alertas_oms_por_punto solo se "calienta" aquí: _construir_mapa la
+    # relee del caché al dibujar los anillos OMS y ya tolera su fallo.
+    #
+    # add_script_run_ctx propaga el contexto de Streamlit a los workers para
+    # que st.cache_data y (con LVCA_RLS=1) get_db() vean la sesión del
+    # usuario — sin él, con RLS activo las queries caerían en silencio al
+    # cliente admin. Si esta API privada cambiara en una versión futura de
+    # Streamlit, se degrada a hilos sin contexto (igual que hoy sin RLS).
+    try:
+        from streamlit.runtime.scriptrunner import (
+            add_script_run_ctx,
+            get_script_run_ctx,
+        )
+        _ctx = get_script_run_ctx()
+    except Exception:
+        add_script_run_ctx = None
+        _ctx = None
+
+    def _en_ctx(fn, *args):
+        if add_script_run_ctx is not None and _ctx is not None:
+            add_script_run_ctx(threading.current_thread(), _ctx)
+        return fn(*args)
+
     with st.spinner("Cargando datos..."):
-        try:
-            puntos = get_puntos_geoportal(str(fecha_inicio), str(fecha_fin), None)
-        except Exception as exc:
-            st.error(f"Error al cargar puntos: {exc}")
-            st.stop()
+        with ThreadPoolExecutor(max_workers=4) as _ex:
+            _f_puntos = _ex.submit(
+                _en_ctx, get_puntos_geoportal,
+                str(fecha_inicio), str(fecha_fin), None,
+            )
+            _f_params = _ex.submit(_en_ctx, get_parametros_selector)
+            _f_camps  = _ex.submit(_en_ctx, get_campanas)
+            _ex.submit(_en_ctx, get_alertas_oms_por_punto)  # warm-up del caché
+            try:
+                puntos = _f_puntos.result()
+            except Exception as exc:
+                st.error(f"Error al cargar puntos: {exc}")
+                st.stop()
+            try:
+                parametros = _f_params.result()
+                campanas = _f_camps.result()
+            except Exception as exc:
+                st.error(f"Error al cargar catálogos: {exc}")
+                st.stop()
 
     puntos_con_coords = [p for p in puntos if p.get("latitud") and p.get("longitud")]
     if not puntos_con_coords:
@@ -2558,8 +2719,6 @@ def main() -> None:
         st.stop()
 
     opciones_punto = {f"{p['codigo']} — {p['nombre']}": p for p in puntos_con_coords}
-    parametros = get_parametros_selector()
-    campanas = get_campanas()
 
     # Contexto de navegación: otra página pidió enfocar un punto concreto.
     # Se aplica antes de crear el radio "geo_modo" y el selectbox "geo_punto".

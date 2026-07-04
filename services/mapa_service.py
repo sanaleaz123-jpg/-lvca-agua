@@ -12,6 +12,7 @@ Funciones públicas:
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from typing import Optional
 
@@ -45,19 +46,46 @@ def get_puntos_geoportal(
     """
     db = get_db()
 
-    # 1. Todos los puntos activos con ECA
-    pts = (
-        db.table("puntos_muestreo")
-        .select(
-            "id, codigo, nombre, latitud, longitud, altitud_msnm, "
-            "utm_este, utm_norte, utm_zona, "
-            "tipo, cuenca, sistema_hidrico, eca_id, "
-            "ecas(codigo, nombre)"
+    # 1 y 2 EN PARALELO: "puntos activos" y "resultados del rango" son
+    # consultas independientes entre sí. Lanzarlas a la vez ahorra un
+    # round-trip completo a Supabase en el camino crítico del arranque del
+    # geoportal (~0.5 s; más en frío, cuando cada conexión paga su TLS).
+    # `db` se captura AQUÍ (hilo principal, con la sesión del usuario ya
+    # resuelta por get_db) — los workers solo ejecutan la query sobre el
+    # cliente httpx compartido, que es thread-safe.
+    def _q_puntos():
+        return (
+            db.table("puntos_muestreo")
+            .select(
+                "id, codigo, nombre, latitud, longitud, altitud_msnm, "
+                "utm_este, utm_norte, utm_zona, "
+                "tipo, cuenca, sistema_hidrico, eca_id, "
+                "ecas(codigo, nombre)"
+            )
+            .eq("activo", True)
+            .order("codigo")
+            .execute()
         )
-        .eq("activo", True)
-        .order("codigo")
-        .execute()
-    )
+
+    def _q_resultados():
+        return (
+            db.table("resultados_laboratorio")
+            .select(
+                "id, valor_numerico, fecha_analisis, "
+                "parametros(id, codigo, nombre, unidades_medida(simbolo)), "
+                "muestras(punto_muestreo_id, campana_id)"
+            )
+            .gte("fecha_analisis", fecha_inicio[:10])
+            .lte("fecha_analisis", fecha_fin[:10])
+            .not_.is_("valor_numerico", "null")
+            .execute()
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as _ex:
+        _f_pts = _ex.submit(_q_puntos)
+        _f_res = _ex.submit(_q_resultados)
+        pts = _f_pts.result()
+        resultados = _f_res.result().data or []
     puntos = pts.data or []
 
     # Unificar la grafía de cuenca (BD con variantes) a la forma canónica,
@@ -82,20 +110,7 @@ def get_puntos_geoportal(
         puntos_campana = {r["punto_muestreo_id"] for r in (cp_res.data or [])}
         puntos = [p for p in puntos if p["id"] in puntos_campana]
 
-    # 2. Resultados en el rango de fechas
-    query = (
-        db.table("resultados_laboratorio")
-        .select(
-            "id, valor_numerico, fecha_analisis, "
-            "parametros(id, codigo, nombre, unidades_medida(simbolo)), "
-            "muestras(punto_muestreo_id, campana_id)"
-        )
-        .gte("fecha_analisis", fecha_inicio[:10])
-        .lte("fecha_analisis", fecha_fin[:10])
-        .not_.is_("valor_numerico", "null")
-    )
-    resultados = query.execute().data or []
-
+    # 2. Resultados en el rango de fechas — ya ejecutados en paralelo arriba.
     # Filtrar por campaña si se indicó
     if campana_id:
         resultados = [
