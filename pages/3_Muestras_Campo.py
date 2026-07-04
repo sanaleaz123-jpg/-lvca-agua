@@ -3,11 +3,14 @@ pages/3_Muestras_Campo.py
 Registro de muestras de campo, mediciones in situ y cadena de custodia.
 
 Tabs:
-    1. Registro — formulario de nueva muestra
-    2. In situ  — mediciones de campo con semáforo ECA
-    3. Custodia — recepción en lab y transiciones de estado
-    4. Listado  — tabla general con filtros
-    5. Cadena   — generación de cadena de custodia AUTODEMA (Excel/PDF)
+    1. Registro + In situ — flujo único por punto: formulario de muestra y
+       mediciones de campo con semáforo ECA (un solo selector de punto;
+       si la muestra ya existe, el formulario se colapsa y las mediciones
+       aparecen de inmediato)
+    2. Recepción en Lab — recepción en lab y transiciones de estado
+    3. Documento CC     — cadena de custodia AUTODEMA (Excel/PDF)
+    4. Ficha de Campo   — fichas de identificación del punto (DOCX)
+    5. Listado          — tabla general con filtros
 
 Acceso mínimo: administrador.
 """
@@ -20,7 +23,7 @@ import pandas as pd
 import streamlit as st
 
 from components.auth_guard import require_rol
-from components.nav_context import consumir_contexto, ir_a, preseleccionar
+from components.nav_context import consumir_contexto, preseleccionar
 from components.ui_styles import (
     aplicar_estilos,
     inline_note,
@@ -49,6 +52,7 @@ from services.muestra_service import (
     crear_muestra,
     eliminar_muestra,
     get_campana_detalle,
+    get_conteo_insitu_por_muestras,
     get_limites_insitu,
     get_mediciones_insitu,
     get_muestras_por_campana,
@@ -366,7 +370,7 @@ def _widget_nuevo_equipo(key_prefix: str) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Tab 1 — Registro de nueva muestra
+# Tab 1 — Campo: registro de muestra + mediciones in situ (fusionados)
 # ─────────────────────────────────────────────────────────────────────────────
 
 # _get_campana_info movido a muestra_service.get_campana_detalle.
@@ -396,46 +400,189 @@ def _abreviar_nombre(nombre_completo: str) -> str:
 
 
 @st.fragment
-def _render_registro(campana_id: str) -> None:
-    section_header("Registro de muestra de campo", "edit")
-    st.caption("Si el punto ya tiene una muestra en la campaña, se cargan los datos para editar.")
+def _render_campo(campana_id: str) -> None:
+    """
+    Tab único de campo: fusiona el registro de la muestra y las mediciones
+    in situ con UN solo selector de punto.
 
-    # Si acabamos de registrar una muestra (el submit hace rerun de app para
-    # refrescar el tab In situ), mostramos aquí arriba el banner de éxito y los
-    # atajos al flujo in-situ / nueva muestra.
-    _exito = st.session_state.get("_registro_exito")
-    if _exito:
-        st.success(_exito.get("mensaje", "Muestra registrada."))
-        _cta_a, _cta_b = st.columns(2)
-        with _cta_a:
-            if st.button(
-                "Registrar mediciones in-situ ahora",
-                key="btn_goto_insitu_exito",
-                type="primary",
-                icon=":material/arrow_forward:",
-                use_container_width=True,
-            ):
-                st.session_state["insitu_prefill_muestra_id"] = _exito["muestra_id"]
-                st.session_state.pop("_registro_exito", None)
-                st.rerun(scope="app")
-        with _cta_b:
-            if st.button(
-                "Registrar otra muestra",
-                key="btn_otra_muestra_exito",
-                icon=":material/add:",
-                use_container_width=True,
-            ):
-                st.session_state.pop("_registro_exito", None)
-                st.rerun(scope="app")
-        st.divider()
+    - Punto SIN muestra → formulario de registro abierto (las mediciones in
+      situ se habilitan al registrar, en esta misma pantalla).
+    - Punto CON muestra → los datos quedan colapsados en un expander
+      "ver / editar" y las mediciones in situ aparecen de inmediato.
 
+    El selector muestra el avance de cada punto (muestra / in situ) para
+    recorrer la campaña punto por punto sin cambiar de pantalla ni
+    re-seleccionar nada.
+    """
     if not _bloquear_si_estado_incorrecto(
-        campana_id, ("en_campo",), "registrar muestras"
+        campana_id,
+        ("en_campo", "en_laboratorio"),
+        "registrar muestras o mediciones in situ",
     ):
         return
 
-    # Obtener info de la campaña para restringir fechas
     camp_info = _get_campana_info(campana_id)
+    estado_camp = camp_info.get("estado", "")
+
+    puntos = get_puntos_de_campana_activa(campana_id)
+    if not puntos:
+        st.info("Esta campaña no tiene puntos de muestreo vinculados.")
+        return
+
+    muestras = _muestras_por_campana_cached(campana_id)
+    muestras_por_punto: dict[str, list[dict]] = {}
+    for m in muestras:
+        pt_id = (m.get("puntos_muestreo") or {}).get("id", "")
+        muestras_por_punto.setdefault(pt_id, []).append(m)
+
+    conteo_insitu = get_conteo_insitu_por_muestras([m["id"] for m in muestras])
+
+    # ── Etiquetas del selector con el avance de cada punto ───────────────
+    etiquetas: dict[str, str] = {}
+    n_con_muestra = 0
+    n_con_insitu = 0
+    for p in puntos:
+        ms = muestras_por_punto.get(p["id"], [])
+        if not ms:
+            avance = "sin muestra"
+        else:
+            n_con_muestra += 1
+            n_med = sum(conteo_insitu.get(m["id"], 0) for m in ms)
+            if n_med:
+                n_con_insitu += 1
+                avance = "✓ muestra · ✓ in situ"
+            else:
+                avance = "✓ muestra · falta in situ"
+        etiquetas[p["id"]] = f"{p['codigo']} — {p['nombre']}  [{avance}]"
+
+    # Paridad con el antiguo tab In situ (que listaba por muestras): si una
+    # muestra quedó en un punto ya desvinculado de la campaña, mantenerla
+    # accesible para consultar/editar sus mediciones.
+    for pt_id, ms in muestras_por_punto.items():
+        if pt_id and pt_id not in etiquetas:
+            pt = ms[0].get("puntos_muestreo") or {}
+            n_med = sum(conteo_insitu.get(m["id"], 0) for m in ms)
+            avance = "✓ muestra · ✓ in situ" if n_med else "✓ muestra · falta in situ"
+            etiquetas[pt_id] = (
+                f"{pt.get('codigo', '')} — {pt.get('nombre', '')}"
+                f"  [{avance} · punto desvinculado]"
+            )
+
+    # ── Flash de éxito del registro (sobrevive al rerun de app) ──────────
+    # Persiste hasta que el usuario cambia de punto (on_change del selector)
+    # o salta al siguiente punto pendiente con el botón.
+    sig_punto_id = next(
+        (p["id"] for p in puntos if not muestras_por_punto.get(p["id"])), None
+    )
+    _exito = st.session_state.get("_registro_exito")
+    if _exito:
+        if sig_punto_id and estado_camp == "en_campo":
+            fx1, fx2 = st.columns([3, 1.4])
+            with fx1:
+                st.success(_exito.get("mensaje", "Muestra registrada."))
+            with fx2:
+                if st.button(
+                    "Siguiente punto sin muestra",
+                    key="btn_sig_punto_exito",
+                    icon=":material/arrow_forward:",
+                    use_container_width=True,
+                ):
+                    st.session_state.pop("_registro_exito", None)
+                    st.session_state["_campo_punto_pendiente"] = sig_punto_id
+                    st.rerun()
+        else:
+            st.success(_exito.get("mensaje", "Muestra registrada."))
+
+    # ── Selector único de punto ───────────────────────────────────────────
+    # Las options son IDs (estables) y la etiqueta va en format_func: así el
+    # avance puede cambiar el texto sin que Streamlit pierda la selección.
+    ids_puntos = list(etiquetas.keys())
+    pendiente = st.session_state.pop("_campo_punto_pendiente", None)
+    if pendiente in ids_puntos:
+        st.session_state["campo_punto"] = pendiente
+    elif st.session_state.get("campo_punto") not in ids_puntos:
+        # Cambió la campaña (u otro caso borde): volver al primer punto.
+        st.session_state.pop("campo_punto", None)
+    punto_id = st.selectbox(
+        "Punto de muestreo *",
+        ids_puntos,
+        format_func=lambda pid: etiquetas.get(pid, pid),
+        key="campo_punto",
+        on_change=lambda: st.session_state.pop("_registro_exito", None),
+    )
+    st.caption(
+        f"Avance: **{n_con_muestra}/{len(puntos)}** puntos con muestra · "
+        f"**{n_con_insitu}/{len(puntos)}** con mediciones in situ."
+    )
+
+    # "Descarga" y "Nivel del embalse" son datos propios de embalses; en ríos
+    # y demás cuerpos de agua no aplican y no deben mostrarse.
+    es_embalse = next(
+        (p.get("tipo") for p in puntos if p["id"] == punto_id), ""
+    ) == "embalse"
+
+    existente = get_muestra_por_campana_punto(campana_id, punto_id)
+
+    if existente is None:
+        # Punto sin muestra → formulario de registro abierto.
+        if estado_camp != "en_campo":
+            inline_note(
+                f"Esta campaña está en estado <b>{estado_camp}</b> — solo se "
+                "pueden registrar muestras nuevas con la campaña "
+                "<b>en_campo</b>. Este punto no tiene muestra, por lo que "
+                "tampoco hay mediciones in situ que llenar.",
+                tipo="warning",
+            )
+            return
+        section_header("Registro de muestra de campo", "edit")
+        st.caption(
+            "Al registrar la muestra, las mediciones in situ se habilitan "
+            "aquí mismo, debajo del formulario."
+        )
+        _render_datos_muestra(campana_id, punto_id, camp_info, es_embalse, None)
+        return
+
+    # Punto con muestra → datos colapsados (ver/editar) + in situ inmediato.
+    grupo = existente.get("_grupo_muestras") or {}
+    if grupo:
+        codigos = ", ".join(
+            f"{grupo[t]['codigo']} {PROFUNDIDAD_SUFIJOS[t]}"
+            for t in ("S", "M", "F") if t in grupo
+        )
+        titulo_exp = f"Datos de la muestra — columna: {codigos} (ver / editar)"
+    else:
+        titulo_exp = f"Datos de la muestra {existente['codigo']} (ver / editar)"
+
+    with st.expander(titulo_exp, expanded=False, icon=":material/edit:"):
+        if estado_camp == "en_campo":
+            _render_datos_muestra(
+                campana_id, punto_id, camp_info, es_embalse, existente
+            )
+        else:
+            inline_note(
+                f"La campaña está en estado <b>{estado_camp}</b> — los datos "
+                "de la muestra solo se editan con la campaña <b>en_campo</b>. "
+                "Las mediciones in situ de abajo sí pueden registrarse o "
+                "corregirse.",
+                tipo="info",
+            )
+
+    _render_insitu_seccion(list(muestras_por_punto.get(punto_id) or []))
+
+
+def _render_datos_muestra(
+    campana_id: str,
+    punto_id: str,
+    camp_info: dict,
+    es_embalse: bool,
+    existente: dict | None,
+) -> None:
+    """
+    Formulario de datos de la muestra (antes: tab Registro completo). El
+    punto ya viene seleccionado por el tab Campo; si `existente` no es None
+    se precargan todos los campos para edición.
+    """
+    # Restringir fechas al rango de la campaña
     camp_fecha_ini = None
     camp_fecha_fin = None
     if camp_info.get("fecha_inicio"):
@@ -448,11 +595,6 @@ def _render_registro(campana_id: str) -> None:
             camp_fecha_fin = date.fromisoformat(str(camp_info["fecha_fin"])[:10])
         except (ValueError, TypeError):
             pass
-
-    puntos = get_puntos_de_campana_activa(campana_id)
-    if not puntos:
-        st.info("Esta campaña no tiene puntos de muestreo vinculados.")
-        return
 
     # Filtrar técnicos a los responsables de campo definidos en la campaña.
     # Si la campaña no tiene responsables definidos (campo vacío) o ninguno
@@ -478,17 +620,10 @@ def _render_registro(campana_id: str) -> None:
                 tipo="warning",
             )
 
-    opciones_puntos = {
-        f"{p['codigo']} — {p['nombre']}": p["id"] for p in puntos
-    }
     opciones_tecnicos = {
         f"{u['apellido']}, {u['nombre']} ({u.get('institucion','')})": u["id"]
         for u in usuarios
     }
-
-    # ── Seleccionar punto (fuera del form para detectar muestra existente) ──
-    punto_label = st.selectbox("Punto de muestreo *", list(opciones_puntos.keys()), key="reg_punto")
-    punto_id = opciones_puntos[punto_label]
 
     # Sufijo de scope para los widgets que tienen key= explícita. Sin esto,
     # Streamlit conserva el valor del widget en session_state según su key e
@@ -499,14 +634,6 @@ def _render_registro(campana_id: str) -> None:
     # fecha, hora, técnico, clima, temp, observaciones) ya se refrescan solos.
     scope = f"__{campana_id}__{punto_id}"
 
-    # "Descarga" y "Nivel del embalse" son datos propios de embalses; en ríos
-    # y demás cuerpos de agua no aplican y no deben mostrarse.
-    es_embalse = next(
-        (p.get("tipo") for p in puntos if p["id"] == punto_id), ""
-    ) == "embalse"
-
-    # ── Detectar si ya existe una muestra para este punto en la campaña ──
-    existente = get_muestra_por_campana_punto(campana_id, punto_id)
     es_edicion = existente is not None
 
     if es_edicion:
@@ -979,7 +1106,7 @@ def _render_registro(campana_id: str) -> None:
                     st.error(f"Error al actualizar: {exc}")
                     return
             success_check_overlay(f"Muestra {existente['codigo']} actualizada")
-            st.success(f"Muestra **{existente['codigo']}** actualizada correctamente.")
+            _mensaje_exito = f"Muestra **{existente['codigo']}** actualizada correctamente."
             muestra_id_fotos = existente["id"]
             # Si la muestra principal pertenece a un nivel que acabamos de
             # eliminar, redirigir las fotos a una muestra sobreviviente del
@@ -1026,85 +1153,36 @@ def _render_registro(campana_id: str) -> None:
                     )
                 except Exception as exc:
                     st.warning(f"Error subiendo {archivo.name}: {exc}")
-            st.info(f"{len(fotos_subidas)} foto(s) subida(s).")
+            _mensaje_exito += f" {len(fotos_subidas)} foto(s) subida(s)."
 
-        # Forzar un rerun de APP (no de fragment) para que TODOS los tabs —en
-        # particular "In situ", que es otro @st.fragment— vean la muestra
-        # recién creada de inmediato. Sin esto, el técnico cambiaba al tab
-        # In situ y el punto no aparecía hasta una segunda recarga.
-        # El banner de éxito + atajos se repintan arriba desde esta bandera.
+        # Forzar un rerun de APP (no de fragment) para que TODOS los tabs y
+        # el cache de muestras vean el cambio de inmediato. El tab Campo
+        # repinta el flash arriba del selector; para muestras nuevas las
+        # mediciones in situ quedan habilitadas justo debajo del expander.
         if not es_edicion:
-            st.session_state["_registro_exito"] = {
-                "muestra_id": muestra_id_fotos,
-                "mensaje": _mensaje_exito,
-            }
+            _mensaje_exito += " Las mediciones in situ ya están habilitadas abajo."
+        st.session_state["_registro_exito"] = {
+            "muestra_id": muestra_id_fotos,
+            "mensaje": _mensaje_exito,
+        }
         st.rerun(scope="app")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Tab 2 — Mediciones in situ
+# Sección Mediciones in situ (parte del tab Campo)
 # ─────────────────────────────────────────────────────────────────────────────
 
-@st.fragment
-def _render_insitu(campana_id: str) -> None:
-    section_header("Parámetros medidos en campo", "thermometer")
-
-    # Las mediciones in-situ pueden registrarse en cualquier momento mientras
-    # la campaña esté en campo o ya recibida en lab.
-    if not _bloquear_si_estado_incorrecto(
-        campana_id,
-        ("en_campo", "en_laboratorio"),
-        "registrar mediciones in situ",
-    ):
+def _render_insitu_seccion(muestras_punto: list[dict]) -> None:
+    """
+    Mediciones in situ de las muestras del punto YA seleccionado en el tab
+    Campo. Antes era un tab aparte con su propio selector de punto; ahora
+    comparte selector (y fragment) con el registro de la muestra.
+    """
+    if not muestras_punto:
+        st.info("No hay muestras registradas para este punto.")
         return
 
-    # Si el usuario llegó aquí desde "Registrar mediciones in-situ ahora →"
-    # del tab Registro, pre-seleccionamos la muestra recién creada
-    muestra_prefill = st.session_state.pop("insitu_prefill_muestra_id", None)
-
-    muestras = _muestras_por_campana_cached(campana_id)
-    if not muestras:
-        st.info("No hay muestras registradas en esta campaña.")
-        return
-
-    # Agrupar muestras por punto para detectar columna (3 muestras = columna)
-    muestras_por_punto: dict[str, list[dict]] = {}
-    for m in muestras:
-        pt = m.get("puntos_muestreo") or {}
-        pt_id = pt.get("id", "")
-        muestras_por_punto.setdefault(pt_id, []).append(m)
-
-    # Construir opciones: seleccionar por punto. Formato unificado para todas
-    # las muestras (1 o varios niveles): código del PUNTO como principal y los
-    # códigos de muestra con su profundidad (S/M/F) entre paréntesis, p.ej.
-    #   134ECond4 — Represa Condoroma (LVCA-2026-034 (S), LVCA-2026-035 (M))
-    opciones_punto_insitu: dict[str, str] = {}
-    _orden_prof = {"S": 0, "M": 1, "F": 2}
-    for pt_id, ms in muestras_por_punto.items():
-        pt = (ms[0].get("puntos_muestreo") or {})
-        pt_name = pt.get("nombre", "")
-        pt_code = pt.get("codigo", "")
-        ms_ord = sorted(ms, key=lambda m: _orden_prof.get(m.get("profundidad_tipo"), 9))
-        codigos = ", ".join(
-            f"{m['codigo']} {PROFUNDIDAD_SUFIJOS[m['profundidad_tipo']]}"
-            if m.get("profundidad_tipo") in PROFUNDIDAD_SUFIJOS
-            else m["codigo"]
-            for m in ms_ord
-        )
-        label = f"{pt_code} — {pt_name} ({codigos})"
-        opciones_punto_insitu[label] = pt_id
-
-    # Si veníamos del flujo "Registrar mediciones in-situ ahora", pre-seleccionar
-    # el punto cuya muestra acaba de crearse (solo en el primer render tras el puente)
-    if muestra_prefill and "insitu_punto" not in st.session_state:
-        for _label, _pid in opciones_punto_insitu.items():
-            if any(m["id"] == muestra_prefill for m in muestras_por_punto[_pid]):
-                st.session_state["insitu_punto"] = _label
-                break
-
-    label_punto = st.selectbox("Punto de muestreo", list(opciones_punto_insitu.keys()), key="insitu_punto")
-    punto_id_sel = opciones_punto_insitu[label_punto]
-    muestras_punto = muestras_por_punto[punto_id_sel]
+    section_header("Mediciones in situ", "thermometer")
 
     # Modo columna: la fuente de verdad es el campo modo_muestreo de la BD
     # (o el grupo_profundidad si la migración 005 no se aplicó).
@@ -1116,9 +1194,7 @@ def _render_insitu(campana_id: str) -> None:
     )
 
     # Muestra principal (primera del grupo)
-    muestra_sel = muestras_punto[0]
-    muestra_id = muestra_sel["id"]
-    punto_info = muestra_sel.get("puntos_muestreo") or {}
+    muestra_id = muestras_punto[0]["id"]
 
     if es_columna:
         # Ordenar por profundidad_tipo si existe, sino por código
@@ -1126,13 +1202,11 @@ def _render_insitu(campana_id: str) -> None:
             tp = m.get("profundidad_tipo", "")
             return {"S": 0, "M": 1, "F": 2}.get(tp, 9)
         muestras_punto.sort(key=_sort_prof)
-        # Mostrar info
         prof_total = muestras_punto[0].get("profundidad_total", "—")
         prof_secchi = muestras_punto[0].get("profundidad_secchi", "—")
-        st.info(
-            f"Muestreo en columna de agua — "
-            f"Prof. total: {prof_total} m | Secchi: {prof_secchi} m | "
-            f"{len(muestras_punto)} muestras"
+        st.caption(
+            f"Muestreo en columna de agua — Prof. total: {prof_total} m · "
+            f"Secchi: {prof_secchi} m · {len(muestras_punto)} muestras"
         )
 
     # Cargar datos existentes y límites ECA (de la muestra principal)
@@ -1140,8 +1214,6 @@ def _render_insitu(campana_id: str) -> None:
     limites = get_limites_insitu(muestra_id)
 
     # ── Equipos de medición (dropdown compartido con cadena) ─────────────
-    section_header("Equipos de medición", "microscope")
-
     equipos_disponibles = get_equipos_registrados()
     opciones_eq = [f"{e['codigo']} — {e['nombre']}" for e in equipos_disponibles]
 
@@ -1155,7 +1227,7 @@ def _render_insitu(campana_id: str) -> None:
 
     # Selección de equipos (máx 4)
     equipos_sel = st.multiselect(
-        "Seleccionar equipos utilizados (máx. 4)",
+        "Equipos de medición utilizados (máx. 4)",
         opciones_eq,
         default=equipos_previos,
         max_selections=4,
@@ -1174,7 +1246,7 @@ def _render_insitu(campana_id: str) -> None:
     st.divider()
 
     # ── Determinar muestras a llenar in situ ────────────────────────────
-    # Si es columna (3+ muestras del mismo punto), tabla unificada. Si no, single.
+    # Si es columna (2+ muestras del mismo punto), tabla unificada. Si no, single.
     if es_columna and len(muestras_punto) >= 2:
         _render_insitu_columna(muestras_punto, limites, equipo_nombre, n_serie)
     else:
@@ -1697,8 +1769,8 @@ def _render_listado(campana_id: str) -> None:
     # detecta la muestra existente y precarga TODOS los campos.
     inline_note(
         "Para editar esta muestra (fecha, hora, técnico, profundidades, etc.) "
-        "ve al tab <b>Registro</b> — selecciona la misma campaña y punto y "
-        "se cargarán todos los datos para corrección.",
+        "ve al tab <b>Registro + In situ</b> — selecciona el mismo punto y "
+        "abre <b>Datos de la muestra (ver / editar)</b> para corregirla.",
         tipo="info",
     )
 
@@ -2083,39 +2155,20 @@ def main() -> None:
     if not campana_id:
         return
 
-    # Atajos del flujo: la misma campaña en las etapas vecinas
-    nav1, nav2, nav3, _sp = st.columns([1.4, 1.4, 1.4, 3])
-    with nav1:
-        if st.button("Ver campaña", key="muestras_nav_campana",
-                     icon=":material/event:", use_container_width=True):
-            ir_a("campanas", campana_id=campana_id)
-    with nav2:
-        if st.button("Resultados de lab", key="muestras_nav_resultados",
-                     icon=":material/biotech:", use_container_width=True):
-            ir_a("resultados", campana_id=campana_id)
-    with nav3:
-        if st.button("Base de Datos", key="muestras_nav_bd",
-                     icon=":material/database:", use_container_width=True):
-            ir_a("base_datos", campana_id=campana_id)
-
     # Orden lógico del flujo operativo:
-    #   campo (Registro → In situ)
+    #   campo (Registro + In situ fusionados en un solo tab)
     #   transición a lab (Recepción en Lab)
     #   reportes (Documento CC, Ficha, Listado)
-    tab_reg, tab_insitu, tab_custodia, tab_cadena, tab_ficha, tab_lista = st.tabs([
-        "Registro",
-        "In situ",
+    tab_campo, tab_custodia, tab_cadena, tab_ficha, tab_lista = st.tabs([
+        "Registro + In situ",
         "Recepción en Lab",
         "Documento CC",
         "Ficha de Campo",
         "Listado",
     ])
 
-    with tab_reg:
-        _render_registro(campana_id)
-
-    with tab_insitu:
-        _render_insitu(campana_id)
+    with tab_campo:
+        _render_campo(campana_id)
 
     with tab_custodia:
         _render_custodia(campana_id)

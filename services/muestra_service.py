@@ -509,6 +509,31 @@ def get_mediciones_insitu(muestra_id: str) -> dict[str, dict]:
     return {r["parametro"]: r for r in (res.data or [])}
 
 
+def get_conteo_insitu_por_muestras(muestra_ids: list[str]) -> dict[str, int]:
+    """
+    Número de mediciones in situ guardadas por muestra, en UNA sola query.
+    Alimenta el avance por punto del tab fusionado Registro + In situ sin
+    disparar un get_mediciones_insitu por cada muestra de la campaña.
+
+    Formato: {muestra_id: n_parametros_guardados} (solo muestras con datos).
+    """
+    if not muestra_ids:
+        return {}
+    db = get_db()
+    res = (
+        db.table("mediciones_insitu")
+        .select("muestra_id")
+        .in_("muestra_id", muestra_ids)
+        .execute()
+    )
+    conteo: dict[str, int] = {}
+    for r in (res.data or []):
+        mid = r.get("muestra_id")
+        if mid:
+            conteo[mid] = conteo.get(mid, 0) + 1
+    return conteo
+
+
 def get_limites_insitu(muestra_id: str) -> dict[str, dict]:
     """
     Retorna los límites ECA aplicables a los parámetros in situ,
